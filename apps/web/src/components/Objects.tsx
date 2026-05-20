@@ -72,10 +72,10 @@ export const Objects = () => {
                 <div className="grid grid-cols-2 gap-2.5">
                   <button className="bg-kv-navy text-white py-3 rounded-full text-[13px] font-extrabold hover:bg-kv-navy-light transition-colors cursor-pointer">
                     Подробнее
-                  </li>
+                  </button>
                   <button className="border border-kv-line text-kv-navy py-3 rounded-full text-[13px] font-extrabold hover:bg-kv-bg transition-colors cursor-pointer">
                     Презентация
-                  </li>
+                  </button>
                 </div>
               </div>
             </div>
