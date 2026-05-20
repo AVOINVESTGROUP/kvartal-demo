@@ -16,38 +16,16 @@ Develop **KVARTAL** — a two-market real estate brokerage platform (Moscow + Du
 
 ## 🛑 HARD RULES FOR THIS PROJECT
 
-### 1. Step-by-Step Execution (Non-Negotiable)
-```
-Plan (with approval) → Prototype/Design → User approval → Implementation → Validation → Next phase
-```
-- NO code without complete requirements and approval
-- NO architecture changes without explicit consent
-- Every change must be documented in CURRENT_STATE.md
+Исполнение проекта регулируется иерархией документов (см. `rule 11-documentation-hierarchy.md`). Основные жесткие правила вынесены в папку `.agents/rules/`:
 
-### 2. Plan-First Discipline
-- Every task begins with: **plan** → **present for approval** → **execute only when approved**
-- Exception: Tasks explicitly marked "execution mode" in user request
-
-### 3. Factual Rigor
-- ZERO hallucinations about KVARTAL scope, features, or technical decisions
-- Only use data from:
-  - KVARTAL_Base_Document_v1.md (source of truth)
-  - User explicit instructions
-  - Project documentation in C:\Dev\Kvartal\docs\
-
-### 4. Direct Feedback (No Corporate Softening)
-- Architectural audit: speak directly about risks, gaps, anti-patterns
-- No sugar-coating; no "could consider"; use clear "MUST," "SHOULD NOT," "CRITICAL BLOCKER"
-
-### 5. Conciseness
-- Structured answers: tables, lists, bullets
-- NO long prose or unnecessary preambles
-- Executive summaries only
-
-### 6. SSOT Data Discipline
-- PropertyObject (physical property) lives in KVARTAL backend, NOT CRM
-- CRM is for leads, deals, tasks, communication only
-- Violating this = architectural failure
+1. **Step-by-Step Execution:** См. `rule 05-step-by-step-execution.md`.
+2. **Plan-First Discipline:** См. `rule 00-claude-core-mandate.md`.
+3. **Factual Rigor:** Использовать только проверенные данные из `docs/`.
+4. **Direct Feedback:** Аудит и критика без смягчения формулировок.
+5. **Conciseness:** Краткость и структурированность ответов.
+6. **SSOT Data Discipline:** См. `rule 01-kvartal-ssot-principle.md`.
+7. **Approved Design Preservation:** См. `rule 10-approved-design-preservation.md`.
+8. **Mistakes Log:** См. `rule 12-mistakes-log.md`.
 
 ---
 

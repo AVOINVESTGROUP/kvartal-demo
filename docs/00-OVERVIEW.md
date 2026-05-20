@@ -22,7 +22,7 @@ KVARTAL is a **request-first, deal room-centric real estate platform** serving t
 | **Delivery** | Curated deal room | Search results list |
 | **Engagement** | Broker-led, personal | Self-service, digital |
 | **Fallback** | Broker CTA + context | Dead end (no matches) |
-| **Data Model** | Objects in backend | CRM as SSOT (WRONG) |
+| **Data Model** | SSOT в бэкенде (см. `rule 01`) | CRM as SSOT (WRONG) |
 
 ---
 

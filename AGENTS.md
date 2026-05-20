@@ -40,36 +40,26 @@
 
 ## Key Principles
 
-1. **SSOT (Single Source of Truth):** Property objects, deal rooms, client intents live in backend data model, not CRM or external system
-2. **Request-First:** All property matching flows from client intent, not catalog browsing
-3. **Two Markets:** Moscow (commercial RE, special assets, office) and Dubai (investment, off-plan, partnerships)
-4. **Deal Room as Personal Workspace:** TMA is not a catalog, it's a deal room extension with push notifications
-5. **AI as Conversion Layer:** Vertex AI classifies intents, generates broker summaries, detects deal opportunities
-6. **Plan First, Execute Later:** Every task must have an approved plan before implementation unless explicitly marked "execution mode"
-7. **Update CURRENT_STATE:** After every execution step, update `docs/CURRENT_STATE.md` with commands run, files changed, known issues
-8. **No Deploy Without Approval:** All cloud deployments require explicit user sign-off
-9. **No Secrets in Code:** All secrets go to Secret Manager, never hardcoded
-10. **Preserve Approved Design:** Original `index.html` is never modified or deleted
+Все действия агента регулируются набором правил в `.agents/rules/`. Ниже приведены краткие ссылки на ключевые принципы:
+
+1. **SSOT (Single Source of Truth):** См. правило `01-kvartal-ssot-principle.md`.
+2. **Request-First:** См. правило `02-two-market-architecture.md`.
+3. **Two Markets:** См. правило `02-two-market-architecture.md`.
+4. **Deal Room Lifecycle:** См. правило `03-deal-room-state-machine.md`.
+5. **AI Guardrails:** См. правило `04-compliance-guardrails.md`.
+6. **Execution Protocol:** См. правило `05-step-by-step-execution.md` (Plan-Approval-Execution).
+7. **Security & Secrets:** См. правило `06-security-and-secrets.md`.
+8. **Approved Design Preservation:** См. правило `10-approved-design-preservation.md`.
 
 ## Execution Rules
 
 ### Safe Mode (Default)
 
-- Every task must start with a plan
-- Plan is presented for approval before execution
-- Only approved scope is implemented
-- No cloud resources changed without approval
-- No secrets stored in code
+Работа строго по протоколу `05-step-by-step-execution.md`.
 
 ### Reporting After Execution
 
-After every execution step, report:
-
-1. **Files created/modified** — list of changed files
-2. **Commands run** — shell commands executed (if any)
-3. **Tests run** — verification commands
-4. **Known issues** — blockers or side effects
-5. **Confirmation** — index.html untouched, no installs/deploy/cloud changes without approval
+Отчеты формируются согласно шаблону в `08-reporting-template.md`.
 
 ### Staged Execution
 
