@@ -1,0 +1,1735 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KVARTAL — коммерческая недвижимость в Москве</title>
+  <meta name="description" content="KVARTAL — подбор, продажа и аренда коммерческой недвижимости в Москве: особняки, нежилые здания и офисные объекты в ЦАО.">
+  <meta name="theme-color" content="#071d3a">
+  <meta property="og:title" content="KVARTAL — коммерческая недвижимость в Москве">
+  <meta property="og:description" content="Особняки, нежилые здания и офисные объекты в ЦАО Москвы. Подбор, показы и сопровождение сделки.">
+  <meta property="og:type" content="website">
+  <style>
+    :root {
+      --navy: #071d3a;
+      --navy-2: #0d2e58;
+      --red: #c73333;
+      --red-dark: #9f2525;
+      --gold: #c9a66b;
+      --ink: #142033;
+      --muted: #697386;
+      --line: #dbe2ea;
+      --bg: #f4f6f8;
+      --bg-warm: #f7f3ec;
+      --white: #ffffff;
+      --shadow: 0 20px 60px rgba(7, 29, 58, 0.14);
+      --radius: 18px;
+      --container: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+      line-height: 1.55;
+    }
+
+    body.menu-open {
+      overflow: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .container {
+      width: min(100% - 40px, var(--container));
+      margin: 0 auto;
+    }
+
+    .topline {
+      background: var(--navy);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 13px;
+    }
+
+    .topline__inner {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .topline__contacts {
+      display: flex;
+      gap: 22px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.94);
+      border-bottom: 1px solid rgba(7, 29, 58, 0.1);
+      backdrop-filter: blur(14px);
+    }
+
+    .site-header__inner {
+      min-height: 78px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      min-width: max-content;
+    }
+
+    .logo__mark {
+      width: 48px;
+      height: 48px;
+      border: 3px solid var(--navy);
+      display: grid;
+      place-items: center;
+      color: var(--red);
+      font-weight: 800;
+      font-size: 30px;
+      line-height: 1;
+      background: var(--white);
+    }
+
+    .logo__title {
+      display: block;
+      color: var(--navy);
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      line-height: 1;
+    }
+
+    .logo__subtitle {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+    }
+
+    .main-nav {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .main-nav a {
+      position: relative;
+      padding: 10px 0;
+    }
+
+    .main-nav a::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      bottom: 4px;
+      width: 0;
+      height: 2px;
+      background: var(--red);
+      transition: width 0.2s ease;
+    }
+
+    .main-nav a:hover::after,
+    .main-nav a:focus-visible::after {
+      width: 100%;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: max-content;
+    }
+
+    .header-phone {
+      color: var(--navy);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .menu-toggle {
+      display: none;
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--line);
+      background: var(--white);
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .menu-toggle span {
+      display: block;
+      width: 20px;
+      height: 2px;
+      margin: 5px auto;
+      background: var(--navy);
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 46px;
+      padding: 12px 20px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .btn:hover,
+    .btn:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(7, 29, 58, 0.16);
+    }
+
+    .btn--primary {
+      color: var(--white);
+      background: var(--red);
+    }
+
+    .btn--primary:hover,
+    .btn--primary:focus-visible {
+      background: var(--red-dark);
+    }
+
+    .btn--dark {
+      color: var(--white);
+      background: var(--navy);
+    }
+
+    .btn--light {
+      color: var(--navy);
+      background: var(--white);
+      border-color: rgba(7, 29, 58, 0.16);
+    }
+
+    .btn--ghost {
+      color: var(--white);
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.28);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 80% 10%, rgba(201, 166, 107, 0.22), transparent 34%),
+        linear-gradient(130deg, rgba(7, 29, 58, 0.98), rgba(7, 29, 58, 0.86)),
+        linear-gradient(45deg, #0d2e58, #071d3a);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+      pointer-events: none;
+    }
+
+    .hero__inner {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) 420px;
+      gap: 46px;
+      align-items: center;
+      padding: 78px 0 64px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 34px;
+      height: 2px;
+      background: var(--gold);
+    }
+
+    .hero h1 {
+      margin: 0;
+      max-width: 780px;
+      font-size: clamp(38px, 6vw, 68px);
+      line-height: 0.98;
+      letter-spacing: -0.045em;
+    }
+
+    .hero__lead {
+      max-width: 670px;
+      margin: 24px 0 0;
+      color: rgba(255, 255, 255, 0.78);
+      font-size: 20px;
+    }
+
+    .hero__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 34px;
+    }
+
+    .hero__stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 42px;
+      max-width: 760px;
+    }
+
+    .stat {
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .stat__value {
+      display: block;
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--white);
+    }
+
+    .stat__label {
+      display: block;
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 13px;
+    }
+
+    .lead-card {
+      padding: 28px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.1);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(18px);
+    }
+
+    .lead-card h2 {
+      margin: 0 0 10px;
+      font-size: 24px;
+      line-height: 1.16;
+    }
+
+    .lead-card p {
+      margin: 0 0 20px;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .form input,
+    .form select,
+    .form textarea {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px 14px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: var(--white);
+      color: var(--ink);
+      outline: none;
+    }
+
+    .form textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+
+    .form input:focus,
+    .form select:focus,
+    .form textarea:focus {
+      border-color: var(--gold);
+      box-shadow: 0 0 0 4px rgba(201, 166, 107, 0.18);
+    }
+
+    .consent {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 12px;
+    }
+
+    .consent input {
+      width: 18px;
+      height: 18px;
+      min-height: auto;
+      margin-top: 2px;
+      accent-color: var(--red);
+    }
+
+    .form-note {
+      min-height: 20px;
+      color: #ffffff;
+      font-size: 13px;
+    }
+
+    .section {
+      padding: 76px 0;
+    }
+
+    .section--white {
+      background: var(--white);
+    }
+
+    .section--warm {
+      background: var(--bg-warm);
+    }
+
+    .section__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 30px;
+      margin-bottom: 34px;
+    }
+
+    .section__kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      color: var(--red);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .section__kicker::before {
+      content: "";
+      width: 30px;
+      height: 2px;
+      background: currentColor;
+    }
+
+    .section h2 {
+      margin: 0;
+      max-width: 760px;
+      color: var(--navy);
+      font-size: clamp(30px, 4vw, 46px);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+
+    .section__text {
+      max-width: 460px;
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .filter-panel {
+      margin-bottom: 28px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1.1fr 0.8fr 0.8fr auto;
+      gap: 14px;
+      align-items: end;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .field input,
+    .field select {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--ink);
+      background: var(--white);
+      outline: none;
+    }
+
+    .field input:focus,
+    .field select:focus {
+      border-color: var(--navy-2);
+      box-shadow: 0 0 0 4px rgba(13, 46, 88, 0.08);
+    }
+
+    .filter-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .objects-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .object-card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: 0 12px 34px rgba(7, 29, 58, 0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .object-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+    }
+
+    .object-card[hidden] {
+      display: none;
+    }
+
+    .object-card__media {
+      position: relative;
+      min-height: 210px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--white);
+      background:
+        linear-gradient(135deg, rgba(7, 29, 58, 0.86), rgba(13, 46, 88, 0.62)),
+        repeating-linear-gradient(45deg, #98a6b5, #98a6b5 1px, #b9c2cc 1px, #b9c2cc 16px);
+    }
+
+    .object-card__media::after {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      pointer-events: none;
+    }
+
+    .object-card__tags {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: var(--white);
+      background: rgba(255, 255, 255, 0.16);
+      font-size: 12px;
+      font-weight: 800;
+      backdrop-filter: blur(8px);
+    }
+
+    .tag--red {
+      background: var(--red);
+    }
+
+    .object-card__photo-label {
+      position: relative;
+      z-index: 1;
+      max-width: 250px;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 13px;
+    }
+
+    .object-card__body {
+      padding: 22px;
+    }
+
+    .object-card__title {
+      margin: 0 0 12px;
+      color: var(--navy);
+      font-size: 21px;
+      line-height: 1.16;
+      letter-spacing: -0.02em;
+    }
+
+    .object-card__price {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .object-card__price strong {
+      color: var(--red);
+      font-size: 16px;
+    }
+
+    .params {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 18px;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .params li {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 10px;
+    }
+
+    .params span {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .object-card__actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .empty-state {
+      display: none;
+      padding: 28px;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      color: var(--muted);
+      background: var(--white);
+    }
+
+    .empty-state.is-visible {
+      display: block;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .feature-card {
+      min-height: 230px;
+      padding: 26px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--white);
+      box-shadow: 0 12px 34px rgba(7, 29, 58, 0.06);
+    }
+
+    .feature-card__num {
+      display: inline-grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      margin-bottom: 18px;
+      border-radius: 50%;
+      color: var(--white);
+      background: var(--navy);
+      font-weight: 900;
+    }
+
+    .feature-card h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .feature-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      align-items: stretch;
+    }
+
+    .panel {
+      padding: 34px;
+      border-radius: var(--radius);
+      background: var(--white);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .panel h3 {
+      margin: 0 0 14px;
+      color: var(--navy);
+      font-size: 28px;
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .panel p {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    .check-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .check-list li {
+      position: relative;
+      padding-left: 30px;
+      color: var(--ink);
+    }
+
+    .check-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: rgba(199, 51, 51, 0.12);
+    }
+
+    .check-list li::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 10px;
+      width: 7px;
+      height: 4px;
+      border-left: 2px solid var(--red);
+      border-bottom: 2px solid var(--red);
+      transform: rotate(-45deg);
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--line);
+    }
+
+    .step {
+      padding: 28px;
+      background: var(--white);
+    }
+
+    .step__label {
+      display: block;
+      margin-bottom: 28px;
+      color: var(--red);
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .step h3 {
+      margin: 0 0 10px;
+      color: var(--navy);
+      font-size: 20px;
+      line-height: 1.18;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .cta-band {
+      color: var(--white);
+      background:
+        radial-gradient(circle at 85% 20%, rgba(201, 166, 107, 0.24), transparent 32%),
+        linear-gradient(135deg, var(--navy), var(--navy-2));
+    }
+
+    .cta-band__inner {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 40px;
+      align-items: center;
+      padding: 64px 0;
+    }
+
+    .cta-band h2 {
+      margin: 0;
+      color: var(--white);
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.06;
+      letter-spacing: -0.035em;
+    }
+
+    .cta-band p {
+      max-width: 690px;
+      margin: 18px 0 0;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 18px;
+    }
+
+    .cta-band .lead-card {
+      box-shadow: none;
+    }
+
+    .contacts-grid {
+      display: grid;
+      grid-template-columns: 0.92fr 1.08fr;
+      gap: 24px;
+    }
+
+    .contacts-card {
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--white);
+    }
+
+    .contacts-list {
+      display: grid;
+      gap: 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .contacts-list li {
+      display: grid;
+      gap: 4px;
+    }
+
+    .contacts-list span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .contacts-list strong,
+    .contacts-list a {
+      color: var(--navy);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .map-placeholder {
+      min-height: 380px;
+      padding: 30px;
+      border-radius: var(--radius);
+      color: var(--white);
+      background:
+        linear-gradient(135deg, rgba(7, 29, 58, 0.86), rgba(7, 29, 58, 0.58)),
+        repeating-linear-gradient(0deg, #c9d1da, #c9d1da 1px, #e4e9ee 1px, #e4e9ee 34px),
+        repeating-linear-gradient(90deg, #c9d1da, #c9d1da 1px, #e4e9ee 1px, #e4e9ee 34px);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+    }
+
+    .map-placeholder h3 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .map-placeholder p {
+      max-width: 560px;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .site-footer {
+      background: var(--navy);
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .site-footer__inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 28px;
+      align-items: center;
+      padding: 28px 0;
+      font-size: 14px;
+    }
+
+    .site-footer .logo__title,
+    .site-footer .logo__subtitle {
+      color: var(--white);
+    }
+
+    .site-footer .logo__mark {
+      border-color: rgba(255, 255, 255, 0.7);
+      background: transparent;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 18px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .footer-links a {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+    }
+
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1100px) {
+      .main-nav {
+        gap: 16px;
+      }
+
+      .header-phone {
+        display: none;
+      }
+
+      .hero__inner,
+      .cta-band__inner {
+        grid-template-columns: 1fr;
+      }
+
+      .lead-card {
+        max-width: 560px;
+      }
+
+      .cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .feature-grid,
+      .steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .filter-actions {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .container {
+        width: min(100% - 28px, var(--container));
+      }
+
+      .topline__inner {
+        align-items: flex-start;
+        flex-direction: column;
+        justify-content: center;
+        padding: 10px 0;
+      }
+
+      .site-header__inner {
+        min-height: 68px;
+      }
+
+      .main-nav {
+        position: fixed;
+        inset: 106px 14px auto 14px;
+        z-index: 60;
+        display: none;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--white);
+        box-shadow: var(--shadow);
+      }
+
+      .main-nav a {
+        padding: 14px 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .main-nav a:last-child {
+        border-bottom: 0;
+      }
+
+      body.menu-open .main-nav {
+        display: flex;
+      }
+
+      .menu-toggle {
+        display: inline-block;
+      }
+
+      body.menu-open .menu-toggle span:nth-child(1) {
+        transform: translateY(7px) rotate(45deg);
+      }
+
+      body.menu-open .menu-toggle span:nth-child(2) {
+        opacity: 0;
+      }
+
+      body.menu-open .menu-toggle span:nth-child(3) {
+        transform: translateY(-7px) rotate(-45deg);
+      }
+
+      .header-actions .btn {
+        display: none;
+      }
+
+      .hero__inner {
+        padding: 54px 0;
+      }
+
+      .hero__lead {
+        font-size: 18px;
+      }
+
+      .hero__stats,
+      .cards,
+      .feature-grid,
+      .split,
+      .steps,
+      .contacts-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section {
+        padding: 56px 0;
+      }
+
+      .section__head {
+        display: block;
+      }
+
+      .section__text {
+        margin-top: 14px;
+      }
+
+      .filter-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .filter-actions {
+        flex-direction: column;
+      }
+
+      .filter-actions .btn {
+        width: 100%;
+      }
+
+      .object-card__actions {
+        grid-template-columns: 1fr;
+      }
+
+      .site-footer__inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .footer-links {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .logo__mark {
+        width: 42px;
+        height: 42px;
+        font-size: 25px;
+      }
+
+      .logo__title {
+        font-size: 19px;
+      }
+
+      .logo__subtitle {
+        font-size: 9px;
+        letter-spacing: 0.18em;
+      }
+
+      .hero h1 {
+        font-size: 36px;
+      }
+
+      .hero__actions .btn {
+        width: 100%;
+      }
+
+      .lead-card,
+      .panel,
+      .contacts-card {
+        padding: 22px;
+      }
+
+      .params li {
+        grid-template-columns: 1fr;
+        gap: 2px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="topline">
+    <div class="container topline__inner">
+      <span>Москва · Центральный административный округ · коммерческая недвижимость</span>
+      <div class="topline__contacts" aria-label="Контакты">
+        <a href="tel:+74950000000">+7 (495) 000-00-00</a>
+        <a href="mailto:info@kvartal-estate.ru">info@kvartal-estate.ru</a>
+      </div>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="container site-header__inner">
+      <a class="logo" href="#top" aria-label="KVARTAL — на главную">
+        <span class="logo__mark">K</span>
+        <span>
+          <span class="logo__title">KVARTAL</span>
+          <span class="logo__subtitle">Центр недвижимости</span>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Основная навигация">
+        <a href="#objects">Объекты</a>
+        <a href="#services">Услуги</a>
+        <a href="#process">Сделка</a>
+        <a href="#owners">Собственникам</a>
+        <a href="#contacts">Контакты</a>
+      </nav>
+
+      <div class="header-actions">
+        <a class="header-phone" href="tel:+74950000000">+7 (495) 000-00-00</a>
+        <a class="btn btn--primary" href="#request">Получить подборку</a>
+        <button class="menu-toggle" type="button" aria-label="Открыть меню" aria-expanded="false">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="container hero__inner">
+        <div class="hero__content">
+          <span class="eyebrow">Коммерческая недвижимость в Москве</span>
+          <h1 id="hero-title">Особняки и нежилые здания для бизнеса и инвестиций</h1>
+          <p class="hero__lead">Подбор, продажа, аренда и сопровождение сделок с объектами в ЦАО Москвы: от первичного отбора до переговоров и выхода на сделку.</p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="#objects">Смотреть объекты</a>
+            <a class="btn btn--ghost" href="#request">Запросить консультацию</a>
+          </div>
+          <div class="hero__stats" aria-label="Ключевые показатели">
+            <div class="stat">
+              <span class="stat__value">5</span>
+              <span class="stat__label">объектов в стартовой витрине</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">587–903 м²</span>
+              <span class="stat__label">диапазон площадей</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">ЦАО</span>
+              <span class="stat__label">Красносельский, Таганский, Мещанский</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="lead-card" id="request" aria-labelledby="request-title">
+          <h2 id="request-title">Получить подборку объектов</h2>
+          <p>Оставьте контакты — менеджер уточнит задачу и отправит релевантные предложения.</p>
+          <form class="form" data-lead-form>
+            <label class="visually-hidden" for="lead-name">Имя</label>
+            <input id="lead-name" name="name" type="text" autocomplete="name" placeholder="Ваше имя" required>
+            <label class="visually-hidden" for="lead-phone">Телефон</label>
+            <input id="lead-phone" name="phone" type="tel" autocomplete="tel" placeholder="Телефон" required>
+            <label class="visually-hidden" for="lead-goal">Цель обращения</label>
+            <select id="lead-goal" name="goal" required>
+              <option value="">Цель обращения</option>
+              <option>Купить объект</option>
+              <option>Арендовать объект</option>
+              <option>Продать объект</option>
+              <option>Получить инвестиционную оценку</option>
+            </select>
+            <label class="consent">
+              <input type="checkbox" name="consent" required>
+              <span>Согласен на обработку персональных данных и обратную связь по заявке.</span>
+            </label>
+            <button class="btn btn--primary" type="submit">Отправить заявку</button>
+            <span class="form-note" role="status" aria-live="polite"></span>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section section--white" id="objects" aria-labelledby="objects-title">
+      <div class="container">
+        <div class="section__head">
+          <div>
+            <span class="section__kicker">Витрина объектов</span>
+            <h2 id="objects-title">Стартовая подборка особняков и нежилых зданий</h2>
+          </div>
+          <p class="section__text">Фильтр работает внутри лендинга. Для промышленного сайта его нужно связать с CMS или CRM-каталогом.</p>
+        </div>
+
+        <form class="filter-panel" id="object-filter" aria-label="Фильтр объектов">
+          <div class="filter-grid">
+            <div class="field">
+              <label for="filter-type">Тип объекта</label>
+              <select id="filter-type" name="type">
+                <option value="">Все типы</option>
+                <option value="особняк">Особняк</option>
+                <option value="нежилое здание">Нежилое здание</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="filter-district">Район</label>
+              <select id="filter-district" name="district">
+                <option value="">Все районы</option>
+                <option value="Красносельский">Красносельский</option>
+                <option value="Таганский">Таганский</option>
+                <option value="Мещанский">Мещанский</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="area-from">Площадь от</label>
+              <input id="area-from" name="area_from" type="number" min="0" inputmode="numeric" placeholder="500">
+            </div>
+            <div class="field">
+              <label for="area-to">Площадь до</label>
+              <input id="area-to" name="area_to" type="number" min="0" inputmode="numeric" placeholder="1000">
+            </div>
+            <div class="filter-actions">
+              <button class="btn btn--dark" type="submit">Найти</button>
+              <button class="btn btn--light" type="reset">Сбросить</button>
+            </div>
+          </div>
+        </form>
+
+        <div class="objects-meta">
+          <span id="objects-count">Показано объектов: 5</span>
+          <span>Цена: по запросу</span>
+        </div>
+
+        <div class="cards" id="objects-list">
+          <article class="object-card" data-type="особняк нежилое здание" data-district="Красносельский" data-area="587.2">
+            <div class="object-card__media">
+              <div class="object-card__tags">
+                <span class="tag tag--red">Особняк</span>
+                <span class="tag">Нежилое здание</span>
+              </div>
+              <span class="object-card__photo-label">Место под фото объекта: фасад, входная группа, интерьеры, планировки.</span>
+            </div>
+            <div class="object-card__body">
+              <h3 class="object-card__title">Особняк, 587,2 м²</h3>
+              <div class="object-card__price"><span>Коммерческие условия</span><strong>По запросу</strong></div>
+              <ul class="params">
+                <li><span>Адрес</span>ул. 2-я Леснорядская, д. 4</li>
+                <li><span>Район</span>Красносельский</li>
+                <li><span>Площадь</span>587,2 м²</li>
+                <li><span>КН</span>77:01:003033:2729</li>
+              </ul>
+              <div class="object-card__actions">
+                <a class="btn btn--dark" href="#request">Запросить</a>
+                <a class="btn btn--light" href="#contacts">Обсудить</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="object-card" data-type="особняк нежилое здание" data-district="Таганский" data-area="850.7">
+            <div class="object-card__media">
+              <div class="object-card__tags">
+                <span class="tag tag--red">TOP</span>
+                <span class="tag">Таганский</span>
+              </div>
+              <span class="object-card__photo-label">Место под фото объекта: фасад, входная группа, интерьеры, планировки.</span>
+            </div>
+            <div class="object-card__body">
+              <h3 class="object-card__title">Особняк, 850,7 м²</h3>
+              <div class="object-card__price"><span>Коммерческие условия</span><strong>По запросу</strong></div>
+              <ul class="params">
+                <li><span>Адрес</span>2-й Гончарный пер., д. 6</li>
+                <li><span>Район</span>Таганский</li>
+                <li><span>Площадь</span>850,7 м²</li>
+                <li><span>КН</span>77:01:0002023:1025</li>
+              </ul>
+              <div class="object-card__actions">
+                <a class="btn btn--dark" href="#request">Запросить</a>
+                <a class="btn btn--light" href="#contacts">Обсудить</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="object-card" data-type="нежилое здание" data-district="Мещанский" data-area="903.3">
+            <div class="object-card__media">
+              <div class="object-card__tags">
+                <span class="tag tag--red">Здание</span>
+                <span class="tag">Мещанский</span>
+              </div>
+              <span class="object-card__photo-label">Место под фото объекта: фасад, входная группа, интерьеры, планировки.</span>
+            </div>
+            <div class="object-card__body">
+              <h3 class="object-card__title">Нежилое здание, 903,3 м²</h3>
+              <div class="object-card__price"><span>Коммерческие условия</span><strong>По запросу</strong></div>
+              <ul class="params">
+                <li><span>Адрес</span>Большой Кисельный пер., д. 5, стр. 1</li>
+                <li><span>Район</span>Мещанский</li>
+                <li><span>Площадь</span>903,3 м²</li>
+                <li><span>Статус</span>Нежилое здание</li>
+              </ul>
+              <div class="object-card__actions">
+                <a class="btn btn--dark" href="#request">Запросить</a>
+                <a class="btn btn--light" href="#contacts">Обсудить</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="object-card" data-type="особняк нежилое здание" data-district="Мещанский" data-area="630.3">
+            <div class="object-card__media">
+              <div class="object-card__tags">
+                <span class="tag tag--red">Особняк</span>
+                <span class="tag">Цветной бульвар</span>
+              </div>
+              <span class="object-card__photo-label">Место под фото объекта: фасад, входная группа, интерьеры, планировки.</span>
+            </div>
+            <div class="object-card__body">
+              <h3 class="object-card__title">Особняк, 630,3 м²</h3>
+              <div class="object-card__price"><span>Коммерческие условия</span><strong>По запросу</strong></div>
+              <ul class="params">
+                <li><span>Адрес</span>Цветной бульвар, д. 28, стр. 2</li>
+                <li><span>Район</span>Мещанский</li>
+                <li><span>Площадь</span>630,3 м²</li>
+                <li><span>КН</span>77:01:0001092:1016</li>
+              </ul>
+              <div class="object-card__actions">
+                <a class="btn btn--dark" href="#request">Запросить</a>
+                <a class="btn btn--light" href="#contacts">Обсудить</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="object-card" data-type="особняк нежилое здание" data-district="Таганский" data-area="774.4">
+            <div class="object-card__media">
+              <div class="object-card__tags">
+                <span class="tag tag--red">Особняк</span>
+                <span class="tag">Таганский</span>
+              </div>
+              <span class="object-card__photo-label">Место под фото объекта: фасад, входная группа, интерьеры, планировки.</span>
+            </div>
+            <div class="object-card__body">
+              <h3 class="object-card__title">Особняк, 774,4 м²</h3>
+              <div class="object-card__price"><span>Коммерческие условия</span><strong>По запросу</strong></div>
+              <ul class="params">
+                <li><span>Адрес</span>Большой Ватин пер., д. 8</li>
+                <li><span>Район</span>Таганский</li>
+                <li><span>Площадь</span>774,4 м²</li>
+                <li><span>КН</span>77:01:0002024:1005</li>
+              </ul>
+              <div class="object-card__actions">
+                <a class="btn btn--dark" href="#request">Запросить</a>
+                <a class="btn btn--light" href="#contacts">Обсудить</a>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <div class="empty-state" id="empty-state">По выбранным параметрам объектов нет. Измените район, тип или диапазон площади.</div>
+      </div>
+    </section>
+
+    <section class="section" id="services" aria-labelledby="services-title">
+      <div class="container">
+        <div class="section__head">
+          <div>
+            <span class="section__kicker">Услуги</span>
+            <h2 id="services-title">Закрываем ключевые задачи по коммерческой недвижимости</h2>
+          </div>
+          <p class="section__text">Лендинг рассчитан на заявки от покупателей, арендаторов, инвесторов и собственников объектов.</p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card">
+            <span class="feature-card__num">01</span>
+            <h3>Подбор объекта</h3>
+            <p>Формируем короткий список объектов под назначение, бюджет, район, площадь, парковку и требования к документам.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-card__num">02</span>
+            <h3>Продажа и аренда</h3>
+            <p>Готовим объект к экспозиции, собираем входящие заявки, проводим показы и переговоры.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-card__num">03</span>
+            <h3>Инвестиционная оценка</h3>
+            <p>Сравниваем локацию, ликвидность, назначение, потенциал перепрофилирования и сценарии доходности.</p>
+          </article>
+          <article class="feature-card">
+            <span class="feature-card__num">04</span>
+            <h3>Сопровождение сделки</h3>
+            <p>Координируем переговоры, документы, проверку объекта, график платежей и выход на подписание.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--warm" id="owners" aria-labelledby="owners-title">
+      <div class="container split">
+        <div class="panel">
+          <span class="section__kicker">Покупателям и инвесторам</span>
+          <h3 id="owners-title">Подбор без лишних просмотров</h3>
+          <p>Перед показами фиксируем требования и отсеиваем объекты, которые не подходят по назначению, площади, району или юридическим ограничениям.</p>
+          <ul class="check-list">
+            <li>Объекты под офис, представительство, клинику, банк, ресторан или mixed-use.</li>
+            <li>Сравнение нескольких вариантов по локации, площади и ликвидности.</li>
+            <li>Подготовка вопросов для собственника и проверки документов.</li>
+          </ul>
+        </div>
+
+        <div class="panel">
+          <span class="section__kicker">Собственникам</span>
+          <h3>Экспозиция объекта и квалификация спроса</h3>
+          <p>Готовим продающую карточку объекта, собираем обращения, отсекаем нерелевантные запросы и ведём коммуникацию до сделки.</p>
+          <ul class="check-list">
+            <li>Упаковка: фото, описание, характеристики, презентация, условия.</li>
+            <li>Работа с запросами покупателей, арендаторов и представителей компаний.</li>
+            <li>Организация показов, переговоров и безопасного обмена документами.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section--white" id="process" aria-labelledby="process-title">
+      <div class="container">
+        <div class="section__head">
+          <div>
+            <span class="section__kicker">Процесс</span>
+            <h2 id="process-title">Как проходит работа</h2>
+          </div>
+          <p class="section__text">Структура помогает посетителю понять порядок действий до отправки заявки.</p>
+        </div>
+
+        <div class="steps">
+          <article class="step">
+            <span class="step__label">Шаг 1</span>
+            <h3>Бриф</h3>
+            <p>Фиксируем цель: покупка, аренда, продажа, инвестиции, требования к объекту и сроки.</p>
+          </article>
+          <article class="step">
+            <span class="step__label">Шаг 2</span>
+            <h3>Подбор</h3>
+            <p>Отбираем объекты по району, площади, назначению, состоянию, документам и коммерческим условиям.</p>
+          </article>
+          <article class="step">
+            <span class="step__label">Шаг 3</span>
+            <h3>Показы</h3>
+            <p>Организуем просмотры, собираем обратную связь и готовим список вопросов по каждому объекту.</p>
+          </article>
+          <article class="step">
+            <span class="step__label">Шаг 4</span>
+            <h3>Сделка</h3>
+            <p>Сопровождаем переговоры, проверку, согласование условий и подписание документов.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-band" aria-labelledby="cta-title">
+      <div class="container cta-band__inner">
+        <div>
+          <h2 id="cta-title">Нужен объект под конкретную задачу?</h2>
+          <p>Опишите формат бизнеса, бюджет, район и площадь. В ответ можно подготовить подборку по открытым и закрытым предложениям.</p>
+        </div>
+        <aside class="lead-card">
+          <form class="form" data-lead-form>
+            <label class="visually-hidden" for="bottom-phone">Телефон</label>
+            <input id="bottom-phone" name="phone" type="tel" autocomplete="tel" placeholder="Телефон" required>
+            <label class="visually-hidden" for="bottom-comment">Комментарий</label>
+            <textarea id="bottom-comment" name="comment" placeholder="Что ищете: тип объекта, район, площадь, бюджет"></textarea>
+            <label class="consent">
+              <input type="checkbox" name="consent" required>
+              <span>Согласен на обработку персональных данных и обратную связь по заявке.</span>
+            </label>
+            <button class="btn btn--primary" type="submit">Получить подборку</button>
+            <span class="form-note" role="status" aria-live="polite"></span>
+          </form>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section section--white" id="contacts" aria-labelledby="contacts-title">
+      <div class="container">
+        <div class="section__head">
+          <div>
+            <span class="section__kicker">Контакты</span>
+            <h2 id="contacts-title">Связаться с KVARTAL</h2>
+          </div>
+          <p class="section__text">Замените телефон, email, адрес и реквизиты на фактические данные компании перед публикацией.</p>
+        </div>
+
+        <div class="contacts-grid">
+          <div class="contacts-card">
+            <ul class="contacts-list">
+              <li>
+                <span>Телефон</span>
+                <a href="tel:+74950000000">+7 (495) 000-00-00</a>
+              </li>
+              <li>
+                <span>Email</span>
+                <a href="mailto:info@kvartal-estate.ru">info@kvartal-estate.ru</a>
+              </li>
+              <li>
+                <span>Офис</span>
+                <strong>Москва, адрес офиса</strong>
+              </li>
+              <li>
+                <span>Режим работы</span>
+                <strong>Пн–Пт, 10:00–19:00</strong>
+              </li>
+              <li>
+                <span>Мессенджеры</span>
+                <strong>Telegram / WhatsApp</strong>
+              </li>
+            </ul>
+          </div>
+          <div class="map-placeholder" aria-label="Карта объектов в Москве">
+            <h3>Карта объектов в ЦАО Москвы</h3>
+            <p>На рабочей версии сюда подключается Яндекс Карта с метками объектов, фильтрами и ссылками на карточки.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container site-footer__inner">
+      <a class="logo" href="#top" aria-label="KVARTAL — на главную">
+        <span class="logo__mark">K</span>
+        <span>
+          <span class="logo__title">KVARTAL</span>
+          <span class="logo__subtitle">Центр недвижимости</span>
+        </span>
+      </a>
+      <div>
+        <div>© <span id="year">2026</span> KVARTAL. Коммерческая недвижимость Москвы.</div>
+        <div class="footer-links">
+          <a href="#">Политика обработки персональных данных</a>
+          <a href="#">Согласие на обработку персональных данных</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "RealEstateAgent",
+    "name": "KVARTAL",
+    "description": "Центр недвижимости KVARTAL: коммерческая недвижимость, особняки и нежилые здания в Москве.",
+    "areaServed": {
+      "@type": "City",
+      "name": "Москва"
+    },
+    "telephone": "+7-495-000-00-00",
+    "email": "info@kvartal-estate.ru"
+  }
+  </script>
+
+  <script>
+    const body = document.body;
+    const menuToggle = document.querySelector('.menu-toggle');
+    const nav = document.querySelector('.main-nav');
+
+    menuToggle.addEventListener('click', () => {
+      const opened = body.classList.toggle('menu-open');
+      menuToggle.setAttribute('aria-expanded', String(opened));
+      menuToggle.setAttribute('aria-label', opened ? 'Закрыть меню' : 'Открыть меню');
+    });
+
+    nav.addEventListener('click', (event) => {
+      if (event.target.tagName === 'A') {
+        body.classList.remove('menu-open');
+        menuToggle.setAttribute('aria-expanded', 'false');
+        menuToggle.setAttribute('aria-label', 'Открыть меню');
+      }
+    });
+
+    const filterForm = document.getElementById('object-filter');
+    const cards = Array.from(document.querySelectorAll('.object-card'));
+    const count = document.getElementById('objects-count');
+    const emptyState = document.getElementById('empty-state');
+
+    function normalize(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function applyFilters() {
+      const type = normalize(document.getElementById('filter-type').value);
+      const district = document.getElementById('filter-district').value;
+      const areaFrom = Number(document.getElementById('area-from').value || 0);
+      const areaToRaw = document.getElementById('area-to').value;
+      const areaTo = areaToRaw ? Number(areaToRaw) : Infinity;
+      let visible = 0;
+
+      cards.forEach((card) => {
+        const cardType = normalize(card.dataset.type);
+        const cardDistrict = card.dataset.district;
+        const cardArea = Number(card.dataset.area);
+        const matchesType = !type || cardType.includes(type);
+        const matchesDistrict = !district || cardDistrict === district;
+        const matchesArea = cardArea >= areaFrom && cardArea <= areaTo;
+        const show = matchesType && matchesDistrict && matchesArea;
+
+        card.hidden = !show;
+        if (show) visible += 1;
+      });
+
+      count.textContent = `Показано объектов: ${visible}`;
+      emptyState.classList.toggle('is-visible', visible === 0);
+    }
+
+    filterForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      applyFilters();
+    });
+
+    filterForm.addEventListener('reset', () => {
+      setTimeout(applyFilters, 0);
+    });
+
+    filterForm.addEventListener('input', applyFilters);
+
+    document.querySelectorAll('[data-lead-form]').forEach((form) => {
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const note = form.querySelector('.form-note');
+        const submit = form.querySelector('button[type="submit"]');
+
+        if (!form.checkValidity()) {
+          form.reportValidity();
+          return;
+        }
+
+        note.textContent = 'Заявка зафиксирована в интерфейсе. Для продакшена подключите CRM или обработчик формы.';
+        submit.disabled = true;
+        submit.textContent = 'Заявка отправлена';
+
+        setTimeout(() => {
+          submit.disabled = false;
+          submit.textContent = submit.dataset.defaultText || 'Отправить заявку';
+        }, 3500);
+      });
+    });
+
+    document.querySelectorAll('[data-lead-form] button[type="submit"]').forEach((button) => {
+      button.dataset.defaultText = button.textContent;
+    });
+
+    document.getElementById('year').textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>
