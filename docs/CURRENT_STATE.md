@@ -61,3 +61,10 @@
 - Развернуто базовое приложение `Next.js 14+` с TypeScript и Tailwind в `apps/web`.
 - Настроены базовые конфиги Firebase для `App Hosting`.
 - Монорепозиторий готов к миграции дизайна.
+
+## Stage 2: Migrate Design to Next.js Web MVP (Завершено)
+- Проведен анализ `index.html`.
+- Создана документация `DESIGN_SYSTEM.md` и `TAILWIND_MAPPING.md`.
+- Настроен `globals.css` под Tailwind v4 с использованием дизайн-токенов.
+- Реализованы компоненты: `Header`, `Hero`, `Features`, `Objects`, `Footer`.
+- Собрана главная страница `apps/web/src/app/page.tsx` на основе утвержденного дизайна.
