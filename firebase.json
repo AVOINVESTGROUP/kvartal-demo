@@ -1,0 +1,20 @@
+{
+  "hosting": {
+    "site": "kvartal-web-dev",
+    "public": "apps/web/public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "apphosting": {
+    "rootDirectory": "apps/web"
+  }
+}
