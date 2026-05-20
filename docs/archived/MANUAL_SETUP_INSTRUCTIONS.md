@@ -1,4 +1,5 @@
-# 🚀 SETUP INSTRUCTIONS: Manual Folder Organization
+﻿[ARCHIVED — NOT CURRENT]
+# рџљЂ SETUP INSTRUCTIONS: Manual Folder Organization
 
 **Goal:** Create proper project structure by moving files  
 **Time:** 5 minutes  
@@ -34,13 +35,13 @@ mkdir .agents\rules .agents\skills .vscode docs\design docs\archived infra\gcp i
 After folders are created, move these files:
 
 ### Move to `docs/`:
-- `docs-00-KVARTAL-OVERVIEW.md` → `docs/00-OVERVIEW.md`
-- `KVARTAL_DOCUMENTATION_ARCHITECTURE.md` → `docs/STRUCTURE.md`
-- `PHASE_1_READY.md` → `docs/PHASE_1_DECISIONS.md`
-- `SESSION_SUMMARY.md` → `docs/SESSION_SUMMARY.md`
+- `docs-00-KVARTAL-OVERVIEW.md` в†’ `docs/00-OVERVIEW.md`
+- `KVARTAL_DOCUMENTATION_ARCHITECTURE.md` в†’ `docs/STRUCTURE.md`
+- `PHASE_1_READY.md` в†’ `docs/PHASE_1_DECISIONS.md`
+- `SESSION_SUMMARY.md` в†’ `docs/SESSION_SUMMARY.md`
 
 ### Move to `.agents/skills/`:
-- `SKILL-kvartal-architecture-design.md` → `.agents/skills/kvartal-architecture-design.skill.md`
+- `SKILL-kvartal-architecture-design.md` в†’ `.agents/skills/kvartal-architecture-design.skill.md`
 
 ### Move to `docs/archived/`:
 - `STAGE_0_SETUP_GUIDE.md`
@@ -59,13 +60,13 @@ After folders are created, move these files:
 ## Step 3: Keep in Root
 
 These files stay in `C:\Dev\Kvartal\`:
-- ✅ `AGENTS.md` — Agent definitions
-- ✅ `README.md` — Project overview
-- ✅ `index.html` — Approved design reference
-- ✅ `CLAUDE_COPILOT_OPERATING_SYSTEM.md` — AI operating system
-- ✅ `.gitignore` — Git configuration (create when initializing repo)
-- ✅ `create-structure.py` — Script (can delete after use)
-- ✅ `create-structure.bat` — Script (can delete after use)
+- вњ… `AGENTS.md` вЂ” Agent definitions
+- вњ… `README.md` вЂ” Project overview
+- вњ… `index.html` вЂ” Approved design reference
+- вњ… `CLAUDE_COPILOT_OPERATING_SYSTEM.md` вЂ” AI operating system
+- вњ… `.gitignore` вЂ” Git configuration (create when initializing repo)
+- вњ… `create-structure.py` вЂ” Script (can delete after use)
+- вњ… `create-structure.bat` вЂ” Script (can delete after use)
 
 ---
 
@@ -75,29 +76,29 @@ After moving files, your root should look like this:
 
 ```
 C:\Dev\Kvartal\
-├── .agents/
-│   ├── rules/  [will be populated next]
-│   └── skills/
-│       └── kvartal-architecture-design.skill.md
-├── .vscode/  [will be populated next]
-├── docs/
-│   ├── archived/
-│   │   ├── STAGE_0_SETUP_GUIDE.md
-│   │   ├── STAGE_0_EXECUTION_REPORT.md
-│   │   └── KVARTAL_STAGE_0_ALL_FILES.md
-│   ├── design/  [will be populated next]
-│   ├── 00-OVERVIEW.md
-│   ├── STRUCTURE.md
-│   ├── PHASE_1_DECISIONS.md
-│   └── SESSION_SUMMARY.md
-├── infra/
-│   ├── gcp/
-│   └── firebase/
-├── scripts/
-├── AGENTS.md
-├── README.md
-├── index.html
-└── CLAUDE_COPILOT_OPERATING_SYSTEM.md
+в”њв”Ђв”Ђ .agents/
+в”‚   в”њв”Ђв”Ђ rules/  [will be populated next]
+в”‚   в””в”Ђв”Ђ skills/
+в”‚       в””в”Ђв”Ђ kvartal-architecture-design.skill.md
+в”њв”Ђв”Ђ .vscode/  [will be populated next]
+в”њв”Ђв”Ђ docs/
+в”‚   в”њв”Ђв”Ђ archived/
+в”‚   в”‚   в”њв”Ђв”Ђ STAGE_0_SETUP_GUIDE.md
+в”‚   в”‚   в”њв”Ђв”Ђ STAGE_0_EXECUTION_REPORT.md
+в”‚   в”‚   в””в”Ђв”Ђ KVARTAL_STAGE_0_ALL_FILES.md
+в”‚   в”њв”Ђв”Ђ design/  [will be populated next]
+в”‚   в”њв”Ђв”Ђ 00-OVERVIEW.md
+в”‚   в”њв”Ђв”Ђ STRUCTURE.md
+в”‚   в”њв”Ђв”Ђ PHASE_1_DECISIONS.md
+в”‚   в””в”Ђв”Ђ SESSION_SUMMARY.md
+в”њв”Ђв”Ђ infra/
+в”‚   в”њв”Ђв”Ђ gcp/
+в”‚   в””в”Ђв”Ђ firebase/
+в”њв”Ђв”Ђ scripts/
+в”њв”Ђв”Ђ AGENTS.md
+в”њв”Ђв”Ђ README.md
+в”њв”Ђв”Ђ index.html
+в””в”Ђв”Ђ CLAUDE_COPILOT_OPERATING_SYSTEM.md
 ```
 
 ---
@@ -118,8 +119,8 @@ After moving files, verify:
 ## After Moving Files
 
 Once complete, reply with:
-- ✅ "Done" or
-- ✅ "Folders created, files moved, ready for next step"
+- вњ… "Done" or
+- вњ… "Folders created, files moved, ready for next step"
 
 Then I will:
 1. Create content files in `.agents/rules/` (6 rules files)
@@ -133,3 +134,4 @@ Then I will:
 **Time to complete:** ~5 minutes  
 **Difficulty:** Easy (drag-and-drop in File Explorer)  
 **Next:** Reply when done, and I'll populate remaining files
+

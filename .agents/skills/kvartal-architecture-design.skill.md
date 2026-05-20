@@ -1,6 +1,14 @@
-# SKILL: kvartal-architecture-design.skill.md
+---
+id: kvartal-architecture-design
+type: skill
+version: 1.1
+status: active
+last_updated: 2026-05-20
+related: [docs/01-ARCHITECTURE.md]
+---
 
-**Skill Name:** KVARTAL Architecture & Design  
+# Skill: KVARTAL Architecture & Design
+
 **Owner:** Claude Copilot (Primary Architect)  
 **Specialty:** Multi-market platform design, deal room mechanics, compliance layers  
 **Input:** Requirements, user flows, data model decisions  

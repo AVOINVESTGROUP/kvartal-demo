@@ -11,7 +11,14 @@ C:\Dev\Kvartal\
 │   │   ├── 02-two-market-architecture.md
 │   │   ├── 03-deal-room-state-machine.md
 │   │   ├── 04-compliance-guardrails.md
-│   │   └── 05-step-by-step-execution.md
+│   │   ├── 05-step-by-step-execution.md
+│   │   ├── 06-security-and-secrets.md
+│   │   ├── 07-code-style-typescript.md
+│   │   ├── 08-reporting-template.md
+│   │   ├── 09-git-workflow.md
+│   │   ├── 10-approved-design-preservation.md
+│   │   ├── 11-documentation-hierarchy.md
+│   │   └── 12-mistakes-log.md
 │   └── skills/
 │       ├── kvartal-architecture-design.skill.md
 │       ├── kvartal-deal-room-implementation.skill.md
