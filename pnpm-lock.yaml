@@ -30,6 +30,9 @@ importers:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
     devDependencies:
+      '@tailwindcss/oxide-linux-x64-gnu':
+        specifier: ^4.3.0
+        version: 4.3.0
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.0
@@ -798,7 +801,6 @@ packages:
     os: [linux]
     requiresBuild: true
     dev: true
-    optional: true
 
   /@tailwindcss/oxide-linux-x64-musl@4.3.0:
     resolution: {integrity: sha512-Z0IADbDo8bh6I7h2IQMx601AdXBLfFpEdUotft86evd/8ZPflZe9COPO8Q1vw+pfLWIUo9zN/JGZvwuAJqduqg==}
@@ -2021,6 +2023,7 @@ packages:
   /eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    hasBin: true
     peerDependencies:
       jiti: '*'
     peerDependenciesMeta:
@@ -2856,6 +2859,7 @@ packages:
   /next@16.2.6(@babel/core@7.29.0)(react-dom@19.2.4)(react@19.2.4):
     resolution: {integrity: sha512-qOVgKJg1+At15NpeUP+eJgCHvTCgXsogweq87Ri/Ix7PkqQHg4sdaXmSFqKlgaIXE4kW0g25LE68W87UANlHtw==}
     engines: {node: '>=20.9.0'}
+    hasBin: true
     peerDependencies:
       '@opentelemetry/api': ^1.1.0
       '@playwright/test': ^1.51.1
@@ -3627,6 +3631,7 @@ packages:
 
   /update-browserslist-db@1.2.3(browserslist@4.28.2):
     resolution: {integrity: sha512-Js0m9cx+qOgDxo0eMiFGEueWztz+d4+M3rGlmKPT+T4IS/jP4ylw3Nwpu6cpTTP8R1MAC1kF4VbdLt3ARf209w==}
+    hasBin: true
     peerDependencies:
       browserslist: '>= 4.21.0'
     dependencies:
