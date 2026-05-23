@@ -1,61 +1,83 @@
 export const Hero = () => {
   return (
-    <section className="relative overflow-hidden text-white bg-[radial-gradient(circle_at_80%_10%,rgba(201,166,107,0.22),transparent_34%),linear-gradient(130deg,rgba(7,29,58,0.98),rgba(7,29,58,0.86)),linear-gradient(45deg,#0d2e58,#071d3a)]">
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[length:56px_56px] [mask-image:linear-gradient(to_bottom,rgba(0,0,0,0.8),transparent)] pointer-events-none"></div>
-      
-      <div className="relative max-w-kv-container mx-auto px-5 grid lg:grid-cols-[1fr,420px] gap-12 items-center py-20 lg:py-24">
-        <div>
-          <div className="flex items-center gap-2.5 mb-4.5 text-white/80 text-[13px] font-extrabold uppercase tracking-widest before:content-[''] before:w-[34px] before:h-[2px] before:bg-kv-gold">
+    <section className="kv-hero relative isolate overflow-hidden text-white">
+      <div className="kv-hero-grid absolute inset-0 pointer-events-none" />
+
+      <div className="relative z-10 mx-auto w-full max-w-kv-container px-5 py-12 sm:py-14 lg:py-18 xl:py-20">
+        <div className="min-w-0 max-w-[720px]">
+          <div className="mb-4 flex items-center gap-2.5 text-[12px] font-extrabold uppercase tracking-widest text-white/80 before:h-[2px] before:w-[34px] before:bg-kv-gold before:content-[''] sm:text-[13px]">
             Elite Commercial Real Estate
           </div>
-          <h1 className="text-4xl lg:text-7xl font-black leading-[0.98] tracking-[-0.045em] max-w-[780px]">
+
+          <h1 className="max-w-[680px] text-[28px] font-black leading-[1.06] tracking-0 min-[420px]:text-[34px] sm:text-[54px] sm:leading-[0.98] lg:text-[64px] xl:text-[72px]">
             Продажа и аренда особняков в Москве
           </h1>
-          <p className="max-w-[670px] mt-6 text-xl text-white/78 leading-relaxed">
-            Подбор уникальных объектов недвижимости в ЦАО для вашего бизнеса. Офф-маркет предложения и полное сопровождение.
+
+          <p className="mt-5 max-w-[620px] text-base leading-relaxed text-white/78 sm:text-xl">
+            Подбор уникальных объектов недвижимости в ЦАО для вашего бизнеса.
+            Офф-маркет предложения и полное сопровождение.
           </p>
-          
-          <div className="flex flex-wrap gap-3.5 mt-8.5">
-            <button className="bg-kv-red text-white px-8 py-4 rounded-full font-extrabold hover:bg-kv-red-dark transition-all hover:-translate-y-px shadow-xl cursor-pointer">
+
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button className="min-h-[52px] rounded-full bg-kv-red px-6 py-3.5 font-extrabold text-white shadow-xl transition-all hover:-translate-y-px hover:bg-kv-red-dark cursor-pointer sm:px-8">
               Смотреть объекты
             </button>
-            <button className="bg-white/10 border border-white/28 text-white px-8 py-4 rounded-full font-extrabold hover:bg-white/20 transition-all cursor-pointer">
+            <button className="min-h-[52px] rounded-full border border-white/28 bg-white/10 px-6 py-3.5 font-extrabold text-white transition-all hover:bg-white/20 cursor-pointer sm:px-8">
               О компании
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-10.5 max-w-[760px]">
-            <div className="p-4.5 border border-white/12 rounded-2xl bg-white/6">
+          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
               <span className="block text-3xl font-black text-white">15+</span>
-              <span className="block mt-1 text-white/68 text-[13px]">лет на рынке</span>
+              <span className="mt-1 block text-[13px] text-white/68">лет на рынке</span>
             </div>
-            <div className="p-4.5 border border-white/12 rounded-2xl bg-white/6">
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
               <span className="block text-3xl font-black text-white">250+</span>
-              <span className="block mt-1 text-white/68 text-[13px]">объектов в ЦАО</span>
+              <span className="mt-1 block text-[13px] text-white/68">объектов в ЦАО</span>
             </div>
-            <div className="p-4.5 border border-white/12 rounded-2xl bg-white/6">
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
               <span className="block text-3xl font-black text-white">48</span>
-              <span className="block mt-1 text-white/68 text-[13px]">сделок в 2023</span>
+              <span className="mt-1 block text-[13px] text-white/68">сделок в 2023</span>
             </div>
           </div>
-        </div>
 
-        <div className="p-7 border border-white/16 rounded-kv-main bg-white/10 shadow-2xl backdrop-blur-xl">
-          <h2 className="text-2xl font-bold mb-2.5 leading-tight">Подобрать объект</h2>
-          <p className="text-white/72 mb-5 text-[15px]">Оставьте заявку, и мы подготовим подборку под ваш запрос за 15 минут</p>
-          
-          <form className="grid gap-3">
-            <input type="text" placeholder="Ваше имя" className="w-full p-3.5 rounded-kv-form bg-white text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18" />
-            <input type="tel" placeholder="+7 (___) ___-__-__" className="w-full p-3.5 rounded-kv-form bg-white text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18" />
-            <textarea placeholder="Опишите ваши требования (площадь, район, бюджет)" className="w-full p-3.5 rounded-kv-form bg-white text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18 min-h-[96px] resize-none"></textarea>
-            <button type="submit" className="bg-kv-red text-white py-4 rounded-full font-extrabold hover:bg-kv-red-dark transition-all mt-2 shadow-lg cursor-pointer">
-              Получить подборку
-            </button>
-            <div className="flex gap-2.5 text-[12px] text-white/68 mt-2 items-start">
-              <input type="checkbox" className="mt-1" defaultChecked />
-              <span>Я согласен с политикой обработки персональных данных</span>
+          <div className="mt-7 rounded-kv-main border border-white/16 bg-white/10 p-4 shadow-2xl backdrop-blur-xl sm:p-5">
+            <div className="mb-3">
+              <h2 className="text-xl font-bold leading-tight">Подобрать объект</h2>
+              <p className="mt-1 text-[13px] leading-snug text-white/68">
+                Короткая заявка - подборка за 15 минут
+              </p>
             </div>
-          </form>
+
+            <form className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[1fr,1fr] xl:grid-cols-[1fr,1fr,1.1fr,auto]">
+              <input
+                type="text"
+                placeholder="Ваше имя"
+                className="h-11 w-full rounded-kv-form bg-white px-3.5 text-sm text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18"
+              />
+              <input
+                type="tel"
+                placeholder="+7 (___) ___-__-__"
+                className="h-11 w-full rounded-kv-form bg-white px-3.5 text-sm text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18"
+              />
+              <input
+                type="text"
+                placeholder="Задача и бюджет"
+                className="h-11 w-full rounded-kv-form bg-white px-3.5 text-sm text-kv-ink outline-none focus:ring-4 focus:ring-kv-gold/18 sm:col-span-2 xl:col-span-1"
+              />
+              <button
+                type="submit"
+                className="h-11 rounded-full bg-kv-red px-5 text-sm font-extrabold text-white shadow-lg transition-all hover:bg-kv-red-dark cursor-pointer sm:col-span-2 xl:col-span-1"
+              >
+                Отправить
+              </button>
+              <label className="flex gap-2 text-[11px] leading-snug text-white/62 sm:col-span-2 xl:col-span-4">
+                <input type="checkbox" className="mt-0.5" defaultChecked />
+                <span>Согласие с политикой обработки персональных данных</span>
+              </label>
+            </form>
+          </div>
         </div>
       </div>
     </section>

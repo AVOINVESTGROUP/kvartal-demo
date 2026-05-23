@@ -6,7 +6,7 @@ import { Footer } from "@/components/Footer";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-kv-bg">
+    <main className="min-h-screen overflow-x-hidden bg-kv-bg">
       {/* Topline */}
       <div className="bg-kv-navy text-white/80 text-[13px] py-2">
         <div className="max-w-kv-container mx-auto px-5 flex justify-between items-center gap-5">
