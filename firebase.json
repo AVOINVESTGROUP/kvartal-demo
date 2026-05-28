@@ -14,7 +14,22 @@
       }
     ]
   },
-  "apphosting": {
-    "rootDirectory": "apps/web"
-  }
+  "apphosting": [
+    {
+      "backendId": "kvartal-web-dev",
+      "rootDirectory": "apps/web"
+    },
+    {
+      "backendId": "fixer-platform-admin-dev",
+      "rootDirectory": "apps/platform-admin"
+    },
+    {
+      "backendId": "partner-admin-dev",
+      "rootDirectory": "apps/partner-admin"
+    },
+    {
+      "backendId": "partner-site-dev",
+      "rootDirectory": "apps/partner-site"
+    }
+  ]
 }

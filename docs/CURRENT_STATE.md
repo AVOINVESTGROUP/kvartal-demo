@@ -334,3 +334,16 @@
   - `apps/partner-site/public/dubai`
   - `apps/partner-site/public/yerevan`
 - The shared public inventory is rendered through a reusable partner-site component while preserving separate partner brand/config ownership.
+
+## App Hosting Split Preparation (2026-05-28)
+
+- Prepared separate Firebase App Hosting config entries for:
+  - `kvartal-web-dev` -> `apps/web`;
+  - `fixer-platform-admin-dev` -> `apps/platform-admin`;
+  - `partner-admin-dev` -> `apps/partner-admin`;
+  - `partner-site-dev` -> `apps/partner-site`.
+- Added API environment bindings:
+  - `platform-admin` -> `kvartal-platform-api`;
+  - `partner-admin` -> `kvartal-office-api` as current partner API backend;
+  - `partner-site` -> `kvartal-office-api` as current public-safe API backend.
+- Frontend apps do not receive direct `DATABASE_URL`; Cloud SQL/PostgreSQL remains reachable only through Cloud Run API services.
