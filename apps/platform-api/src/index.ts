@@ -1,5 +1,5 @@
 import { createServer, type ServerResponse } from "node:http";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 export const serviceName = "platform-api";
 
@@ -15,30 +15,29 @@ export const ownedRoutes = [
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
 
-type PlatformOrganizationRow = Prisma.OrganizationGetPayload<{
-  include: {
-    offices: {
-      include: {
-        defaultMarket: true;
-        _count: {
-          select: {
-            propertyObjects: true;
-            clientIntents: true;
-          };
-        };
-      };
-    };
-    _count: {
-      select: {
-        offices: true;
-        propertyObjects: true;
-        clientIntents: true;
-      };
-    };
-  };
-}>;
+type PlatformOfficeRow = {
+  id: string;
+  slug: string;
+  legalName: string;
+  city: string;
+  country: string;
+  status: string;
+  defaultMarket: { slug: string; city: string; country: string } | null;
+  _count: { propertyObjects: number; clientIntents: number };
+};
 
-type PlatformOfficeRow = PlatformOrganizationRow["offices"][number];
+type PlatformOrganizationRow = {
+  id: string;
+  slug: string;
+  legalName: string;
+  countryOfRegistration: string;
+  operatingCountryCodes: string[];
+  status: string;
+  defaultLanguage: string;
+  defaultCurrency: string;
+  _count: { offices: number; propertyObjects: number; clientIntents: number };
+  offices: PlatformOfficeRow[];
+};
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
