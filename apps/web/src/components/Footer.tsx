@@ -1,22 +1,39 @@
 export const Footer = () => {
   return (
-    <footer className="bg-kv-navy text-white/72 py-8">
-      <div className="max-w-kv-container mx-auto px-5">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-7">
-          <div className="flex items-center gap-3.5 min-w-max text-white">
-            <div className="w-12 h-12 border-3 border-white/70 flex items-center justify-center text-kv-red font-extrabold text-3xl leading-none">
+    <footer id="contacts" className="bg-kv-navy py-8 text-white/72">
+      <div className="mx-auto max-w-kv-container px-5">
+        <div className="flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-max items-center gap-3.5 text-white">
+            <div className="flex h-12 w-12 items-center justify-center border-[3px] border-white/70 text-3xl font-extrabold leading-none text-kv-red">
               K
             </div>
             <div>
-              <span className="block text-2xl font-extrabold tracking-[0.14em] leading-none uppercase">Kvartal</span>
-              <span className="block mt-1.5 text-[10px] font-bold tracking-[0.28em] uppercase whitespace-nowrap">Commercial Real Estate</span>
+              <span className="block text-2xl font-extrabold uppercase leading-none tracking-[0.14em]">Kvartal</span>
+              <span className="mt-1.5 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.28em]">
+                Центр недвижимости
+              </span>
             </div>
           </div>
-          
-          <div className="flex flex-wrap justify-center md:justify-end gap-4.5 text-sm">
-            <a href="#" className="border-b border-white/22 hover:text-white transition-colors">Политика конфиденциальности</a>
-            <a href="#" className="border-b border-white/22 hover:text-white transition-colors">Пользовательское соглашение</a>
-            <p className="w-full md:w-auto text-center md:text-right">© 2026 KVARTAL. Все права защищены.</p>
+
+          <div className="max-w-xl text-sm leading-relaxed md:text-right">
+            <p className="font-bold text-white">ООО «КВАРТАЛ»</p>
+            <p>107113, г. Москва, Сокольническая площадь, д. 4А, пом. 34/3</p>
+            <p>
+              Тел.:{" "}
+              <a href="tel:+79772919573" className="border-b border-white/22 text-white transition-colors hover:text-white/80">
+                +7 (977) 291-95-73
+              </a>
+            </p>
+            <p>
+              e-mail:{" "}
+              <a href="mailto:info@kvartal-pro.ru" className="border-b border-white/22 text-white transition-colors hover:text-white/80">
+                info@kvartal-pro.ru
+              </a>
+            </p>
+            <p className="mt-3 text-white/62">
+              ИНН 9718286440 | КПП 771801001 | ОГРН 1257700412694 | Р/С 40702810802730006807 | АО «АЛЬФА-БАНК» | БИК 044525593
+            </p>
+            <p className="mt-3 text-white/62">© 2026 KVARTAL. Все права защищены.</p>
           </div>
         </div>
       </div>

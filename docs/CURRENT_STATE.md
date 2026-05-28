@@ -69,3 +69,21 @@
 - Реализованы компоненты: `Header`, `Hero`, `Features`, `Objects`, `Footer`.
 - Собрана главная страница `apps/web/src/app/page.tsx` на основе утвержденного дизайна.
 - Восстановлена витрина объектов `#objects` в Next.js: фильтр, счетчик, empty-state и 5 карточек из утвержденного `index.html`.
+# Stage 3 Resume Note
+
+- Created `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` as the pause/resume document.
+- Recommended MVP direction: Firestore as SSOT for `PropertyObject`, Firebase Auth for `/admin`, Storage for object photos.
+- Current public objects are still hardcoded in `apps/web/src/components/Objects.tsx`; Stage 3 moves them to Firestore.
+- Before implementation: explicitly approve Firestore, admin auth approach, migration method for the current 5 objects, and rollout permission.
+
+## Stage 3 Scope Expansion Note (2026-05-28)
+
+- Added `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`.
+- Project direction expanded from a single-company brokerage site to a developer-owned multi-office platform.
+- Initial offices/markets to support conceptually: Moscow, Tbilisi, Yerevan.
+- Each connected office may have its own website, language, currency defaults, agents, and leads.
+- Property objects belong to the contributing office; the contributor remains the information rights holder.
+- Shared SSOT must support inter-office deal rooms: seller/owner-side office + buyer-side office.
+- Platform Admin and Office Admin are separate administrative layers.
+- Future architecture must prepare for multilingual content, multicurrency prices, subscriptions/monetization, and public investment market analytics.
+- Stage 3 implementation plan must be revised before coding to include multi-office ownership fields and platform/office admin separation.

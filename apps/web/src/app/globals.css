@@ -24,6 +24,7 @@
   --color-kv-gold: var(--gold);
   --color-kv-muted: var(--muted);
   --color-kv-line: var(--line);
+  --color-kv-bg: var(--background);
   --color-kv-bg-warm: var(--bg-warm);
   --color-kv-ink: var(--foreground);
   
