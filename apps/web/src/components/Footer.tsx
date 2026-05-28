@@ -1,18 +1,18 @@
+import Image from "next/image";
+
 export const Footer = () => {
   return (
     <footer id="contacts" className="bg-kv-navy py-8 text-white/72">
       <div className="mx-auto max-w-kv-container px-5">
         <div className="flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
-          <div className="flex min-w-max items-center gap-3.5 text-white">
-            <div className="flex h-12 w-12 items-center justify-center border-[3px] border-white/70 text-3xl font-extrabold leading-none text-kv-red">
-              K
-            </div>
-            <div>
-              <span className="block text-2xl font-extrabold uppercase leading-none tracking-[0.14em]">Kvartal</span>
-              <span className="mt-1.5 block whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.28em]">
-                Центр недвижимости
-              </span>
-            </div>
+          <div className="rounded bg-white p-2">
+            <Image
+              src="/images/kvartal-logo.png"
+              alt="KVARTAL центр недвижимости"
+              width={240}
+              height={72}
+              className="h-auto w-[210px] md:w-[240px]"
+            />
           </div>
 
           <div className="max-w-xl text-sm leading-relaxed md:text-right">

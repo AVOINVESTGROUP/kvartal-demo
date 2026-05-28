@@ -125,7 +125,7 @@ export const Objects = () => {
               Витрина объектов
             </span>
             <h2 id="objects-title" className="max-w-3xl text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">
-              Реальные объекты из презентационных материалов KVARTAL
+              Актуальные предложения для покупки и инвестиций
             </h2>
           </div>
         </div>
