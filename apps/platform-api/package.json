@@ -12,7 +12,8 @@
   "dependencies": {
     "@kvartal/auth": "workspace:*",
     "@kvartal/db": "workspace:*",
-    "@kvartal/domain": "workspace:*"
+    "@kvartal/domain": "workspace:*",
+    "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.10",

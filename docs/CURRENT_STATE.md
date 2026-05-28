@@ -235,6 +235,37 @@
   - canonical URL: `https://kvartal-office-api-qslxzoismq-ez.a.run.app`
 - Both services are `Ready=True` and container startup probes passed.
 - Organization policy currently blocks `allUsers` Cloud Run invoker binding; services remain protected by IAM.
+- Added `/readyz` endpoints that check live PostgreSQL connectivity:
+  - `platform-api`: returns `organizationCount`
+  - `office-api`: returns `officeCount`
+- Latest successful revisions:
+  - `kvartal-platform-api-00003-jkl`
+  - `kvartal-office-api-00003-8nm`
+- Readiness smoke tests passed:
+  - `platform-api`: `{"ok":true,"service":"platform-api","database":"ready","organizationCount":3}`
+  - `office-api`: `{"ok":true,"service":"office-api","database":"ready","officeCount":3}`
+- Bootstrap seed is idempotent and currently creates:
+  - markets: Moscow, Tbilisi, Dubai
+  - organizations: `fixer-guru`, `kvartal-moscow`, `apart4u-tbilisi`
+  - offices: platform operator, Moscow office, Tbilisi office
+
+## Information Rights Boundary (2026-05-28)
+
+- Data is private by default.
+- The organization/office that enters an object, document, intake, or other operational record is the information rights holder.
+- Other organizations must not receive access by default.
+- Allowed access paths:
+  - same owner organization/office membership;
+  - explicitly published public showcase data;
+  - explicit deal room or co-broker workflow;
+  - `platform_owner` audited access.
+- Public showcase exposure requires both:
+  - `visibility = public`
+  - `publicationStatus = published`
+- Legal documents, private economics, lead PII, and confidential AI verification data are not public showcase data unless a separate explicit publication rule is later approved.
+- Added code-level access helpers in `packages/auth/src/index.ts`:
+  - `canAccessOwnedInformation`
+  - `canExposeOnPublicShowcase`
 
 ## Google Data Management Layer (2026-05-28)
 

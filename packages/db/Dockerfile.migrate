@@ -13,4 +13,4 @@ COPY packages/db ./packages/db
 
 RUN pnpm install --frozen-lockfile --filter @kvartal/db...
 
-CMD ["pnpm", "--filter", "@kvartal/db", "prisma:migrate:deploy"]
+CMD ["pnpm", "--filter", "@kvartal/db", "bootstrap"]
