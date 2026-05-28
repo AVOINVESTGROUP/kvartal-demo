@@ -347,3 +347,35 @@
   - `partner-admin` -> `kvartal-office-api` as current partner API backend;
   - `partner-site` -> `kvartal-office-api` as current public-safe API backend.
 - Frontend apps do not receive direct `DATABASE_URL`; Cloud SQL/PostgreSQL remains reachable only through Cloud Run API services.
+
+## App Hosting Split Deployment (2026-05-28)
+
+- Created Firebase App Hosting backends in `kvartal-dev` / `europe-west4`:
+  - `fixer-platform-admin-dev`
+    - root: `apps/platform-admin`
+    - URL: `https://fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app`
+  - `partner-admin-dev`
+    - root: `apps/partner-admin`
+    - URL: `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app`
+  - `partner-site-dev`
+    - root: `apps/partner-site`
+    - URL: `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app`
+- Initial App Hosting builds completed successfully:
+  - `fixer-platform-admin-dev`: `build-2026-05-28-001`
+  - `partner-admin-dev`: `build-2026-05-28-001`
+  - `partner-site-dev`: `build-2026-05-28-001`
+- Initial App Hosting rollouts completed successfully:
+  - `fixer-platform-admin-dev`: `rollout-2026-05-28-001`
+  - `partner-admin-dev`: `rollout-2026-05-28-001`
+  - `partner-site-dev`: `rollout-2026-05-28-001`
+- Verified public responses:
+  - platform admin URL: `200`
+  - partner admin URL: `200`
+  - partner site `/apart4u`: `200`
+  - partner site `/dubai`: `200`
+  - partner site `/yerevan`: `200`
+- Granted `roles/run.invoker` on protected Cloud Run APIs to:
+  - `firebase-app-hosting-compute@kvartal-dev.iam.gserviceaccount.com`
+- Verified database-backed API readiness:
+  - `platform-api /readyz`: `database=ready`, `organizationCount=3`
+  - `office-api /readyz`: `database=ready`, `officeCount=3`
