@@ -2,7 +2,7 @@
 
 **Status:** active draft  
 **Last updated:** 2026-05-28  
-**Related:** `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`, `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`
+**Related:** `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`, `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/adr/0001-postgresql-mvp-ssot.md`
 
 ## 1. Purpose
 
@@ -11,9 +11,12 @@ This document defines the core data model for KVARTAL as a developer-owned multi
 The model must support:
 
 - multiple connected offices;
+- multiple independent organizations/legal entities;
+- organization-specific administrative structures;
 - separate local websites;
 - one shared property SSOT;
 - object information ownership;
+- legal documents for property objects and transactions;
 - office-owned leads;
 - inter-office deal rooms;
 - multilingual content;
@@ -26,6 +29,7 @@ The model must support:
 KVARTAL backend is the source of truth for:
 
 - `Office`
+- `Organization`
 - `Market`
 - `PropertyObject`
 - `ClientIntent`
@@ -46,7 +50,10 @@ CRM may receive leads or deal updates later, but CRM must not become the source 
 - Public users can see only published public objects.
 - Draft/private/network objects are not public.
 - Every critical change should be auditable.
+- Legal documents must have scoped access, review status, and audit trail.
 - Investment claims require source, date, and confidence.
+- AI may draft property records from unstructured data, but confirmed SSOT writes require human review and backend validation.
+- AI/open-source checks may support актуальность and plausibility verification, but they do not replace legal due diligence.
 
 ## 4. Common Types
 
@@ -77,13 +84,41 @@ type Price = {
 };
 ```
 
-## 5. Office
+## 5. Organization
 
-Represents a connected firm or local office.
+Represents an independent connected company, legal entity, partner network, or operating group.
+
+An organization may have one or more offices/branches in one or more countries.
+
+```ts
+type Organization = {
+  id: string;
+  slug: string;
+  legalName: string;
+  displayName: LocalizedText;
+  countryOfRegistration: string;
+  operatingCountryCodes: string[];
+  defaultLanguage: LanguageCode;
+  supportedLanguages: LanguageCode[];
+  defaultCurrency: CurrencyCode;
+  supportedCurrencies: CurrencyCode[];
+  status: "draft" | "active" | "suspended" | "archived";
+  subscriptionPlanId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+Initial organizations may map 1:1 to the first offices, but the schema must not assume that permanently.
+
+## 6. Office
+
+Represents a local office, branch, or city operation that belongs to an organization.
 
 ```ts
 type Office = {
   id: string;
+  organizationId: string;
   slug: string;
   legalName: string;
   displayName: LocalizedText;
@@ -95,7 +130,6 @@ type Office = {
   defaultCurrency: CurrencyCode;
   supportedCurrencies: CurrencyCode[];
   status: "draft" | "active" | "suspended" | "archived";
-  subscriptionPlanId?: string;
   websiteConfigId?: string;
   createdAt: string;
   updatedAt: string;
@@ -104,11 +138,11 @@ type Office = {
 
 Initial offices:
 
-- `moscow`
-- `tbilisi`
-- `yerevan`
+- `office_moscow`
+- `office_tbilisi`
+- `office_yerevan`
 
-## 6. Market
+## 7. Market
 
 Represents a geographic and regulatory market.
 
@@ -135,19 +169,27 @@ Initial markets:
 - Tbilisi / Georgia
 - Yerevan / Armenia
 
-## 7. User and Office Membership
+## 8. User, Organization Membership, and Office Membership
 
-Firebase Auth owns authentication identity. Firestore owns platform role and office membership.
+Firebase Auth may own authentication identity. PostgreSQL owns platform roles, organization membership, and office membership.
 
 ```ts
 type PlatformRole =
   | "platform_owner"
   | "platform_admin"
+  | "platform_analyst"
+  | "platform_viewer";
+
+type OrganizationRole =
+  | "organization_owner"
+  | "organization_admin";
+
+type OfficeRole =
   | "office_owner"
   | "office_admin"
   | "broker"
-  | "analyst"
-  | "viewer";
+  | "office_analyst"
+  | "office_viewer";
 
 type AppUser = {
   uid: string;
@@ -159,24 +201,47 @@ type AppUser = {
   updatedAt: string;
 };
 
-type OfficeUser = {
+type OrganizationMembership = {
   id: string;
+  organizationId: string;
+  uid: string;
+  roles: OrganizationRole[];
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type OfficeMembership = {
+  id: string;
+  organizationId: string;
   officeId: string;
   uid: string;
-  roles: PlatformRole[];
+  roles: OfficeRole[];
   active: boolean;
   createdAt: string;
   updatedAt: string;
 };
 ```
 
-## 8. SiteConfig
+Role rules:
+
+- Platform roles are global and are enforced by `platform-api`.
+- Organization roles are scoped to one organization and are enforced by `office-api`.
+- Office roles are scoped to exactly one office membership and are enforced by `office-api`.
+- Platform role does not automatically create office membership.
+- Organization/office role does not grant platform access.
+- Any request with office-scoped permissions must resolve one `activeOfficeId`.
+- Any request with organization-scoped permissions must resolve one `activeOrganizationId`.
+- Lead PII access must be checked separately from generic lead access.
+
+## 9. SiteConfig
 
 Represents a local office website configuration.
 
 ```ts
 type SiteConfig = {
   id: string;
+  organizationId: string;
   officeId: string;
   domain?: string;
   subdomain?: string;
@@ -194,13 +259,47 @@ type SiteConfig = {
 };
 ```
 
-## 9. PropertyObject
+## 10. PropertyObject
 
 Represents a real property object in the shared database.
 
+The property database must support simple real estate objects first, but must not be limited to apartments/houses.
+
+Stage 3 minimum asset classes:
+
+- `land`
+- `apartment`
+- `house`
+
+The schema must be expandable to:
+
+- warehouses and industrial bases;
+- factories and production complexes;
+- mixed-use sites;
+- hotels and commercial buildings;
+- development projects;
+- investment projects;
+- multi-component property/economic structures.
+
 ```ts
+type AssetClass =
+  | "land"
+  | "apartment"
+  | "house"
+  | "warehouse"
+  | "industrial_site"
+  | "factory"
+  | "hotel"
+  | "office"
+  | "retail"
+  | "mixed_use"
+  | "development_project"
+  | "investment_project"
+  | "other";
+
 type PropertyObject = {
   id: string;
+  ownerOrganizationId: string;
   ownerOfficeId: string;
   createdByUserId: string;
   marketId: string;
@@ -213,18 +312,18 @@ type PropertyObject = {
   addressDisplay: LocalizedText;
   addressPrivate?: string;
 
-  assetClass:
-    | "land"
-    | "warehouse"
-    | "hotel"
-    | "office"
-    | "retail"
-    | "mixed"
-    | "investment"
-    | "other";
+  assetClass: AssetClass;
+  assetSubtype?: string;
 
   areaSqm?: number;
   landAreaSqm?: number;
+  buildingAreaSqm?: number;
+  rentableAreaSqm?: number;
+  floorNumber?: number;
+  floorsTotal?: number;
+  roomsCount?: number;
+  bedroomsCount?: number;
+  bathroomsCount?: number;
   cadastralNumber?: string;
   price: Price;
 
@@ -238,6 +337,7 @@ type PropertyObject = {
   };
 
   rights: {
+    informationOwnerOrganizationId: string;
     informationOwnerOfficeId: string;
     canBeShownByOtherOffices: boolean;
     requiresOwnerOfficeApprovalForLead: boolean;
@@ -249,19 +349,311 @@ type PropertyObject = {
 };
 ```
 
+### Property Extension Model
+
+The core `PropertyObject` should contain only fields shared by most objects. Specialized details should live in related tables so the model can grow without repeatedly changing the core table.
+
+Recommended extension tables:
+
+```text
+property_object_components
+property_object_attributes
+property_object_economics
+property_object_legal_details
+property_object_utilities
+property_object_transport_access
+property_object_development_params
+property_object_operations
+```
+
+### Property Components
+
+Use components for multi-part assets such as factories, bases, mixed-use sites, or investment projects.
+
+Examples:
+
+```text
+Factory object
+  -> land plot
+  -> production building
+  -> warehouse
+  -> office/admin building
+  -> utility infrastructure
+
+Investment project
+  -> land
+  -> permitted development volume
+  -> construction stage
+  -> projected revenue model
+```
+
+```ts
+type PropertyObjectComponent = {
+  id: string;
+  propertyObjectId: string;
+  componentType:
+    | "land_plot"
+    | "building"
+    | "apartment_unit"
+    | "house"
+    | "warehouse"
+    | "production_facility"
+    | "office_block"
+    | "retail_unit"
+    | "utility_infrastructure"
+    | "development_phase"
+    | "economic_unit"
+    | "other";
+  title: LocalizedText;
+  description?: LocalizedText;
+  areaSqm?: number;
+  landAreaSqm?: number;
+  cadastralNumber?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+### Property Attributes
+
+Use attributes for flexible characteristics that vary by asset class.
+
+Examples:
+
+```text
+land:
+  permitted_use
+  land_category
+  road_access
+  utilities_available
+
+apartment:
+  rooms_count
+  floor_number
+  finishing
+  building_year
+
+factory:
+  power_capacity_kw
+  ceiling_height_m
+  crane_capacity_t
+  gas_available
+  rail_access
+```
+
+```ts
+type PropertyObjectAttribute = {
+  id: string;
+  propertyObjectId: string;
+  componentId?: string;
+  key: string;
+  valueText?: LocalizedText;
+  valueNumber?: number;
+  valueBoolean?: boolean;
+  valueDate?: string;
+  unit?: string;
+  group?: string;
+  public: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+### Property Economics
+
+Use economics for investment/project/business indicators.
+
+```ts
+type PropertyObjectEconomics = {
+  id: string;
+  propertyObjectId: string;
+  price?: Price;
+  rentalIncomeMonthly?: MoneyValue;
+  operatingExpensesMonthly?: MoneyValue;
+  noiAnnual?: MoneyValue;
+  capRatePercent?: number;
+  paybackYears?: number;
+  occupancyPercent?: number;
+  projectedRevenue?: MoneyValue;
+  projectedCost?: MoneyValue;
+  source?: string;
+  confidence?: "high" | "medium" | "low" | "unsupported";
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+Investment/economic fields must include source/confidence when used publicly. No guaranteed return claims.
+
+### AI Property Intake
+
+Object creation should support AI-assisted extraction from unstructured user-provided data.
+
+AI-created data is a draft until a human office user confirms it.
+
+Recommended tables:
+
+```text
+property_intake_submissions
+property_ai_drafts
+property_ai_extraction_events
+property_ai_external_checks
+```
+
+```ts
+type PropertyIntakeSubmission = {
+  id: string;
+  organizationId: string;
+  officeId: string;
+  createdByUserId: string;
+  sourceType: "text" | "file" | "mixed";
+  rawText?: string;
+  fileRefs?: string[];
+  status: "received" | "extracting" | "needs_clarification" | "draft_ready" | "confirmed" | "rejected";
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PropertyAIDraft = {
+  id: string;
+  intakeSubmissionId: string;
+  organizationId: string;
+  officeId: string;
+  createdByUserId: string;
+  proposedAssetClass?: AssetClass;
+  proposedPropertyObject?: Record<string, unknown>;
+  proposedComponents?: Array<Record<string, unknown>>;
+  proposedAttributes?: Array<Record<string, unknown>>;
+  proposedEconomics?: Array<Record<string, unknown>>;
+  confidence: "high" | "medium" | "low";
+  fieldConfidence?: Record<string, "high" | "medium" | "low">;
+  missingFields?: string[];
+  conflicts?: string[];
+  clarificationQuestions?: string[];
+  verificationSummary?: {
+    checked: boolean;
+    status: "not_checked" | "partially_verified" | "verified" | "conflict_found" | "unsupported";
+    notes?: string[];
+  };
+  status: "draft" | "needs_clarification" | "approved" | "rejected" | "superseded";
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+AI intake rules:
+
+- AI must not set ownership fields.
+- AI must not publish objects.
+- AI must not overwrite primary object data without human confirmation.
+- Backend must validate AI draft data before writing canonical records.
+- Open-source verification must store source, URL when available, check date, result, and confidence.
+- Conflicting open-source data must force human review before confirmation.
+- Open-source verification is not a legal conclusion.
+- All extraction, clarification, approval, rejection, and property creation events must be auditable.
+
 Object edit rule:
 
 ```text
 Only ownerOfficeId users or platform admins can edit primary object data.
 ```
 
-## 10. ClientIntent
+## 11. Legal Documents
+
+Legal documents are a separate layer from public property descriptions.
+
+They may belong to:
+
+- organization;
+- office;
+- property object;
+- client intent / lead;
+- deal room;
+- transaction workflow.
+
+Examples:
+
+- ownership certificate;
+- cadastral extract;
+- title document;
+- lease agreement;
+- sale-purchase agreement;
+- power of attorney;
+- corporate documents;
+- passport/ID documents;
+- tax documents;
+- encumbrance certificate;
+- technical passport;
+- floor plan;
+- permits;
+- due diligence report;
+- valuation report;
+- NDA;
+- broker agreement;
+- commission agreement.
+
+```ts
+type LegalDocument = {
+  id: string;
+  organizationId: string;
+  officeId?: string;
+  propertyObjectId?: string;
+  clientIntentId?: string;
+  dealRoomId?: string;
+  uploadedByUserId?: string;
+  scope: "organization" | "office" | "property_object" | "client_intent" | "deal_room" | "transaction" | "other";
+  kind:
+    | "ownership_certificate"
+    | "cadastral_extract"
+    | "title_document"
+    | "lease_agreement"
+    | "sale_purchase_agreement"
+    | "power_of_attorney"
+    | "corporate_document"
+    | "passport_or_id"
+    | "tax_document"
+    | "encumbrance_certificate"
+    | "technical_passport"
+    | "floor_plan"
+    | "permit"
+    | "due_diligence_report"
+    | "valuation_report"
+    | "nda"
+    | "broker_agreement"
+    | "commission_agreement"
+    | "other";
+  title: string;
+  storagePath: string;
+  confidentiality: "public" | "office_private" | "organization_private" | "deal_participants" | "platform_private";
+  reviewStatus: "not_reviewed" | "pending_review" | "needs_clarification" | "verified" | "rejected" | "expired";
+  issuingAuthority?: string;
+  documentNumber?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  sourceUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+Rules:
+
+- legal documents are private by default;
+- access depends on scope, confidentiality, organization/office membership, and deal-room participation;
+- platform emergency/moderation access must be audited;
+- verification status is not a legal opinion by itself;
+- document expiry must be queryable;
+- deal-room documents must be visible only to approved participants unless explicitly shared.
+
+## 12. ClientIntent
 
 Represents a client request or lead.
 
 ```ts
 type ClientIntent = {
   id: string;
+  sourceOrganizationId: string;
   sourceOfficeId: string;
   sourceWebsiteId?: string;
   marketId?: string;
@@ -284,7 +676,7 @@ Lead ownership rule:
 The source office owns the lead relationship.
 ```
 
-## 11. CoBrokerRequest
+## 13. CoBrokerRequest
 
 Represents a request from one office to another regarding an object.
 
@@ -292,7 +684,9 @@ Represents a request from one office to another regarding an object.
 type CoBrokerRequest = {
   id: string;
   propertyObjectId: string;
+  fromOrganizationId: string;
   fromOfficeId: string;
+  toOrganizationId: string;
   toOfficeId: string;
   clientIntentId?: string;
   status: "draft" | "sent" | "accepted" | "declined" | "expired" | "closed";
@@ -302,7 +696,7 @@ type CoBrokerRequest = {
 };
 ```
 
-## 12. InterOfficeDealRoom
+## 14. InterOfficeDealRoom
 
 Connects a client request, selected objects, and the offices representing each side.
 
@@ -311,7 +705,9 @@ type InterOfficeDealRoom = {
   id: string;
   clientIntentId: string;
   propertyObjectIds: string[];
+  sellerOrganizationId: string;
   sellerOfficeId: string;
+  buyerOrganizationId: string;
   buyerOfficeId: string;
   status: "draft" | "sent" | "viewed" | "active" | "closed" | "archived";
   createdAt: string;
@@ -336,7 +732,7 @@ type DealRoomEvent = {
 };
 ```
 
-## 13. Monetization Placeholders
+## 15. Monetization Placeholders
 
 ```ts
 type SubscriptionPlan = {
@@ -354,6 +750,7 @@ type SubscriptionPlan = {
 
 type OfficeSubscription = {
   id: string;
+  organizationId: string;
   officeId: string;
   planId: string;
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
@@ -364,7 +761,7 @@ type OfficeSubscription = {
 };
 ```
 
-## 14. Market Analytics Placeholders
+## 16. Market Analytics Placeholders
 
 ```ts
 type MarketIndicator = {
@@ -396,12 +793,13 @@ type MarketInsight = {
 };
 ```
 
-## 15. Audit Log
+## 17. Audit Log
 
 ```ts
 type AuditLogEntry = {
   id: string;
   actorUid?: string;
+  actorOrganizationId?: string;
   actorOfficeId?: string;
   action: string;
   entityType: string;
@@ -412,30 +810,46 @@ type AuditLogEntry = {
 };
 ```
 
-## 16. Firestore Collections
+## 18. Relational Tables
 
-Recommended collections:
+Recommended PostgreSQL tables:
 
 ```text
 offices
+organizations
 markets
-users
-officeUsers
-siteConfigs
-propertyObjects
-clientIntents
-coBrokerRequests
-dealRooms
-dealRoomEvents
-subscriptionPlans
-officeSubscriptions
-currencyRateSnapshots
-marketIndicators
-marketInsights
-auditLogs
+app_users
+organization_memberships
+office_memberships
+site_configs
+property_objects
+property_object_localizations
+property_object_components
+property_object_attributes
+property_object_economics
+property_media
+property_documents
+legal_documents
+legal_document_reviews
+property_intake_submissions
+property_ai_drafts
+property_ai_extraction_events
+property_ai_external_checks
+client_intents
+client_intent_private_details
+co_broker_requests
+deal_rooms
+deal_room_objects
+deal_room_events
+subscription_plans
+office_subscriptions
+currency_rate_snapshots
+market_indicators
+market_insights
+audit_logs
 ```
 
-## 17. Documentation Rule
+## 19. Documentation Rule
 
 Any significant schema change must update:
 

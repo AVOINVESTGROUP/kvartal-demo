@@ -1,0 +1,22 @@
+{
+  "name": "@kvartal/office-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@kvartal/auth": "workspace:*",
+    "@kvartal/db": "workspace:*",
+    "@kvartal/domain": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.0.0"
+  }
+}

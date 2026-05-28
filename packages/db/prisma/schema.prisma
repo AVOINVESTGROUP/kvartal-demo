@@ -1,0 +1,973 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LanguageCode {
+  ru
+  en
+  ka
+  hy
+  ar
+}
+
+enum CurrencyCode {
+  RUB
+  USD
+  EUR
+  GEL
+  AMD
+  AED
+}
+
+enum PlatformRole {
+  platform_owner
+  platform_admin
+  platform_analyst
+  platform_viewer
+}
+
+enum OrganizationRole {
+  organization_owner
+  organization_admin
+}
+
+enum OfficeRole {
+  office_owner
+  office_admin
+  broker
+  office_analyst
+  office_viewer
+}
+
+enum LifecycleStatus {
+  draft
+  active
+  suspended
+  archived
+}
+
+enum PublicationStatus {
+  draft
+  published
+  archived
+}
+
+enum Visibility {
+  private
+  office_network
+  public
+}
+
+enum AssetClass {
+  land
+  apartment
+  house
+  warehouse
+  industrial_site
+  factory
+  hotel
+  office
+  retail
+  mixed_use
+  development_project
+  investment_project
+  other
+}
+
+enum PriceMode {
+  on_request
+  fixed
+  range
+}
+
+enum RepresentationSide {
+  owner
+  seller
+  landlord
+  originator
+}
+
+enum Exclusivity {
+  exclusive
+  non_exclusive
+  unknown
+}
+
+enum ComponentType {
+  land_plot
+  building
+  apartment_unit
+  house
+  warehouse
+  production_facility
+  office_block
+  retail_unit
+  utility_infrastructure
+  development_phase
+  economic_unit
+  other
+}
+
+enum Confidence {
+  high
+  medium
+  low
+}
+
+enum SourceConfidence {
+  high
+  medium
+  low
+  unsupported
+}
+
+enum IntakeSourceType {
+  text
+  file
+  mixed
+}
+
+enum IntakeStatus {
+  received
+  extracting
+  needs_clarification
+  draft_ready
+  confirmed
+  rejected
+}
+
+enum AIDraftStatus {
+  draft
+  needs_clarification
+  approved
+  rejected
+  superseded
+}
+
+enum ExternalCheckResult {
+  confirmed
+  not_found
+  conflict
+  outdated
+  unsupported
+}
+
+enum ClientIntentStatus {
+  new
+  qualified
+  in_deal_room
+  closed
+  archived
+}
+
+enum CoBrokerRequestStatus {
+  draft
+  sent
+  accepted
+  declined
+  expired
+  closed
+}
+
+enum DealRoomStatus {
+  draft
+  sent
+  viewed
+  active
+  closed
+  archived
+}
+
+enum SubscriptionStatus {
+  trial
+  active
+  past_due
+  suspended
+  cancelled
+}
+
+enum LegalDocumentScope {
+  organization
+  office
+  property_object
+  client_intent
+  deal_room
+  transaction
+  other
+}
+
+enum LegalDocumentKind {
+  ownership_certificate
+  cadastral_extract
+  title_document
+  lease_agreement
+  sale_purchase_agreement
+  power_of_attorney
+  corporate_document
+  passport_or_id
+  tax_document
+  encumbrance_certificate
+  technical_passport
+  floor_plan
+  permit
+  due_diligence_report
+  valuation_report
+  nda
+  broker_agreement
+  commission_agreement
+  other
+}
+
+enum LegalReviewStatus {
+  not_reviewed
+  pending_review
+  needs_clarification
+  verified
+  rejected
+  expired
+}
+
+enum DocumentConfidentiality {
+  public
+  office_private
+  organization_private
+  deal_participants
+  platform_private
+}
+
+model Organization {
+  id                       String                       @id @default(cuid())
+  slug                     String                       @unique
+  legalName                String
+  countryOfRegistration    String
+  operatingCountryCodes    String[]
+  defaultLanguage          LanguageCode                 @default(ru)
+  supportedLanguages       LanguageCode[]               @default([ru])
+  defaultCurrency          CurrencyCode                 @default(USD)
+  supportedCurrencies      CurrencyCode[]               @default([USD])
+  status                   LifecycleStatus              @default(draft)
+  subscriptionPlanId       String?
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  offices                  Office[]
+  displayNames             OrganizationLocalization[]
+  memberships              OrganizationMembership[]
+  siteConfigs              SiteConfig[]
+  propertyObjects          PropertyObject[]             @relation("PropertyOwnerOrganization")
+  informationOwnedObjects  PropertyObject[]             @relation("PropertyInformationOwnerOrganization")
+  clientIntents            ClientIntent[]
+  officeSubscriptions      OfficeSubscription[]
+  intakeSubmissions        PropertyIntakeSubmission[]
+  aiDrafts                 PropertyAIDraft[]
+  aiExternalChecks         PropertyAIExternalCheck[]
+  legalDocuments           LegalDocument[]
+}
+
+model OrganizationLocalization {
+  id             String       @id @default(cuid())
+  organizationId String
+  language       LanguageCode
+  displayName    String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, language])
+}
+
+model Office {
+  id                       String              @id @default(cuid())
+  organizationId           String
+  slug                     String
+  legalName                String
+  city                     String
+  country                  String
+  defaultMarketId          String?
+  defaultLanguage          LanguageCode        @default(ru)
+  supportedLanguages       LanguageCode[]      @default([ru])
+  defaultCurrency          CurrencyCode        @default(USD)
+  supportedCurrencies      CurrencyCode[]      @default([USD])
+  status                   LifecycleStatus     @default(draft)
+  websiteConfigId          String?
+  createdAt                DateTime            @default(now())
+  updatedAt                DateTime            @updatedAt
+  organization             Organization        @relation(fields: [organizationId], references: [id])
+  defaultMarket            Market?             @relation(fields: [defaultMarketId], references: [id])
+  displayNames             OfficeLocalization[]
+  memberships              OfficeMembership[]
+  siteConfigs              SiteConfig[]
+  propertyObjects          PropertyObject[]    @relation("PropertyOwnerOffice")
+  informationOwnedObjects  PropertyObject[]    @relation("PropertyInformationOwnerOffice")
+  clientIntents            ClientIntent[]
+  officeSubscriptions      OfficeSubscription[]
+  intakeSubmissions        PropertyIntakeSubmission[]
+  aiDrafts                 PropertyAIDraft[]
+  aiExternalChecks         PropertyAIExternalCheck[]
+  legalDocuments           LegalDocument[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+}
+
+model OfficeLocalization {
+  id        String       @id @default(cuid())
+  officeId  String
+  language  LanguageCode
+  displayName String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  office    Office       @relation(fields: [officeId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, language])
+}
+
+model Market {
+  id                  String         @id @default(cuid())
+  slug                String         @unique
+  city                String
+  country             String
+  defaultCurrency     CurrencyCode
+  supportedCurrencies CurrencyCode[]
+  supportedLanguages  LanguageCode[]
+  assetClasses        AssetClass[]
+  complianceRegion    String
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  offices             Office[]
+  propertyObjects     PropertyObject[]
+  clientIntents       ClientIntent[]
+  indicators          MarketIndicator[]
+  insights            MarketInsight[]
+}
+
+model AppUser {
+  id                        String                    @id @default(cuid())
+  firebaseUid               String                    @unique
+  email                     String                    @unique
+  displayName               String?
+  active                    Boolean                   @default(true)
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+  platformRoleAssignments   PlatformRoleAssignment[]
+  organizationMemberships   OrganizationMembership[]
+  officeMemberships         OfficeMembership[]
+  createdPropertyObjects    PropertyObject[]
+  createdIntakeSubmissions  PropertyIntakeSubmission[]
+  createdAIDrafts           PropertyAIDraft[]
+  uploadedLegalDocuments    LegalDocument[]             @relation("LegalDocumentUploadedBy")
+  reviewedLegalDocuments    LegalDocumentReview[]
+  auditLogs                 AuditLog[]
+}
+
+model PlatformRoleAssignment {
+  id        String       @id @default(cuid())
+  userId    String
+  role      PlatformRole
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      AppUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+}
+
+model OrganizationMembership {
+  id             String             @id @default(cuid())
+  organizationId String
+  userId         String
+  roles          OrganizationRole[]
+  active         Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           AppUser            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model OfficeMembership {
+  id             String       @id @default(cuid())
+  organizationId String
+  officeId       String
+  userId         String
+  roles          OfficeRole[]
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  office         Office       @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  user           AppUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([officeId, userId])
+  @@index([organizationId, userId])
+}
+
+model SiteConfig {
+  id                  String         @id @default(cuid())
+  organizationId      String
+  officeId            String
+  domain              String?
+  subdomain           String?
+  defaultLanguage     LanguageCode
+  supportedLanguages  LanguageCode[]
+  defaultCurrency     CurrencyCode
+  supportedCurrencies CurrencyCode[]
+  primaryMarketIds    String[]
+  contactEmail        String?
+  contactPhone        String?
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  organization        Organization   @relation(fields: [organizationId], references: [id])
+  office              Office         @relation(fields: [officeId], references: [id])
+  localizations       SiteConfigLocalization[]
+
+  @@index([organizationId])
+  @@index([officeId])
+}
+
+model SiteConfigLocalization {
+  id           String       @id @default(cuid())
+  siteConfigId String
+  language     LanguageCode
+  brandName    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  siteConfig   SiteConfig   @relation(fields: [siteConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([siteConfigId, language])
+}
+
+model PropertyObject {
+  id                                  String                       @id @default(cuid())
+  ownerOrganizationId                 String
+  ownerOfficeId                       String
+  informationOwnerOrganizationId      String
+  informationOwnerOfficeId            String
+  createdByUserId                     String
+  marketId                            String
+  status                              PublicationStatus            @default(draft)
+  visibility                          Visibility                   @default(private)
+  assetClass                          AssetClass
+  assetSubtype                        String?
+  addressPrivate                      String?
+  areaSqm                             Decimal?                     @db.Decimal(14, 2)
+  landAreaSqm                         Decimal?                     @db.Decimal(14, 2)
+  buildingAreaSqm                     Decimal?                     @db.Decimal(14, 2)
+  rentableAreaSqm                     Decimal?                     @db.Decimal(14, 2)
+  floorNumber                         Int?
+  floorsTotal                         Int?
+  roomsCount                          Int?
+  bedroomsCount                       Int?
+  bathroomsCount                      Int?
+  cadastralNumber                     String?
+  priceMode                           PriceMode                    @default(on_request)
+  priceAmount                         Decimal?                     @db.Decimal(18, 2)
+  priceCurrency                       CurrencyCode?
+  priceMinAmount                      Decimal?                     @db.Decimal(18, 2)
+  priceMaxAmount                      Decimal?                     @db.Decimal(18, 2)
+  representationSide                  RepresentationSide           @default(seller)
+  exclusivity                         Exclusivity                  @default(unknown)
+  canBeShownByOtherOffices            Boolean                      @default(false)
+  requiresOwnerOfficeApprovalForLead  Boolean                      @default(true)
+  createdAt                           DateTime                     @default(now())
+  updatedAt                           DateTime                     @updatedAt
+  publishedAt                         DateTime?
+  ownerOrganization                   Organization                 @relation("PropertyOwnerOrganization", fields: [ownerOrganizationId], references: [id])
+  ownerOffice                         Office                       @relation("PropertyOwnerOffice", fields: [ownerOfficeId], references: [id])
+  informationOwnerOrganization        Organization                 @relation("PropertyInformationOwnerOrganization", fields: [informationOwnerOrganizationId], references: [id])
+  informationOwnerOffice              Office                       @relation("PropertyInformationOwnerOffice", fields: [informationOwnerOfficeId], references: [id])
+  createdByUser                       AppUser                      @relation(fields: [createdByUserId], references: [id])
+  market                              Market                       @relation(fields: [marketId], references: [id])
+  localizations                       PropertyObjectLocalization[]
+  components                          PropertyObjectComponent[]
+  attributes                          PropertyObjectAttribute[]
+  economics                           PropertyObjectEconomics[]
+  media                               PropertyMedia[]
+  documents                           PropertyDocument[]
+  legalDocuments                      LegalDocument[]
+  coBrokerRequests                    CoBrokerRequest[]
+  dealRoomObjects                     DealRoomObject[]
+  aiExternalChecks                    PropertyAIExternalCheck[]
+
+  @@index([ownerOrganizationId])
+  @@index([ownerOfficeId])
+  @@index([marketId, status, visibility, publishedAt])
+  @@index([assetClass, status, visibility, publishedAt])
+  @@index([ownerOfficeId, status, visibility, publishedAt])
+}
+
+model PropertyObjectLocalization {
+  id               String         @id @default(cuid())
+  propertyObjectId String
+  language         LanguageCode
+  title            String
+  description      String?
+  addressDisplay   String
+  tags             String[]
+  priceDisplay     String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyObjectId, language])
+}
+
+model PropertyObjectComponent {
+  id               String         @id @default(cuid())
+  propertyObjectId String
+  componentType    ComponentType
+  title            Json
+  description      Json?
+  areaSqm          Decimal?       @db.Decimal(14, 2)
+  landAreaSqm      Decimal?       @db.Decimal(14, 2)
+  cadastralNumber  String?
+  metadata         Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  attributes       PropertyObjectAttribute[]
+
+  @@index([propertyObjectId])
+}
+
+model PropertyObjectAttribute {
+  id               String                   @id @default(cuid())
+  propertyObjectId String
+  componentId      String?
+  key              String
+  valueText        Json?
+  valueNumber      Decimal?                 @db.Decimal(18, 4)
+  valueBoolean     Boolean?
+  valueDate        DateTime?
+  unit             String?
+  group            String?
+  public           Boolean                  @default(false)
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  propertyObject   PropertyObject           @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  component        PropertyObjectComponent? @relation(fields: [componentId], references: [id], onDelete: SetNull)
+
+  @@index([propertyObjectId, key])
+  @@index([componentId])
+}
+
+model PropertyObjectEconomics {
+  id                       String           @id @default(cuid())
+  propertyObjectId         String
+  priceMode                PriceMode?
+  priceAmount              Decimal?         @db.Decimal(18, 2)
+  priceCurrency            CurrencyCode?
+  rentalIncomeMonthly      Decimal?         @db.Decimal(18, 2)
+  rentalIncomeCurrency     CurrencyCode?
+  operatingExpensesMonthly Decimal?         @db.Decimal(18, 2)
+  operatingExpensesCurrency CurrencyCode?
+  noiAnnual                Decimal?         @db.Decimal(18, 2)
+  noiCurrency              CurrencyCode?
+  capRatePercent           Decimal?         @db.Decimal(8, 4)
+  paybackYears             Decimal?         @db.Decimal(8, 2)
+  occupancyPercent         Decimal?         @db.Decimal(8, 4)
+  projectedRevenue         Decimal?         @db.Decimal(18, 2)
+  projectedRevenueCurrency CurrencyCode?
+  projectedCost            Decimal?         @db.Decimal(18, 2)
+  projectedCostCurrency    CurrencyCode?
+  source                   String?
+  confidence               SourceConfidence @default(unsupported)
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
+  propertyObject           PropertyObject   @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+
+  @@index([propertyObjectId])
+}
+
+model PropertyMedia {
+  id               String         @id @default(cuid())
+  propertyObjectId String
+  ownerOrganizationId String
+  ownerOfficeId    String
+  url              String
+  storagePath      String?
+  kind             String
+  public           Boolean        @default(false)
+  sortOrder        Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+
+  @@index([propertyObjectId])
+  @@index([ownerOfficeId])
+}
+
+model PropertyDocument {
+  id               String         @id @default(cuid())
+  propertyObjectId String
+  ownerOrganizationId String
+  ownerOfficeId    String
+  title            String
+  storagePath      String
+  documentType     String
+  public           Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+
+  @@index([propertyObjectId])
+  @@index([ownerOfficeId])
+}
+
+model LegalDocument {
+  id                  String                  @id @default(cuid())
+  organizationId      String
+  officeId            String?
+  propertyObjectId    String?
+  clientIntentId      String?
+  dealRoomId          String?
+  uploadedByUserId    String?
+  scope               LegalDocumentScope
+  kind                LegalDocumentKind
+  title               String
+  storagePath         String
+  fileName            String?
+  mimeType            String?
+  confidentiality     DocumentConfidentiality @default(organization_private)
+  reviewStatus        LegalReviewStatus       @default(not_reviewed)
+  issuingAuthority    String?
+  documentNumber      String?
+  issuedAt            DateTime?
+  expiresAt           DateTime?
+  sourceUrl           String?
+  notes               String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  organization        Organization            @relation(fields: [organizationId], references: [id])
+  office              Office?                 @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  propertyObject      PropertyObject?         @relation(fields: [propertyObjectId], references: [id], onDelete: SetNull)
+  clientIntent        ClientIntent?           @relation(fields: [clientIntentId], references: [id], onDelete: SetNull)
+  dealRoom            DealRoom?               @relation(fields: [dealRoomId], references: [id], onDelete: SetNull)
+  uploadedByUser      AppUser?                @relation("LegalDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  reviews             LegalDocumentReview[]
+
+  @@index([organizationId, scope])
+  @@index([officeId])
+  @@index([propertyObjectId])
+  @@index([clientIntentId])
+  @@index([dealRoomId])
+  @@index([reviewStatus])
+  @@index([expiresAt])
+}
+
+model LegalDocumentReview {
+  id              String            @id @default(cuid())
+  legalDocumentId String
+  reviewerUserId  String?
+  status          LegalReviewStatus
+  comment         String?
+  createdAt       DateTime          @default(now())
+  legalDocument   LegalDocument     @relation(fields: [legalDocumentId], references: [id], onDelete: Cascade)
+  reviewerUser    AppUser?          @relation(fields: [reviewerUserId], references: [id], onDelete: SetNull)
+
+  @@index([legalDocumentId, createdAt])
+  @@index([reviewerUserId])
+}
+
+model PropertyIntakeSubmission {
+  id               String       @id @default(cuid())
+  organizationId   String
+  officeId         String
+  createdByUserId  String
+  sourceType       IntakeSourceType
+  rawText          String?      @db.Text
+  fileRefs         String[]
+  status           IntakeStatus @default(received)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  office           Office       @relation(fields: [officeId], references: [id])
+  createdByUser    AppUser      @relation(fields: [createdByUserId], references: [id])
+  drafts           PropertyAIDraft[]
+  externalChecks   PropertyAIExternalCheck[]
+  extractionEvents PropertyAIExtractionEvent[]
+
+  @@index([organizationId, officeId])
+  @@index([createdByUserId])
+}
+
+model PropertyAIDraft {
+  id                    String        @id @default(cuid())
+  intakeSubmissionId    String
+  organizationId        String
+  officeId              String
+  createdByUserId       String
+  proposedAssetClass    AssetClass?
+  proposedPropertyObject Json?
+  proposedComponents    Json?
+  proposedAttributes    Json?
+  proposedEconomics     Json?
+  confidence            Confidence
+  fieldConfidence       Json?
+  missingFields         String[]
+  conflicts             String[]
+  clarificationQuestions String[]
+  verificationSummary   Json?
+  status                AIDraftStatus @default(draft)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  intakeSubmission      PropertyIntakeSubmission @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
+  organization          Organization  @relation(fields: [organizationId], references: [id])
+  office                Office        @relation(fields: [officeId], references: [id])
+  createdByUser         AppUser       @relation(fields: [createdByUserId], references: [id])
+  externalChecks        PropertyAIExternalCheck[]
+  extractionEvents      PropertyAIExtractionEvent[]
+
+  @@index([intakeSubmissionId])
+  @@index([organizationId, officeId])
+}
+
+model PropertyAIExternalCheck {
+  id                 String              @id @default(cuid())
+  intakeSubmissionId String
+  draftId            String?
+  propertyObjectId   String?
+  organizationId     String
+  officeId           String
+  checkedField       String
+  claimedValue       String?
+  sourceName         String?
+  sourceUrl          String?
+  sourcePublishedAt  DateTime?
+  checkedAt          DateTime            @default(now())
+  result             ExternalCheckResult
+  confidence         Confidence
+  notes              String?
+  intakeSubmission   PropertyIntakeSubmission @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
+  draft              PropertyAIDraft?    @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  propertyObject     PropertyObject?     @relation(fields: [propertyObjectId], references: [id], onDelete: SetNull)
+  organization       Organization        @relation(fields: [organizationId], references: [id])
+  office             Office              @relation(fields: [officeId], references: [id])
+
+  @@index([intakeSubmissionId])
+  @@index([draftId])
+  @@index([propertyObjectId])
+}
+
+model PropertyAIExtractionEvent {
+  id                 String                   @id @default(cuid())
+  intakeSubmissionId String
+  draftId            String?
+  organizationId     String
+  officeId           String
+  actorUid           String?
+  eventType          String
+  payload            Json?
+  createdAt          DateTime                 @default(now())
+  intakeSubmission   PropertyIntakeSubmission @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
+  draft              PropertyAIDraft?         @relation(fields: [draftId], references: [id], onDelete: SetNull)
+
+  @@index([intakeSubmissionId])
+  @@index([draftId])
+}
+
+model ClientIntent {
+  id                 String             @id @default(cuid())
+  sourceOrganizationId String
+  sourceOfficeId     String
+  sourceWebsiteId    String?
+  marketId           String?
+  preferredLanguage  LanguageCode
+  preferredCurrency  CurrencyCode
+  requirementText    String             @db.Text
+  status             ClientIntentStatus @default(new)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  sourceOrganization Organization        @relation(fields: [sourceOrganizationId], references: [id])
+  sourceOffice       Office              @relation(fields: [sourceOfficeId], references: [id])
+  market             Market?             @relation(fields: [marketId], references: [id])
+  privateDetails     ClientIntentPrivateDetails?
+  coBrokerRequests   CoBrokerRequest[]
+  dealRooms          DealRoom[]
+  legalDocuments     LegalDocument[]
+
+  @@index([sourceOrganizationId])
+  @@index([sourceOfficeId, status])
+}
+
+model ClientIntentPrivateDetails {
+  id             String       @id @default(cuid())
+  clientIntentId String       @unique
+  clientName     String?
+  clientContact  String?
+  notes          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  clientIntent   ClientIntent @relation(fields: [clientIntentId], references: [id], onDelete: Cascade)
+}
+
+model CoBrokerRequest {
+  id               String                @id @default(cuid())
+  propertyObjectId String
+  fromOrganizationId String
+  fromOfficeId    String
+  toOrganizationId String
+  toOfficeId      String
+  clientIntentId  String?
+  status           CoBrokerRequestStatus @default(draft)
+  message          String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  propertyObject   PropertyObject        @relation(fields: [propertyObjectId], references: [id])
+  clientIntent     ClientIntent?         @relation(fields: [clientIntentId], references: [id], onDelete: SetNull)
+
+  @@index([propertyObjectId])
+  @@index([fromOfficeId, status])
+  @@index([toOfficeId, status])
+}
+
+model DealRoom {
+  id                   String         @id @default(cuid())
+  clientIntentId       String
+  sellerOrganizationId String
+  sellerOfficeId       String
+  buyerOrganizationId  String
+  buyerOfficeId        String
+  status               DealRoomStatus @default(draft)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  clientIntent         ClientIntent   @relation(fields: [clientIntentId], references: [id])
+  objects              DealRoomObject[]
+  events               DealRoomEvent[]
+  legalDocuments       LegalDocument[]
+
+  @@index([sellerOfficeId, status])
+  @@index([buyerOfficeId, status])
+}
+
+model DealRoomObject {
+  id               String         @id @default(cuid())
+  dealRoomId       String
+  propertyObjectId String
+  createdAt        DateTime       @default(now())
+  dealRoom         DealRoom       @relation(fields: [dealRoomId], references: [id], onDelete: Cascade)
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id])
+
+  @@unique([dealRoomId, propertyObjectId])
+}
+
+model DealRoomEvent {
+  id        String   @id @default(cuid())
+  dealRoomId String
+  eventType String
+  payload   Json?
+  authorUid String?
+  authorOrganizationId String?
+  authorOfficeId String?
+  createdAt DateTime @default(now())
+  dealRoom  DealRoom @relation(fields: [dealRoomId], references: [id], onDelete: Cascade)
+
+  @@index([dealRoomId, createdAt])
+}
+
+model SubscriptionPlan {
+  id              String       @id @default(cuid())
+  name            String
+  monthlyPrice    Decimal?     @db.Decimal(18, 2)
+  monthlyCurrency CurrencyCode?
+  annualPrice     Decimal?     @db.Decimal(18, 2)
+  annualCurrency  CurrencyCode?
+  objectLimit     Int?
+  agentLimit      Int?
+  websiteLimit    Int?
+  analyticsAccess String       @default("none")
+  supportLevel    String       @default("standard")
+  active          Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  subscriptions   OfficeSubscription[]
+}
+
+model OfficeSubscription {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  officeId           String
+  planId             String
+  status             SubscriptionStatus @default(trial)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  organization       Organization       @relation(fields: [organizationId], references: [id])
+  office             Office             @relation(fields: [officeId], references: [id])
+  plan               SubscriptionPlan   @relation(fields: [planId], references: [id])
+
+  @@index([organizationId])
+  @@index([officeId])
+}
+
+model CurrencyRateSnapshot {
+  id            String       @id @default(cuid())
+  baseCurrency  CurrencyCode
+  quoteCurrency CurrencyCode
+  rate          Decimal      @db.Decimal(18, 8)
+  source        String
+  capturedAt    DateTime
+  createdAt     DateTime     @default(now())
+}
+
+model MarketIndicator {
+  id          String           @id @default(cuid())
+  marketId    String
+  metric      String
+  segment     String?
+  value       Decimal          @db.Decimal(18, 4)
+  unit        String
+  currency    CurrencyCode?
+  period      String
+  source      String
+  confidence  SourceConfidence @default(unsupported)
+  published   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  market      Market           @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, published])
+}
+
+model MarketInsight {
+  id          String           @id @default(cuid())
+  marketId    String
+  title       Json
+  body        Json
+  sources     String[]
+  confidence  SourceConfidence @default(unsupported)
+  published   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  market      Market           @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, published])
+}
+
+model AuditLog {
+  id                  String   @id @default(cuid())
+  actorUserId          String?
+  actorUid             String?
+  actorOrganizationId  String?
+  actorOfficeId        String?
+  action               String
+  entityType           String
+  entityId             String
+  before               Json?
+  after                Json?
+  createdAt            DateTime @default(now())
+  actorUser            AppUser?  @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorOrganizationId])
+  @@index([actorOfficeId])
+  @@index([createdAt])
+}

@@ -19,6 +19,8 @@ The first planned offices are:
 
 The long-term model must support more cities, countries, languages, currencies, agencies, and investment markets.
 
+Connected users are employees of different organizations in different countries. Each organization can have its own legal entity, internal administrative hierarchy, offices, branches, languages, currencies, compliance rules, and local operating procedures.
+
 The core business idea is simple:
 
 ```text
@@ -482,13 +484,39 @@ Analytics must not promise guaranteed investment returns.
 
 ## 12. Core Entities
 
-### 12.1 PlatformTenant / Office
+### 12.1 Organization
 
-Represents a connected firm or office.
+Represents a connected company, legal entity, partner network, or operating group.
+
+```ts
+type Organization = {
+  id: string;
+  slug: string;
+  legalName: string;
+  displayName: LocalizedText;
+  countryOfRegistration: string;
+  operatingCountryCodes: string[];
+  defaultLanguage: string;
+  supportedLanguages: string[];
+  defaultCurrency: string;
+  supportedCurrencies: string[];
+  status: "draft" | "active" | "suspended" | "archived";
+  subscriptionPlanId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+An organization may have multiple offices in one or more countries.
+
+### 12.2 Office
+
+Represents a local office, branch, or city operation inside an organization.
 
 ```ts
 type Office = {
   id: string;
+  organizationId: string;
   slug: string;
   legalName: string;
   displayName: LocalizedText;
@@ -507,7 +535,7 @@ type Office = {
 };
 ```
 
-### 12.2 Market
+### 12.3 Market
 
 Represents a geographic and business market.
 
@@ -526,13 +554,22 @@ type Market = {
 };
 ```
 
-### 12.3 PropertyObject
+### 12.4 PropertyObject
 
 Represents a real property object in the shared SSOT.
+
+The property model must start simple but remain expandable. Stage 3 minimum object classes are:
+
+- land;
+- apartment;
+- house.
+
+The same model must later support warehouses, industrial bases, factories, development sites, mixed-use complexes, and investment projects.
 
 ```ts
 type PropertyObject = {
   id: string;
+  ownerOrganizationId: string;
   ownerOfficeId: string;
   createdByUserId: string;
   marketId: string;
@@ -545,8 +582,11 @@ type PropertyObject = {
   addressPrivate?: string;
 
   assetClass: string;
+  assetSubtype?: string;
   areaSqm?: number;
   landAreaSqm?: number;
+  buildingAreaSqm?: number;
+  rentableAreaSqm?: number;
   price: Price;
 
   tags: LocalizedText[];
@@ -559,6 +599,7 @@ type PropertyObject = {
   };
 
   rights: {
+    informationOwnerOrganizationId: string;
     informationOwnerOfficeId: string;
     canBeShownByOtherOffices: boolean;
     requiresOwnerOfficeApprovalForLead: boolean;
@@ -570,13 +611,88 @@ type PropertyObject = {
 };
 ```
 
-### 12.4 ClientIntent / Lead
+Complex objects should use related structures:
+
+```text
+property_object_components
+property_object_attributes
+property_object_economics
+property_object_legal_details
+property_object_utilities
+property_object_development_params
+```
+
+Examples:
+
+```text
+factory:
+  land plot + production building + warehouse + office/admin building + utilities
+
+investment project:
+  land + permits + development volume + stages + projected economics
+```
+
+Do not force all possible real estate characteristics into the core `property_objects` table. Keep the core stable and put asset-specific details into typed attributes/components/economic tables.
+
+### AI-Assisted Property Intake
+
+Object cards should support AI-assisted filling.
+
+Office users may provide unstructured data such as text, PDFs, tables, owner notes, photos, or broker messages. AI extracts a structured draft, maps fields into the property model, and asks clarification questions for missing or low-confidence data.
+
+Flow:
+
+```text
+user submits unstructured property data
+-> AI extracts draft fields, components, attributes, economics
+-> AI checks available open sources for актуальность and plausibility
+-> system shows confidence, missing fields, conflicts, and questions
+-> user edits/answers/approves
+-> backend validates
+-> canonical property record is created or updated
+```
+
+AI output is not SSOT truth. Human confirmation is required before writing canonical property records. Ownership fields, publication status, and access rules are set by backend logic, not by AI.
+
+Open-source verification should record source name/URL, checked date, result, and confidence. If public data conflicts with provided data, the object draft must require human review. Verification supports brokers but does not replace legal due diligence.
+
+### Legal Document Layer
+
+Legal documents must be modeled separately from public property descriptions and media.
+
+They may be attached to:
+
+- organization;
+- office;
+- property object;
+- client intent / lead;
+- deal room;
+- transaction workflow.
+
+Examples include title documents, cadastral extracts, ownership certificates, powers of attorney, corporate documents, sale-purchase agreements, lease agreements, NDAs, due diligence reports, valuation reports, broker agreements, and commission agreements.
+
+Every legal document should have:
+
+- scope;
+- document kind;
+- organization/office ownership;
+- optional property/deal/lead relation;
+- storage path;
+- confidentiality level;
+- review status;
+- issue/expiry dates when relevant;
+- audit trail for upload, review, access, and status changes.
+
+Legal document verification status is not a legal opinion by itself. Access to private legal documents must follow organization/office membership, deal-room participation, confidentiality, and audit rules.
+
+### 12.5 ClientIntent / Lead
 
 Represents a client's request.
 
 ```ts
 type ClientIntent = {
   id: string;
+  sourceOrganizationId: string;
   sourceOfficeId: string;
   sourceWebsiteId?: string;
   marketId?: string;
@@ -591,7 +707,7 @@ type ClientIntent = {
 };
 ```
 
-### 12.5 InterOfficeDealRoom
+### 12.6 InterOfficeDealRoom
 
 Connects a lead, an object, and the offices representing each side.
 
@@ -600,7 +716,9 @@ type InterOfficeDealRoom = {
   id: string;
   clientIntentId: string;
   propertyObjectIds: string[];
+  sellerOrganizationId: string;
   sellerOfficeId: string;
+  buyerOrganizationId: string;
   buyerOfficeId: string;
   status: "draft" | "sent" | "viewed" | "active" | "closed" | "archived";
   createdAt: string;
@@ -608,7 +726,7 @@ type InterOfficeDealRoom = {
 };
 ```
 
-### 12.6 CoBrokerRequest
+### 12.7 CoBrokerRequest
 
 Represents a request from one office to another regarding a property.
 
@@ -616,7 +734,9 @@ Represents a request from one office to another regarding a property.
 type CoBrokerRequest = {
   id: string;
   propertyObjectId: string;
+  fromOrganizationId: string;
   fromOfficeId: string;
+  toOrganizationId: string;
   toOfficeId: string;
   clientIntentId?: string;
   status: "draft" | "sent" | "accepted" | "declined" | "expired" | "closed";
@@ -626,7 +746,7 @@ type CoBrokerRequest = {
 };
 ```
 
-### 12.7 SubscriptionPlan
+### 12.8 SubscriptionPlan
 
 Defines future monetization.
 
@@ -645,13 +765,14 @@ type SubscriptionPlan = {
 };
 ```
 
-### 12.8 OfficeSubscription
+### 12.9 OfficeSubscription
 
 Represents an office's active platform subscription.
 
 ```ts
 type OfficeSubscription = {
   id: string;
+  organizationId: string;
   officeId: string;
   planId: string;
   status: "trial" | "active" | "past_due" | "suspended" | "cancelled";
@@ -668,11 +789,15 @@ Initial roles:
 
 - `platform_owner`
 - `platform_admin`
+- `platform_analyst`
+- `platform_viewer`
+- `organization_owner`
+- `organization_admin`
 - `office_owner`
 - `office_admin`
 - `broker`
-- `analyst`
-- `viewer`
+- `office_analyst`
+- `office_viewer`
 
 Permission principles:
 
@@ -686,27 +811,81 @@ Can manage own office, own users, own objects, own leads, own deals.
 Broker:
 Can work with assigned objects, leads, and deal rooms inside office permissions.
 
-Analyst:
-Can manage market indicators and insights if granted.
+Platform Analyst:
+Can manage platform-level market indicators and insights when granted.
 
-Viewer:
-Read-only scoped access.
+Office Analyst:
+Can read office-scoped data and contribute office-scoped analytics/market notes where allowed.
+
+Viewer roles:
+Read-only access according to platform or office scope.
 ```
+
+Role scopes:
+
+```text
+platform roles:
+  platform_owner
+  platform_admin
+  platform_analyst
+  platform_viewer
+
+office roles:
+  organization_owner
+  organization_admin
+  office_owner
+  office_admin
+  broker
+  office_analyst
+  office_viewer
+```
+
+Platform roles are global and belong to `platform-api`. Organization and office roles are membership-scoped and belong to `office-api`.
+
+Organization structure rules:
+
+- users are employees/members of organizations;
+- organizations may operate in multiple countries;
+- organizations may have multiple offices/branches;
+- organization roles may apply across all offices in that organization;
+- office roles apply only to one office;
+- `activeOfficeId` must belong to `activeOrganizationId`;
+- country-specific compliance may restrict what an organization or office can see/do.
+
+Rules:
+
+- platform role does not automatically grant office membership;
+- organization/office role does not grant platform access;
+- office role does not grant organization-wide access;
+- office-scoped requests must resolve one active office;
+- organization-scoped requests must resolve one active organization;
+- platform emergency or moderation access must create audit logs;
+- lead PII is more restricted than lead metadata;
+- subscription state may later restrict office actions.
 
 Permission matrix:
 
-| Action | Platform Admin | Owner Office | Other Office |
-|---|---:|---:|---:|
-| Create office | Yes | No | No |
-| Suspend office | Yes | No | No |
-| Create own object | Yes | Yes | Yes |
-| Edit own object | Yes | Yes | No |
-| Edit another office object | Yes, with audit | No | No |
-| View public object | Yes | Yes | Yes |
-| Request co-broker deal | Yes | Yes | Yes |
-| See another office private leads | Yes, with policy | No | No |
-| Configure subscription | Yes | No | No |
-| Publish analytics | Yes | Optional | Optional |
+| Action | Platform Owner/Admin | Office Owner/Admin | Broker | Platform Analyst | Office Analyst/Viewer |
+|---|---:|---:|---:|---:|---:|
+| Create office | Yes | No | No | No | No |
+| Suspend office | Yes | No | No | No | No |
+| Manage platform roles | Owner/limited admin | No | No | No | No |
+| Manage office users | Yes | Own office | No | No | No |
+| Create own object | Yes | Yes | Policy | No | No |
+| Edit own object | Yes, audit | Yes | Assigned/policy | No | No |
+| Publish/archive own object | Yes, audit | Yes | Policy | No | No |
+| Edit another office object | Moderation + audit | No | No | No | No |
+| View public object | Yes | Yes | Yes | Yes | Yes |
+| View network object | Yes | Yes | Yes | Yes | Yes |
+| View private owned-office object | Yes | Yes | Assigned/policy | Read policy | Read policy |
+| View unrelated private object | Emergency + audit | No | No | No | No |
+| Read own office lead PII | Policy + audit | Yes | Assigned/policy | No | No |
+| Read unrelated lead PII | Emergency + audit | No | No | No | No |
+| Request co-broker deal | Yes | Yes | Yes | No | No |
+| Manage deal room status | Yes, audit | Yes | Assigned/policy | No | No |
+| Configure subscription | Yes | View own | No | No | No |
+| Publish platform analytics | Yes | No | No | Yes | No |
+| View audit logs | Yes | Own office summary | No | No | Summary policy |
 
 ## 14. Data Access Rules
 
@@ -733,35 +912,45 @@ Deal Rooms:
 Analytics:
 
 - published insights are public;
-- draft insights are visible only to authorized platform/admin/analyst roles.
+- draft insights are visible only to authorized platform roles, primarily `platform_admin` and `platform_analyst`.
 
-## 15. Firestore Collection Draft
+## 15. Relational Table Draft
 
-Recommended MVP collections:
+Recommended MVP PostgreSQL tables:
 
 ```text
 offices
 markets
-users
-officeUsers
-propertyObjects
-clientIntents
-coBrokerRequests
-dealRooms
-dealRoomEvents
-siteConfigs
-domainConfigs
-subscriptionPlans
-officeSubscriptions
-currencyRateSnapshots
-marketIndicators
-marketInsights
-auditLogs
+app_users
+office_memberships
+property_objects
+property_object_localizations
+property_object_components
+property_object_attributes
+property_object_economics
+property_media
+property_documents
+legal_documents
+legal_document_reviews
+client_intents
+client_intent_private_details
+co_broker_requests
+deal_rooms
+deal_room_objects
+deal_room_events
+site_configs
+domain_configs
+subscription_plans
+office_subscriptions
+currency_rate_snapshots
+market_indicators
+market_insights
+audit_logs
 ```
 
-This can start in Firestore for speed, Firebase Auth integration, and App Hosting compatibility.
+Stage 3 should start with PostgreSQL because the platform depends on relational ownership, membership, deal-room, audit, subscription, and future reporting workflows.
 
-If the platform later needs heavy reporting, relational joins, billing analytics, or complex market analytics, selected data can be mirrored into BigQuery or moved into Cloud SQL/PostgreSQL for analytical workloads.
+Cloud SQL for PostgreSQL is the preferred managed database on Google Cloud. Selected data can later be mirrored into BigQuery for analytics workloads.
 
 ## 16. Website Configuration
 
@@ -860,7 +1049,7 @@ Platform admin creates office
 ### 17.5 Analytics Publication
 
 ```text
-Analyst or platform admin enters market indicator
+Platform analyst or platform admin enters market indicator
 -> adds source and confidence
 -> creates localized insight
 -> platform admin approves publication
@@ -916,11 +1105,23 @@ Approved stack remains:
 - Next.js + React + TypeScript;
 - Firebase App Hosting;
 - Firebase Auth;
-- Firestore for MVP SSOT;
+- Cloud SQL for PostgreSQL as MVP SSOT;
 - Cloud Storage for media;
-- Google Cloud / Cloud Run for later API services;
+- Google Cloud Run for dedicated platform and office API services;
 - Vertex AI / Gemini for later AI workflows;
 - BigQuery for later analytics aggregation.
+
+Stage 3 backend services:
+
+```text
+platform-api:
+  Cloud Run service for platform owner/operator control plane.
+
+office-api:
+  Cloud Run service for office operations and local public workflows.
+```
+
+These services share PostgreSQL as SSOT but must keep separate authorization boundaries, IAM configuration, and route ownership.
 
 The architecture should avoid Angular and avoid Vercel as primary production hosting.
 

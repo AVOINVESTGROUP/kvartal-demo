@@ -8,18 +8,89 @@
 
 This document describes API and data access contracts for the KVARTAL multi-office platform.
 
-Stage 3 may use Firestore directly for some reads/writes, but contracts still matter because they define the stable product boundary and future Cloud Run/API behavior.
+Stage 3 uses two dedicated Cloud Run backend API boundaries over PostgreSQL. Contracts define the stable product boundary for the platform control plane and office/public operations.
 
 ## 2. API Principles
 
 - Version: `v1`.
 - Format: JSON.
 - Auth: Firebase Auth JWT.
-- Authorization: platform role, office membership, object ownership, deal-room participation.
+- Authorization: PostgreSQL-backed platform role, organization membership, office membership, object ownership, deal-room participation.
 - Validation: schema-level validation before writes.
 - Audit: privileged mutations should create audit log entries.
 - SSOT: KVARTAL owns objects, leads, deal rooms, and office data.
 - CRM integration is one-way outbound only if added later.
+- Runtime: dedicated Cloud Run services, not Next.js route handlers.
+
+## 2.1 Backend Service Boundaries
+
+### `platform-api`
+
+Platform owner/operator control plane.
+
+Owns:
+
+- `/api/v1/platform/*`
+- global office management;
+- market and site configuration;
+- subscription placeholders;
+- platform analytics publishing;
+- moderation workflows;
+- audit inspection.
+
+Access:
+
+```text
+platform_owner
+platform_admin
+platform_analyst where explicitly allowed
+platform_viewer for read-only views where explicitly allowed
+```
+
+### `office-api`
+
+Office operations and local public workflows.
+
+Owns:
+
+- `/api/v1/public/*`
+- `/api/v1/admin/*`
+- public object reads;
+- public client intent creation;
+- office object management;
+- office leads;
+- co-broker requests;
+- deal rooms where the office participates.
+
+Access:
+
+```text
+public for published public reads and public intake
+office_owner
+office_admin
+broker
+office_analyst
+office_viewer
+```
+
+The services may share schema/types, but authorization logic must remain service-specific.
+
+## 2.2 RBAC Principles
+
+- Platform roles and office roles are separate role families.
+- Platform roles are global and checked by `platform-api`.
+- Office roles are scoped to one office membership and checked by `office-api`.
+- Organization roles are scoped to one organization membership and checked by `office-api`.
+- Platform role does not automatically grant office membership.
+- Organization/office role does not grant platform access.
+- Office role does not grant organization-wide access unless paired with organization membership.
+- `activeOfficeId` must belong to `activeOrganizationId`.
+- A user may belong to multiple organizations in different countries; every protected request must resolve the intended organization/office context before authorization.
+- Office-scoped requests must resolve exactly one `activeOfficeId`.
+- Authorization must check role, resource ownership, and deal-room participation.
+- Lead PII requires stricter permission than lead metadata.
+- Platform emergency/moderation access must create audit logs.
+- Public users can only read published public data and submit public client intents.
 
 ## 3. Auth Context
 
@@ -30,10 +101,18 @@ type RequestAuthContext = {
   uid: string;
   email?: string;
   platformRoles: string[];
+  organizationMemberships: Array<{
+    organizationId: string;
+    roles: string[];
+    countryCodes?: string[];
+  }>;
   officeMemberships: Array<{
+    organizationId: string;
     officeId: string;
     roles: string[];
   }>;
+  activeOrganizationId?: string;
+  activeOfficeId?: string;
 };
 ```
 
@@ -140,6 +219,7 @@ Request:
 
 ```json
 {
+  "organizationId": "org_tbilisi",
   "slug": "tbilisi",
   "legalName": "Tbilisi Office LLC",
   "displayName": {"ru": "KVARTAL Тбилиси", "en": "KVARTAL Tbilisi"},
@@ -185,19 +265,28 @@ Office Admin is for connected firms.
 
 ### GET `/api/v1/admin/context`
 
-Returns current user office context.
+Returns current user organization and office context.
 
 Response:
 
 ```json
 {
   "uid": "firebase_uid",
+  "organizations": [
+    {
+      "organizationId": "org_moscow",
+      "roles": ["organization_owner"]
+    }
+  ],
   "offices": [
     {
+      "organizationId": "org_moscow",
       "officeId": "office_moscow",
       "roles": ["office_owner"]
     }
   ],
+  "activeOrganizationId": "org_moscow",
+  "activeOfficeId": "office_moscow",
   "platformRoles": []
 }
 ```
@@ -232,10 +321,40 @@ office_owner, office_admin, or broker for officeId
 Server must set:
 
 ```text
+ownerOrganizationId = current organization
 ownerOfficeId = current office
+rights.informationOwnerOrganizationId = current organization
 rights.informationOwnerOfficeId = current office
 createdByUserId = current uid
 ```
+
+### AI-assisted object intake
+
+Office users may create property drafts from unstructured data.
+
+Endpoints:
+
+```text
+POST /api/v1/admin/property-intakes
+GET /api/v1/admin/property-intakes/{id}
+POST /api/v1/admin/property-intakes/{id}/extract
+POST /api/v1/admin/property-intakes/{id}/verify
+GET /api/v1/admin/property-ai-drafts/{draftId}
+POST /api/v1/admin/property-ai-drafts/{draftId}/clarifications
+POST /api/v1/admin/property-ai-drafts/{draftId}/approve
+POST /api/v1/admin/property-ai-drafts/{draftId}/reject
+```
+
+Rules:
+
+- AI creates draft data only.
+- Human confirmation is required before canonical `property_objects` writes.
+- Backend sets ownership fields from auth context.
+- Backend validates draft data before save.
+- AI extraction and approval/rejection events are audited.
+- Open-source verification results must include source, checked date, result, and confidence.
+- Open-source conflicts require human review before canonical writes.
+- Verification output is supporting evidence, not a legal due-diligence conclusion.
 
 ### GET `/api/v1/admin/objects/{id}`
 
@@ -263,6 +382,28 @@ Publish object.
 ### POST `/api/v1/admin/objects/{id}/archive`
 
 Archive object.
+
+### Legal document endpoints
+
+Legal documents are handled by `office-api` for office/organization/deal workflows and by `platform-api` only for audited platform moderation/emergency access.
+
+Draft office endpoints:
+
+```text
+GET /api/v1/admin/legal-documents
+POST /api/v1/admin/legal-documents
+GET /api/v1/admin/legal-documents/{id}
+PATCH /api/v1/admin/legal-documents/{id}
+POST /api/v1/admin/legal-documents/{id}/reviews
+```
+
+Rules:
+
+- legal documents are private by default;
+- access depends on document scope, confidentiality, active organization/office, and deal-room participation;
+- platform access to private legal documents must be audited;
+- review status is not a legal opinion by itself;
+- expiry dates must be queryable for operational follow-up.
 
 ## 7. Client Intent and Co-Broker Endpoints
 
@@ -371,7 +512,7 @@ Create/update indicator.
 Required role:
 
 ```text
-platform_admin or analyst
+platform_admin or platform_analyst
 ```
 
 ### POST `/api/v1/platform/market-insights`
@@ -423,8 +564,8 @@ HTTP mapping:
 
 Stage 3 may implement these contracts as:
 
-- Firestore repository functions;
-- Next.js route handlers;
-- Cloud Run API later.
+- `apps/platform-api` deployed to Cloud Run;
+- `apps/office-api` deployed to Cloud Run;
+- shared Prisma/domain/auth packages used only on trusted backend sides.
 
-Do not let component code become the long-term API boundary. Public components should call a data access layer, not own SSOT logic directly.
+Do not implement Stage 3 backend contracts as Next.js route handlers. Public and admin components should call the relevant Cloud Run API through a frontend repository/client layer.

@@ -72,9 +72,11 @@
 # Stage 3 Resume Note
 
 - Created `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` as the pause/resume document.
-- Recommended MVP direction: Firestore as SSOT for `PropertyObject`, Firebase Auth for `/admin`, Storage for object photos.
-- Current public objects are still hardcoded in `apps/web/src/components/Objects.tsx`; Stage 3 moves them to Firestore.
-- Before implementation: explicitly approve Firestore, admin auth approach, migration method for the current 5 objects, and rollout permission.
+- Current MVP direction: Cloud SQL/PostgreSQL as relational SSOT for offices, objects, leads, memberships, deal rooms, and audit.
+- Backend direction: two dedicated Cloud Run services from the start, `platform-api` and `office-api`.
+- Firebase Auth may remain the identity provider for `/admin` and `/platform`; roles and office memberships belong in PostgreSQL.
+- Current public objects are still hardcoded in `apps/web/src/components/Objects.tsx`; Stage 3 moves them behind a backend API/repository layer.
+- Before implementation: explicitly approve PostgreSQL, Prisma, Cloud Run service split, migration method for the current 5 objects, and rollout/provisioning permission.
 
 ## Stage 3 Scope Expansion Note (2026-05-28)
 
@@ -95,3 +97,109 @@
 - Updated `docs/03-API-CONTRACTS.md` for public, platform-admin, office-admin, client-intent, co-broker, deal-room, and analytics contracts.
 - Recommended first implementation slice: Stage 3A `Domain Types + Seed Data + Public Repository Layer`.
 - Deployment remains Git-driven through Firebase App Hosting; no Firebase CLI deploy for App Hosting unless explicitly requested.
+
+## Stage 3 Plan Hardening (2026-05-28)
+
+- Rewrote `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` into approval-gated slices:
+  - Stage 3A: Relational Architecture and Schema Draft.
+  - Stage 3B: Cloud Run Backend Foundation.
+  - Stage 3C: Public Objects API and Frontend Repository.
+  - Stage 3D: Auth and Authorization Foundation.
+  - Stage 3E: Office Object CRUD Through Backend.
+  - Stage 3F: Seed Script, Cloud SQL Prep, and Controlled Bootstrap.
+- Added `docs/adr/0001-postgresql-mvp-ssot.md` to record PostgreSQL as the proposed Stage 3 MVP SSOT decision.
+- Added explicit guardrails for backend-only writes, audit logging, database indexes, Storage paths, PII exposure, mojibake recovery, and deal-room state conflict resolution.
+- Immediate recommended next step is Stage 3A only; Firebase Auth, admin CRUD, Cloud Run deployment, Cloud SQL provisioning, migrations, and production seed require separate approval.
+
+## Stage 3 Database Direction Change (2026-05-28)
+
+- Replaced Firestore-first Stage 3 direction with backend-first relational SSOT.
+- Removed `docs/adr/0001-firestore-mvp-ssot.md` and added `docs/adr/0001-postgresql-mvp-ssot.md`.
+- Updated `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`, and `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md` to align with PostgreSQL/Cloud SQL as the Stage 3 SSOT.
+
+## Stage 3 Backend Split Decision (2026-05-28)
+
+- Confirmed that Stage 3 must not start with Next.js route handlers as the backend.
+- Platform backend and office backend have different access models and must be separate Cloud Run services from the beginning.
+- Planned services:
+  - `apps/platform-api` for platform owner/operator control plane.
+  - `apps/office-api` for office operations and local public workflows.
+- Prisma is the preferred ORM/schema tool because it was already used successfully in another project.
+
+## Stage 3 RBAC Direction (2026-05-28)
+
+- User roles must be defined before schema/API implementation.
+- Platform roles and office roles are separate:
+  - platform roles: `platform_owner`, `platform_admin`, `platform_analyst`, `platform_viewer`;
+  - organization roles: `organization_owner`, `organization_admin`;
+  - office roles: `office_owner`, `office_admin`, `broker`, `office_analyst`, `office_viewer`.
+- Platform roles are enforced by `platform-api`; organization and office roles are membership-scoped and enforced by `office-api`.
+- Platform role does not automatically grant office membership, and office role does not grant platform access.
+- Lead PII requires stricter permission checks than lead metadata.
+- Platform emergency/moderation access must create audit logs.
+- Users are employees/members of organizations that may operate in different countries with their own administrative structures.
+- `activeOfficeId` must belong to `activeOrganizationId` for office-scoped requests.
+- Added `docs/13-ROLE-SCHEMA-DRAFT.md` with a human-readable role model for approval:
+  - platform operator: `Fixer.guru`;
+  - connected organizations: `KVARTAL Moscow`, `Apart4u.co Tbilisi`, future partner firms;
+  - public site users: property owners, buyers/investors, client contacts.
+- Owner approved `platform_owner` as the maximum product role for the project owner/operator.
+- `platform_owner` has global product authority; access to private organization data, lead PII, or emergency/moderation actions must be recorded in `audit_logs`.
+
+## Stage 3 Property Model Direction (2026-05-28)
+
+- Property database must start with `land`, `apartment`, and `house`, but must be expandable to industrial bases, factories, mixed-use assets, development sites, and investment projects.
+- Core `property_objects` table should stay stable and hold common fields only.
+- Specialized and maximum-detail characteristics should be modeled through related structures:
+  - `property_object_components`;
+  - `property_object_attributes`;
+  - `property_object_economics`;
+  - legal/utilities/development/operations extension tables as needed.
+- Multi-component objects must be supported from the schema design stage.
+- Object cards should support AI-assisted filling from unstructured data.
+- AI extraction creates reviewable drafts and clarification questions; canonical SSOT writes require human confirmation and backend validation.
+- AI intake should support open-source verification for актуальность and plausibility, storing source, checked date, result, and confidence.
+- Open-source conflicts must require human review and do not replace legal due diligence.
+- Added `docs/14-AI-PROPERTY-INTAKE.md` for the AI property intake flow.
+
+## Stage 3A Implementation Start (2026-05-28)
+
+- Created backend workspace scaffold:
+  - `apps/platform-api`
+  - `apps/office-api`
+  - `packages/db`
+  - `packages/domain`
+  - `packages/auth`
+- Added first Prisma schema draft at `packages/db/prisma/schema.prisma`.
+- Prisma draft includes:
+  - organizations and offices;
+  - platform, organization, and office roles;
+  - property objects, localizations, components, attributes, economics, media, and documents;
+  - legal documents and legal document reviews for objects, leads, deal rooms, organizations, offices, and transactions;
+  - AI property intake submissions, drafts, external checks, and extraction events;
+  - client intents and private PII details;
+  - co-broker requests;
+  - deal rooms and deal room objects/events;
+  - subscriptions, currency snapshots, market indicators/insights, and audit logs.
+- TypeScript checks passed for:
+  - `@kvartal/domain`
+  - `@kvartal/auth`
+  - `@kvartal/db`
+  - `@kvartal/platform-api`
+  - `@kvartal/office-api`
+- Ran `pnpm install` to install/link Prisma and the new workspace packages.
+- `pnpm --filter @kvartal/db prisma:validate` passes with a temporary local `DATABASE_URL`.
+- TypeScript checks pass for all new Stage 3A packages/services:
+  - `@kvartal/domain`
+  - `@kvartal/auth`
+  - `@kvartal/db`
+  - `@kvartal/platform-api`
+  - `@kvartal/office-api`
+
+## Stage 3 Legal Documents Direction (2026-05-28)
+
+- Added legal document layer to the data model and Prisma draft.
+- Legal documents are separate from public property media/descriptions.
+- Legal documents can be scoped to organization, office, property object, client intent, deal room, transaction, or other.
+- Legal documents include confidentiality, review status, issue/expiry metadata, and review history.
+- Private legal document access must be controlled by organization/office membership, deal-room participation, confidentiality, and audit rules.
