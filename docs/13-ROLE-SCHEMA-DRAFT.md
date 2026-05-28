@@ -4,6 +4,8 @@
 **Status:** Approved baseline  
 **Related:** `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
 
+> Product terminology correction: see `docs/16-PARTNER-NETWORK-PLATFORM.md`. Fixer.guru is the platform owner/operator. KVARTAL Moscow, Apart4u.co Tbilisi, and future firms are partner organizations. Office roles remain valid only as branch/city-level roles inside partner organizations.
+
 ## 1. Purpose
 
 This document describes the proposed role and access model for KVARTAL before Prisma schema and backend implementation.

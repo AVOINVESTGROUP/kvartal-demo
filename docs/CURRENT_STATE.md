@@ -267,6 +267,24 @@
   - `canAccessOwnedInformation`
   - `canExposeOnPublicShowcase`
 
+## Partner Network Product Correction (2026-05-28)
+
+- Clarified product model:
+  - `Fixer.guru` is the platform owner/operator, not just another brokerage organization.
+  - connected real estate companies are partner organizations.
+  - offices are branches/city units inside partner organizations.
+  - partner sites show branded public vitrines backed by the shared Fixer.guru platform inventory.
+- Added `docs/16-PARTNER-NETWORK-PLATFORM.md`.
+- Added `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`.
+- Corrected target app terminology:
+  - `apps/platform-admin` for Fixer.guru owner console;
+  - `apps/partner-admin` for partner organization admin;
+  - `apps/partner-site` for branded partner public websites;
+  - `apps/platform-api` for platform owner backend;
+  - `apps/partner-api` for authenticated partner operations;
+  - `apps/public-api` for public-safe inventory and lead intake.
+- Current `/admin/*` pages inside `apps/web` are considered a temporary misplaced prototype and must be removed or moved before the next approved implementation slice.
+
 ## Google Data Management Layer (2026-05-28)
 
 - Enabled data APIs in `kvartal-dev`:

@@ -6,6 +6,8 @@
 **Primary references:** `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`  
 **Related ADR:** `docs/adr/0001-postgresql-mvp-ssot.md`
 
+> Product terminology correction: this plan must be updated before the next implementation slice according to `docs/16-PARTNER-NETWORK-PLATFORM.md` and `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`. Target terms are partner organization, partner admin, partner site, partner API, and public API. Office remains a branch/city entity inside a partner organization.
+
 ## 1. Purpose
 
 Stage 3 creates the backend and relational SSOT foundation for KVARTAL as a developer-owned multi-office real estate platform.

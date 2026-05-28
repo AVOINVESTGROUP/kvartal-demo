@@ -1,9 +1,11 @@
 # KVARTAL Multi-Office Platform Architecture
 
 **Date:** 2026-05-28  
-**Status:** Draft for approval  
+**Status:** Superseded terminology; keep for historical context  
 **Purpose:** Full human-readable project architecture for the expanded KVARTAL platform model.  
 **Audience:** project owner, developers, product team, implementation agents, future platform operators.
+
+> Current correction: use `docs/16-PARTNER-NETWORK-PLATFORM.md` and `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md` as the newer product architecture. In the corrected model, Fixer.guru is the platform owner/operator, connected real estate companies are partner organizations, and offices are branches inside partner organizations.
 
 ## 1. Human Introduction
 
