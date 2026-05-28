@@ -75,9 +75,9 @@ const objects: ObjectItem[] = [
     district: "Истра",
     address: "Московская область, Истринский район, п. ст. Холщевики",
     areaDisplay: "площадь уточняется",
-    metaLabel: "Источник",
-    metaValue: "презентация KVARTAL",
-    description: "Земельный актив из презентационных материалов KVARTAL; параметры будут уточнены после переноса данных в SSOT.",
+    metaLabel: "Формат",
+    metaValue: "земельный участок",
+    description: "Земельный участок в Истринском районе. Детальные параметры, документы и условия предоставляются по запросу.",
     tags: ["Земля", "Истра", "Холщевики"],
   },
 ];
@@ -248,7 +248,7 @@ export const Objects = () => {
                   />
                 ) : (
                   <div className="flex h-full items-end bg-[linear-gradient(135deg,rgba(7,29,58,0.86),rgba(13,46,88,0.62)),repeating-linear-gradient(45deg,#98a6b5,#98a6b5_1px,#b9c2cc_1px,#b9c2cc_16px)] p-4 text-[13px] leading-snug text-white/76">
-                    Фото и план участка будут добавлены после оцифровки презентации.
+                    Дополнительные фото и план участка предоставляются по запросу.
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-kv-navy/72 via-kv-navy/12 to-transparent" />
