@@ -2,9 +2,12 @@ import type { PartnerTenantConfig } from "../tenants";
 
 type PartnerSitePageProps = {
   tenant: PartnerTenantConfig;
+  inventoryOverride?: PartnerTenantConfig["inventory"];
 };
 
-export function PartnerSitePage({ tenant }: PartnerSitePageProps) {
+export function PartnerSitePage({ tenant, inventoryOverride }: PartnerSitePageProps) {
+  const inventory = inventoryOverride ?? tenant.inventory;
+
   return (
     <main className="min-h-screen bg-apart-dark text-apart-light">
       <section className="relative min-h-screen overflow-hidden">
@@ -54,7 +57,7 @@ export function PartnerSitePage({ tenant }: PartnerSitePageProps) {
           <div className="text-[12px] font-bold uppercase tracking-[0.22em] text-apart-gold">Shared Public Inventory</div>
           <h2 className="mt-2 text-[30px] font-semibold">Objects from the partner network</h2>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {tenant.inventory.map((item) => (
+            {inventory.map((item) => (
               <div key={`${tenant.key}-${item.market}-${item.title}`} className="border border-apart-gold/35 bg-black/20 p-4">
                 <div className="text-[12px] uppercase tracking-[0.18em] text-apart-gold">{item.market}</div>
                 <div className="mt-3 text-[20px] font-semibold">{item.title}</div>

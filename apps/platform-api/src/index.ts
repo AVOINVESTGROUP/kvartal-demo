@@ -49,6 +49,95 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/v1/platform/organizations" && request.method === "GET") {
+    const organizations = await prisma.organization.findMany({
+      orderBy: { legalName: "asc" },
+      include: {
+        offices: {
+          orderBy: { legalName: "asc" },
+          include: {
+            defaultMarket: true,
+            _count: {
+              select: {
+                propertyObjects: true,
+                clientIntents: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: {
+            offices: true,
+            propertyObjects: true,
+            clientIntents: true,
+          },
+        },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      service: serviceName,
+      organizations: organizations.map((organization) => ({
+        id: organization.id,
+        slug: organization.slug,
+        legalName: organization.legalName,
+        countryOfRegistration: organization.countryOfRegistration,
+        operatingCountryCodes: organization.operatingCountryCodes,
+        status: organization.status,
+        defaultLanguage: organization.defaultLanguage,
+        defaultCurrency: organization.defaultCurrency,
+        counts: {
+          offices: organization._count.offices,
+          propertyObjects: organization._count.propertyObjects,
+          clientIntents: organization._count.clientIntents,
+        },
+        offices: organization.offices.map((office) => ({
+          id: office.id,
+          slug: office.slug,
+          legalName: office.legalName,
+          city: office.city,
+          country: office.country,
+          status: office.status,
+          defaultMarket: office.defaultMarket
+            ? {
+                slug: office.defaultMarket.slug,
+                city: office.defaultMarket.city,
+                country: office.defaultMarket.country,
+              }
+            : null,
+          counts: {
+            propertyObjects: office._count.propertyObjects,
+            clientIntents: office._count.clientIntents,
+          },
+        })),
+      })),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/platform/summary" && request.method === "GET") {
+    const [organizationCount, officeCount, publicObjectCount, totalObjectCount] = await Promise.all([
+      prisma.organization.count(),
+      prisma.office.count(),
+      prisma.propertyObject.count({ where: { status: "published", visibility: "public", canBeShownByOtherOffices: true } }),
+      prisma.propertyObject.count(),
+    ]);
+
+    sendJson(response, 200, {
+      ok: true,
+      service: serviceName,
+      summary: {
+        organizationCount,
+        officeCount,
+        totalObjectCount,
+        sharedPublicInventoryCount: publicObjectCount,
+        database: "cloud_sql_postgresql",
+      },
+    });
+    return;
+  }
+
   sendJson(response, 404, {
     error: {
       code: "not_found",

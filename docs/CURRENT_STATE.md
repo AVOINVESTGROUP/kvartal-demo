@@ -379,3 +379,22 @@
 - Verified database-backed API readiness:
   - `platform-api /readyz`: `database=ready`, `organizationCount=3`
   - `office-api /readyz`: `database=ready`, `officeCount=3`
+
+## Database-Backed Admin and Partner Site Wiring (2026-05-29)
+
+- Added platform API read endpoints:
+  - `GET /api/v1/platform/organizations`
+  - `GET /api/v1/platform/summary`
+- Added partner/public API read endpoints:
+  - `GET /api/v1/admin/context`
+  - `GET /api/v1/public/objects`
+- Added runtime server-side API fetch helpers for:
+  - `apps/platform-admin`
+  - `apps/partner-admin`
+  - `apps/partner-site`
+- Frontend pages now fetch database-backed data through protected Cloud Run APIs using App Hosting service-account identity tokens.
+- Seed data expanded to include:
+  - `dubai-partner`
+  - `yerevan-partner`
+  - `yerevan-real-estate` market
+  - initial published shared-public objects for Moscow, Tbilisi, Dubai, and Yerevan.

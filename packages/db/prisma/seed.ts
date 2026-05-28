@@ -2,6 +2,107 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+type SeedObjectInput = {
+  ownerOrganizationId: string;
+  ownerOfficeId: string;
+  informationOwnerOrganizationId: string;
+  informationOwnerOfficeId: string;
+  createdByUserId: string;
+  marketId: string;
+  assetClass: "land" | "apartment" | "house" | "office" | "industrial_site" | "development_project" | "investment_project";
+  areaSqm?: string;
+  landAreaSqm?: string;
+  buildingAreaSqm?: string;
+  priceAmount?: string;
+  priceCurrency?: "RUB" | "USD" | "GEL" | "AMD" | "AED";
+  title: string;
+  description: string;
+  addressDisplay: string;
+  tags: string[];
+  priceDisplay: string;
+};
+
+async function ensurePublishedObject(input: SeedObjectInput) {
+  const existing = await prisma.propertyObject.findFirst({
+    where: {
+      ownerOfficeId: input.ownerOfficeId,
+      localizations: {
+        some: {
+          language: "en",
+          title: input.title,
+        },
+      },
+    },
+    include: { localizations: true },
+  });
+
+  const data = {
+    ownerOrganizationId: input.ownerOrganizationId,
+    ownerOfficeId: input.ownerOfficeId,
+    informationOwnerOrganizationId: input.informationOwnerOrganizationId,
+    informationOwnerOfficeId: input.informationOwnerOfficeId,
+    createdByUserId: input.createdByUserId,
+    marketId: input.marketId,
+    status: "published" as const,
+    visibility: "public" as const,
+    assetClass: input.assetClass,
+    areaSqm: input.areaSqm,
+    landAreaSqm: input.landAreaSqm,
+    buildingAreaSqm: input.buildingAreaSqm,
+    priceMode: "on_request" as const,
+    priceAmount: input.priceAmount,
+    priceCurrency: input.priceCurrency,
+    representationSide: "seller" as const,
+    exclusivity: "unknown" as const,
+    canBeShownByOtherOffices: true,
+    requiresOwnerOfficeApprovalForLead: true,
+    publishedAt: new Date("2026-05-28T00:00:00.000Z"),
+  };
+
+  const propertyObject = existing
+    ? await prisma.propertyObject.update({
+        where: { id: existing.id },
+        data,
+      })
+    : await prisma.propertyObject.create({
+        data: {
+          ...data,
+          localizations: {
+            create: {
+              language: "en",
+              title: input.title,
+              description: input.description,
+              addressDisplay: input.addressDisplay,
+              tags: input.tags,
+              priceDisplay: input.priceDisplay,
+            },
+          },
+        },
+      });
+
+  await prisma.propertyObjectLocalization.upsert({
+    where: { propertyObjectId_language: { propertyObjectId: propertyObject.id, language: "en" } },
+    update: {
+      title: input.title,
+      description: input.description,
+      addressDisplay: input.addressDisplay,
+      tags: input.tags,
+      priceDisplay: input.priceDisplay,
+    },
+    create: {
+      propertyObjectId: propertyObject.id,
+      language: "en",
+      title: input.title,
+      description: input.description,
+      addressDisplay: input.addressDisplay,
+      tags: input.tags,
+      priceDisplay: input.priceDisplay,
+    },
+  });
+
+  return propertyObject;
+}
+
 async function main() {
   const moscowMarket = await prisma.market.upsert({
     where: { slug: "moscow-commercial" },
@@ -62,6 +163,27 @@ async function main() {
       supportedLanguages: ["ru", "en", "ar"],
       assetClasses: ["land", "apartment", "house", "hotel", "office", "retail", "development_project", "investment_project"],
       complianceRegion: "AE",
+      active: true,
+    },
+  });
+
+  const yerevanMarket = await prisma.market.upsert({
+    where: { slug: "yerevan-real-estate" },
+    update: {
+      active: true,
+      assetClasses: ["land", "apartment", "house", "hotel", "mixed_use", "investment_project"],
+      supportedCurrencies: ["AMD", "USD"],
+      supportedLanguages: ["ru", "en", "hy"],
+    },
+    create: {
+      slug: "yerevan-real-estate",
+      city: "Yerevan",
+      country: "AM",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["AMD", "USD"],
+      supportedLanguages: ["ru", "en", "hy"],
+      assetClasses: ["land", "apartment", "house", "hotel", "mixed_use", "investment_project"],
+      complianceRegion: "AM",
       active: true,
     },
   });
@@ -129,7 +251,49 @@ async function main() {
     },
   });
 
-  await prisma.office.upsert({
+  const dubaiPartner = await prisma.organization.upsert({
+    where: { slug: "dubai-partner" },
+    update: {
+      status: "active",
+      operatingCountryCodes: ["AE"],
+      supportedCurrencies: ["AED", "USD"],
+      supportedLanguages: ["ru", "en", "ar"],
+    },
+    create: {
+      slug: "dubai-partner",
+      legalName: "Dubai Partner",
+      countryOfRegistration: "AE",
+      operatingCountryCodes: ["AE"],
+      defaultLanguage: "en",
+      supportedLanguages: ["ru", "en", "ar"],
+      defaultCurrency: "AED",
+      supportedCurrencies: ["AED", "USD"],
+      status: "active",
+    },
+  });
+
+  const yerevanPartner = await prisma.organization.upsert({
+    where: { slug: "yerevan-partner" },
+    update: {
+      status: "active",
+      operatingCountryCodes: ["AM"],
+      supportedCurrencies: ["AMD", "USD"],
+      supportedLanguages: ["ru", "en", "hy"],
+    },
+    create: {
+      slug: "yerevan-partner",
+      legalName: "Yerevan Partner",
+      countryOfRegistration: "AM",
+      operatingCountryCodes: ["AM"],
+      defaultLanguage: "ru",
+      supportedLanguages: ["ru", "en", "hy"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["AMD", "USD"],
+      status: "active",
+    },
+  });
+
+  const platformOffice = await prisma.office.upsert({
     where: { organizationId_slug: { organizationId: fixer.id, slug: "platform-operator" } },
     update: { status: "active", defaultMarketId: dubaiMarket.id },
     create: {
@@ -147,7 +311,7 @@ async function main() {
     },
   });
 
-  await prisma.office.upsert({
+  const kvartalOffice = await prisma.office.upsert({
     where: { organizationId_slug: { organizationId: kvartal.id, slug: "moscow-office" } },
     update: { status: "active", defaultMarketId: moscowMarket.id },
     create: {
@@ -165,7 +329,7 @@ async function main() {
     },
   });
 
-  await prisma.office.upsert({
+  const apart4uOffice = await prisma.office.upsert({
     where: { organizationId_slug: { organizationId: apart4u.id, slug: "tbilisi-office" } },
     update: { status: "active", defaultMarketId: tbilisiMarket.id },
     create: {
@@ -181,6 +345,121 @@ async function main() {
       supportedCurrencies: ["GEL", "USD"],
       status: "active",
     },
+  });
+
+  const dubaiOffice = await prisma.office.upsert({
+    where: { organizationId_slug: { organizationId: dubaiPartner.id, slug: "dubai-office" } },
+    update: { status: "active", defaultMarketId: dubaiMarket.id },
+    create: {
+      organizationId: dubaiPartner.id,
+      slug: "dubai-office",
+      legalName: "Dubai Partner Office",
+      city: "Dubai",
+      country: "AE",
+      defaultMarketId: dubaiMarket.id,
+      defaultLanguage: "en",
+      supportedLanguages: ["ru", "en", "ar"],
+      defaultCurrency: "AED",
+      supportedCurrencies: ["AED", "USD"],
+      status: "active",
+    },
+  });
+
+  const yerevanOffice = await prisma.office.upsert({
+    where: { organizationId_slug: { organizationId: yerevanPartner.id, slug: "yerevan-office" } },
+    update: { status: "active", defaultMarketId: yerevanMarket.id },
+    create: {
+      organizationId: yerevanPartner.id,
+      slug: "yerevan-office",
+      legalName: "Yerevan Partner Office",
+      city: "Yerevan",
+      country: "AM",
+      defaultMarketId: yerevanMarket.id,
+      defaultLanguage: "ru",
+      supportedLanguages: ["ru", "en", "hy"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["AMD", "USD"],
+      status: "active",
+    },
+  });
+
+  const seedUser = await prisma.appUser.upsert({
+    where: { firebaseUid: "seed-system-user" },
+    update: { email: "seed-system@fixer.guru", active: true },
+    create: {
+      firebaseUid: "seed-system-user",
+      email: "seed-system@fixer.guru",
+      displayName: "KVARTAL Seed System",
+      active: true,
+    },
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: moscowMarket.id,
+    assetClass: "office",
+    areaSqm: "420.00",
+    priceCurrency: "RUB",
+    title: "Moscow commercial property",
+    description: "Published seller-side object from KVARTAL Moscow for partner network display.",
+    addressDisplay: "Moscow, commercial district",
+    tags: ["commercial", "moscow", "seller-side"],
+    priceDisplay: "Price on request",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: apart4u.id,
+    ownerOfficeId: apart4uOffice.id,
+    informationOwnerOrganizationId: apart4u.id,
+    informationOwnerOfficeId: apart4uOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: tbilisiMarket.id,
+    assetClass: "apartment",
+    areaSqm: "118.00",
+    priceCurrency: "USD",
+    title: "Tbilisi premium apartment",
+    description: "Published Apart4u object available in the shared public inventory.",
+    addressDisplay: "Tbilisi, central area",
+    tags: ["apartment", "tbilisi", "apart4u"],
+    priceDisplay: "Price on request",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: dubaiPartner.id,
+    ownerOfficeId: dubaiOffice.id,
+    informationOwnerOrganizationId: dubaiPartner.id,
+    informationOwnerOfficeId: dubaiOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: dubaiMarket.id,
+    assetClass: "development_project",
+    buildingAreaSqm: "2400.00",
+    priceCurrency: "AED",
+    title: "Dubai development project",
+    description: "Published Dubai partner project prepared for cross-border buyer-side requests.",
+    addressDisplay: "Dubai, investment zone",
+    tags: ["dubai", "development", "investment"],
+    priceDisplay: "Price on request",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: yerevanPartner.id,
+    ownerOfficeId: yerevanOffice.id,
+    informationOwnerOrganizationId: yerevanPartner.id,
+    informationOwnerOfficeId: yerevanOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: yerevanMarket.id,
+    assetClass: "land",
+    landAreaSqm: "1800.00",
+    priceCurrency: "USD",
+    title: "Yerevan land plot",
+    description: "Published Yerevan partner land object for the shared public inventory.",
+    addressDisplay: "Yerevan, development area",
+    tags: ["yerevan", "land", "development"],
+    priceDisplay: "Price on request",
   });
 
   const platformOwnerFirebaseUid = process.env.KVARTAL_PLATFORM_OWNER_FIREBASE_UID;
@@ -208,8 +487,9 @@ async function main() {
   console.log(
     JSON.stringify({
       ok: true,
-      markets: [moscowMarket.slug, tbilisiMarket.slug, dubaiMarket.slug],
-      organizations: [fixer.slug, kvartal.slug, apart4u.slug],
+      markets: [moscowMarket.slug, tbilisiMarket.slug, dubaiMarket.slug, yerevanMarket.slug],
+      organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug],
+      offices: [platformOffice.slug, kvartalOffice.slug, apart4uOffice.slug, dubaiOffice.slug, yerevanOffice.slug],
       platformOwnerSeeded: Boolean(platformOwnerFirebaseUid && platformOwnerEmail),
     }),
   );
