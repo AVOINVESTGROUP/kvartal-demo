@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+﻿import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -509,7 +509,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: batayskMarket.id,
+    marketId: moscowMarket.id,
     assetClass: "office",
     areaSqm: "420.00",
     priceCurrency: "RUB",
@@ -526,7 +526,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: siriusMarket.id,
+    marketId: batayskMarket.id,
     assetClass: "industrial_site",
     assetSubtype: "складской комплекс",
     priceCurrency: "RUB",
@@ -543,7 +543,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: domodedovoMarket.id,
+    marketId: siriusMarket.id,
     assetClass: "development_project",
     assetSubtype: "гостиничный комплекс",
     landAreaSqm: "57868.00",
@@ -562,7 +562,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: kubinkaMarket.id,
+    marketId: domodedovoMarket.id,
     assetClass: "land",
     assetSubtype: "земельный участок",
     landAreaSqm: "5615.00",
@@ -581,7 +581,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: istraMarket.id,
+    marketId: kubinkaMarket.id,
     assetClass: "land",
     assetSubtype: "земельный участок",
     landAreaSqm: "2353.00",
@@ -600,7 +600,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: moscowMarket.id,
+    marketId: istraMarket.id,
     assetClass: "land",
     assetSubtype: "земельный участок",
     priceCurrency: "RUB",
@@ -713,3 +713,4 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
+
