@@ -398,3 +398,17 @@
   - `yerevan-partner`
   - `yerevan-real-estate` market
   - initial published shared-public objects for Moscow, Tbilisi, Dubai, and Yerevan.
+
+## KVARTAL Site and Admin Wiring (2026-05-29)
+
+- Added `apps/kvartal-admin` as a dedicated App Hosting app for the `kvartal-moscow` partner organization.
+- Prepared `kvartal-admin-dev` App Hosting config entry.
+- Updated `apps/web` so the KVARTAL public site reads shared public inventory from the protected public API at runtime.
+- The KVARTAL public vitrina now supports country/city/type filtering for multi-city and multi-country inventory.
+- Added the real KVARTAL site objects from the current web vitrina into the database seed:
+  - Bataysk warehouse/industrial complex;
+  - Sirius hotel development site, Figurnaya 45;
+  - Domodedovo land plot;
+  - Kubinka land plot;
+  - Istra/Holshcheviki land plot.
+- Added separate market rows for Bataysk, Sirius, Domodedovo, Kubinka, and Istra so the public vitrina can filter them correctly by city.

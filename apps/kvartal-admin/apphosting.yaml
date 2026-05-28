@@ -9,5 +9,9 @@ env:
     value: "1"
   - variable: PORT
     value: "8080"
-  - variable: PUBLIC_API_BASE_URL
+  - variable: PARTNER_API_BASE_URL
     value: "https://kvartal-office-api-qslxzoismq-ez.a.run.app"
+  - variable: PLATFORM_API_BASE_URL
+    value: "https://kvartal-platform-api-qslxzoismq-ez.a.run.app"
+  - variable: PARTNER_ORGANIZATION_SLUG
+    value: "kvartal-moscow"

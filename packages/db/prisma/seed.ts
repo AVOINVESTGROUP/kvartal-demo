@@ -10,11 +10,13 @@ type SeedObjectInput = {
   createdByUserId: string;
   marketId: string;
   assetClass: "land" | "apartment" | "house" | "office" | "industrial_site" | "development_project" | "investment_project";
+  assetSubtype?: string;
   areaSqm?: string;
   landAreaSqm?: string;
   buildingAreaSqm?: string;
   priceAmount?: string;
   priceCurrency?: "RUB" | "USD" | "GEL" | "AMD" | "AED";
+  cadastralNumber?: string;
   title: string;
   description: string;
   addressDisplay: string;
@@ -46,12 +48,14 @@ async function ensurePublishedObject(input: SeedObjectInput) {
     status: "published" as const,
     visibility: "public" as const,
     assetClass: input.assetClass,
+    assetSubtype: input.assetSubtype,
     areaSqm: input.areaSqm,
     landAreaSqm: input.landAreaSqm,
     buildingAreaSqm: input.buildingAreaSqm,
     priceMode: "on_request" as const,
     priceAmount: input.priceAmount,
     priceCurrency: input.priceCurrency,
+    cadastralNumber: input.cadastralNumber,
     representationSide: "seller" as const,
     exclusivity: "unknown" as const,
     canBeShownByOtherOffices: true,
@@ -120,6 +124,111 @@ async function main() {
       supportedCurrencies: ["RUB", "USD"],
       supportedLanguages: ["ru", "en"],
       assetClasses: ["land", "apartment", "house", "office", "retail", "warehouse", "industrial_site", "factory"],
+      complianceRegion: "RU",
+      active: true,
+    },
+  });
+
+  const batayskMarket = await prisma.market.upsert({
+    where: { slug: "bataysk-industrial" },
+    update: {
+      active: true,
+      assetClasses: ["warehouse", "industrial_site", "factory"],
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "bataysk-industrial",
+      city: "Bataysk",
+      country: "RU",
+      defaultCurrency: "RUB",
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["warehouse", "industrial_site", "factory"],
+      complianceRegion: "RU",
+      active: true,
+    },
+  });
+
+  const siriusMarket = await prisma.market.upsert({
+    where: { slug: "sirius-hospitality" },
+    update: {
+      active: true,
+      assetClasses: ["land", "hotel", "development_project", "investment_project"],
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "sirius-hospitality",
+      city: "Sirius",
+      country: "RU",
+      defaultCurrency: "RUB",
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["land", "hotel", "development_project", "investment_project"],
+      complianceRegion: "RU",
+      active: true,
+    },
+  });
+
+  const domodedovoMarket = await prisma.market.upsert({
+    where: { slug: "domodedovo-land" },
+    update: {
+      active: true,
+      assetClasses: ["land", "retail", "development_project"],
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "domodedovo-land",
+      city: "Domodedovo",
+      country: "RU",
+      defaultCurrency: "RUB",
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["land", "retail", "development_project"],
+      complianceRegion: "RU",
+      active: true,
+    },
+  });
+
+  const kubinkaMarket = await prisma.market.upsert({
+    where: { slug: "kubinka-land" },
+    update: {
+      active: true,
+      assetClasses: ["land", "retail", "development_project"],
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "kubinka-land",
+      city: "Kubinka",
+      country: "RU",
+      defaultCurrency: "RUB",
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["land", "retail", "development_project"],
+      complianceRegion: "RU",
+      active: true,
+    },
+  });
+
+  const istraMarket = await prisma.market.upsert({
+    where: { slug: "istra-land" },
+    update: {
+      active: true,
+      assetClasses: ["land", "development_project"],
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "istra-land",
+      city: "Istra",
+      country: "RU",
+      defaultCurrency: "RUB",
+      supportedCurrencies: ["RUB", "USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["land", "development_project"],
       complianceRegion: "RU",
       active: true,
     },
@@ -400,7 +509,7 @@ async function main() {
     informationOwnerOrganizationId: kvartal.id,
     informationOwnerOfficeId: kvartalOffice.id,
     createdByUserId: seedUser.id,
-    marketId: moscowMarket.id,
+    marketId: batayskMarket.id,
     assetClass: "office",
     areaSqm: "420.00",
     priceCurrency: "RUB",
@@ -409,6 +518,97 @@ async function main() {
     addressDisplay: "Moscow, commercial district",
     tags: ["commercial", "moscow", "seller-side"],
     priceDisplay: "Price on request",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: siriusMarket.id,
+    assetClass: "industrial_site",
+    assetSubtype: "складской комплекс",
+    priceCurrency: "RUB",
+    title: "Складской комплекс в Батайске",
+    description: "Складские помещения с высокими потолками, стеллажным хранением и подъездом к промышленной зоне.",
+    addressDisplay: "Ростовская область, г. Батайск, Совхозная ул., район 6Б",
+    tags: ["Склад", "Батайск", "Производство"],
+    priceDisplay: "По запросу",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: domodedovoMarket.id,
+    assetClass: "development_project",
+    assetSubtype: "гостиничный комплекс",
+    landAreaSqm: "57868.00",
+    priceCurrency: "RUB",
+    cadastralNumber: "23:49:0402061:1072",
+    title: "Гостиничный комплекс, Фигурная 45",
+    description: "Земельный участок для размещения четырехзвездочных гостиничных комплексов на 700 и 420 номеров.",
+    addressDisplay: "Краснодарский край, ф.т. Сириус, пгт. Сириус, ул. Фигурная, з/у 45",
+    tags: ["Гостиница", "Сириус", "57 868 м²"],
+    priceDisplay: "По запросу",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: kubinkaMarket.id,
+    assetClass: "land",
+    assetSubtype: "земельный участок",
+    landAreaSqm: "5615.00",
+    priceCurrency: "RUB",
+    cadastralNumber: "50:28:0060113:7403",
+    title: "Земельный участок в Домодедово",
+    description: "Участок рядом с трассой М-4 и сложившейся торговой инфраструктурой; разрешенное использование: магазины.",
+    addressDisplay: "Московская область, г.о. Домодедово, мкр. Южный",
+    tags: ["Земля", "Домодедово", "М-4"],
+    priceDisplay: "По запросу",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: istraMarket.id,
+    assetClass: "land",
+    assetSubtype: "земельный участок",
+    landAreaSqm: "2353.00",
+    priceCurrency: "RUB",
+    cadastralNumber: "50:20:0090427:2085",
+    title: "Земельный участок в Кубинке",
+    description: "Участок у активного торгового потока; разрешенное использование: стоянка транспортных средств.",
+    addressDisplay: "Московская область, Кубинка, район строительного рынка",
+    tags: ["Земля", "Кубинка", "Трафик"],
+    priceDisplay: "По запросу",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: kvartal.id,
+    ownerOfficeId: kvartalOffice.id,
+    informationOwnerOrganizationId: kvartal.id,
+    informationOwnerOfficeId: kvartalOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: moscowMarket.id,
+    assetClass: "land",
+    assetSubtype: "земельный участок",
+    priceCurrency: "RUB",
+    title: "Участок, Истринский район, Холщевики",
+    description: "Земельный участок в Истринском районе. Детальные параметры, документы и условия предоставляются по запросу.",
+    addressDisplay: "Московская область, Истринский район, п. ст. Холщевики",
+    tags: ["Земля", "Истра", "Холщевики"],
+    priceDisplay: "По запросу",
   });
 
   await ensurePublishedObject({
@@ -487,7 +687,17 @@ async function main() {
   console.log(
     JSON.stringify({
       ok: true,
-      markets: [moscowMarket.slug, tbilisiMarket.slug, dubaiMarket.slug, yerevanMarket.slug],
+      markets: [
+        moscowMarket.slug,
+        batayskMarket.slug,
+        siriusMarket.slug,
+        domodedovoMarket.slug,
+        kubinkaMarket.slug,
+        istraMarket.slug,
+        tbilisiMarket.slug,
+        dubaiMarket.slug,
+        yerevanMarket.slug,
+      ],
       organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug],
       offices: [platformOffice.slug, kvartalOffice.slug, apart4uOffice.slug, dubaiOffice.slug, yerevanOffice.slug],
       platformOwnerSeeded: Boolean(platformOwnerFirebaseUid && platformOwnerEmail),

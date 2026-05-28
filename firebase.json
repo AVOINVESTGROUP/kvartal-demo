@@ -28,6 +28,10 @@
       "rootDirectory": "apps/partner-admin"
     },
     {
+      "backendId": "kvartal-admin-dev",
+      "rootDirectory": "apps/kvartal-admin"
+    },
+    {
       "backendId": "partner-site-dev",
       "rootDirectory": "apps/partner-site"
     }
