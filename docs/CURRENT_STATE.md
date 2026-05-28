@@ -87,3 +87,11 @@
 - Platform Admin and Office Admin are separate administrative layers.
 - Future architecture must prepare for multilingual content, multicurrency prices, subscriptions/monetization, and public investment market analytics.
 - Stage 3 implementation plan must be revised before coding to include multi-office ownership fields and platform/office admin separation.
+
+## Stage 3 Replan (2026-05-28)
+
+- Replaced `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` with a multi-office Stage 3 plan.
+- Updated `docs/02-DATA-MODEL.md` for offices, markets, object ownership, leads, co-broker requests, inter-office deal rooms, subscriptions, and analytics placeholders.
+- Updated `docs/03-API-CONTRACTS.md` for public, platform-admin, office-admin, client-intent, co-broker, deal-room, and analytics contracts.
+- Recommended first implementation slice: Stage 3A `Domain Types + Seed Data + Public Repository Layer`.
+- Deployment remains Git-driven through Firebase App Hosting; no Firebase CLI deploy for App Hosting unless explicitly requested.
