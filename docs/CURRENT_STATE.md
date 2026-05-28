@@ -317,3 +317,20 @@
   - `infra/dataform/workflow_settings.yaml`
   - `infra/dataform/definitions/ssot_table_inventory.sqlx`
 - Added `docs/15-GOOGLE-DATA-GOVERNANCE.md`.
+
+## Partner Site Tenant Structure (2026-05-28)
+
+- `apps/partner-site` now has explicit tenant directories for:
+  - `apart4u` as the active Tbilisi partner site;
+  - `dubai` as a future Dubai partner site;
+  - `yerevan` as a future Yerevan partner site.
+- Tenant configs live in `apps/partner-site/src/tenants/*/config.ts`.
+- Public tenant routes:
+  - `/` renders the default `apart4u` site;
+  - `/apart4u` renders the Apart4u tenant;
+  - `/dubai` renders the Dubai tenant;
+  - `/yerevan` renders the Yerevan tenant.
+- Future partner media directories were reserved:
+  - `apps/partner-site/public/dubai`
+  - `apps/partner-site/public/yerevan`
+- The shared public inventory is rendered through a reusable partner-site component while preserving separate partner brand/config ownership.

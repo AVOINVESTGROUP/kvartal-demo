@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @source "../app";
+@source "../components";
 
 :root {
   --gold: #d4af37;
