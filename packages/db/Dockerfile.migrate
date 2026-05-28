@@ -1,0 +1,16 @@
+FROM node:20-slim AS runner
+WORKDIR /app
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/config ./packages/config
+COPY packages/db ./packages/db
+
+RUN pnpm install --frozen-lockfile --filter @kvartal/db...
+
+CMD ["pnpm", "--filter", "@kvartal/db", "prisma:migrate:deploy"]

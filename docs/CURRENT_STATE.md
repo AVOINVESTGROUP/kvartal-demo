@@ -203,3 +203,64 @@
 - Legal documents can be scoped to organization, office, property object, client intent, deal room, transaction, or other.
 - Legal documents include confidentiality, review status, issue/expiry metadata, and review history.
 - Private legal document access must be controlled by organization/office membership, deal-room participation, confidentiality, and audit rules.
+
+## Stage 3A Cloud Provisioning (2026-05-28)
+
+- Created Cloud SQL PostgreSQL instance in `kvartal-dev`:
+  - instance: `kvartal-dev-postgres`
+  - region/zone: `europe-west4-a`
+  - database: `kvartal_app`
+  - app user: `kvartal_app`
+- Created Secret Manager secret:
+  - `kvartal-database-url`
+  - latest valid version: `2`
+- Created runtime service accounts:
+  - `kvartal-platform-api@kvartal-dev.iam.gserviceaccount.com`
+  - `kvartal-office-api@kvartal-dev.iam.gserviceaccount.com`
+  - `kvartal-migrations@kvartal-dev.iam.gserviceaccount.com`
+- Created Artifact Registry Docker repository:
+  - `europe-west4-docker.pkg.dev/kvartal-dev/kvartal`
+- Built and pushed images:
+  - `europe-west4-docker.pkg.dev/kvartal-dev/kvartal/db-migrate:stage3a`
+  - `europe-west4-docker.pkg.dev/kvartal-dev/kvartal/platform-api:stage3a`
+  - `europe-west4-docker.pkg.dev/kvartal-dev/kvartal/office-api:stage3a`
+- Created and executed Cloud Run migration job:
+  - job: `kvartal-db-migrate`
+  - execution: `kvartal-db-migrate-d9mzz`
+  - result: completed successfully
+- Deployed Cloud Run services:
+  - `kvartal-platform-api`
+  - canonical URL: `https://kvartal-platform-api-qslxzoismq-ez.a.run.app`
+  - `kvartal-office-api`
+  - canonical URL: `https://kvartal-office-api-qslxzoismq-ez.a.run.app`
+- Both services are `Ready=True` and container startup probes passed.
+- Organization policy currently blocks `allUsers` Cloud Run invoker binding; services remain protected by IAM.
+
+## Google Data Management Layer (2026-05-28)
+
+- Enabled data APIs in `kvartal-dev`:
+  - BigQuery
+  - BigQuery Data Policy
+  - BigQuery Connection
+  - Dataplex
+  - Dataform
+  - Datastream
+  - Data Catalog
+- Created BigQuery datasets in `europe-west4`:
+  - `kvartal_raw`
+  - `kvartal_curated`
+  - `kvartal_governance`
+- Created BigQuery Cloud SQL federated connection:
+  - `kvartal-dev.europe-west4.kvartal_cloudsql`
+  - verified by querying PostgreSQL `information_schema`; result: `37` public tables.
+- Created Dataplex lake:
+  - lake: `kvartal-governance`
+  - zones: `raw`, `curated`
+  - assets: `bq-raw`, `bq-curated`, `bq-governance`
+- Created Data Catalog policy tag taxonomy:
+  - taxonomy: `KVARTAL Sensitivity`
+  - policy tags: `public`, `internal`, `confidential`, `legal_sensitive`, `personal_data`
+- Added Dataform scaffold:
+  - `infra/dataform/workflow_settings.yaml`
+  - `infra/dataform/definitions/ssot_table_inventory.sqlx`
+- Added `docs/15-GOOGLE-DATA-GOVERNANCE.md`.

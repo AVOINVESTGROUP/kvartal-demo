@@ -1,0 +1,5 @@
+defaultProject: kvartal-dev
+defaultLocation: europe-west4
+defaultDataset: kvartal_curated
+defaultAssertionDataset: kvartal_governance
+dataformCoreVersion: 3.0.0

@@ -1,0 +1,11 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/office-api/Dockerfile
+      - -t
+      - europe-west4-docker.pkg.dev/$PROJECT_ID/kvartal/office-api:stage3a
+      - .
+images:
+  - europe-west4-docker.pkg.dev/$PROJECT_ID/kvartal/office-api:stage3a

@@ -1,0 +1,11 @@
+config {
+  type: "view",
+  schema: "kvartal_governance",
+  name: "ssot_table_inventory"
+}
+
+SELECT *
+FROM EXTERNAL_QUERY(
+  "kvartal-dev.europe-west4.kvartal_cloudsql",
+  "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = 'public'"
+)
