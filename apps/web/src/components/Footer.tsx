@@ -33,6 +33,7 @@ export const Footer = () => {
             <p className="mt-3 text-white/62">
               ИНН 9718286440 | КПП 771801001 | ОГРН 1257700412694 | Р/С 40702810802730006807 | АО «АЛЬФА-БАНК» | БИК 044525593
             </p>
+            <p className="mt-3 text-white/62">Development and design by AVOINVESTGROUP</p>
             <p className="mt-3 text-white/62">© 2026 KVARTAL. Все права защищены.</p>
           </div>
         </div>
