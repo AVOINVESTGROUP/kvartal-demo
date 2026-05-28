@@ -1,5 +1,5 @@
 import { createServer, type ServerResponse } from "node:http";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 export const serviceName = "platform-api";
 
@@ -15,8 +15,33 @@ export const ownedRoutes = [
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
 
+type PlatformOrganizationRow = Prisma.OrganizationGetPayload<{
+  include: {
+    offices: {
+      include: {
+        defaultMarket: true;
+        _count: {
+          select: {
+            propertyObjects: true;
+            clientIntents: true;
+          };
+        };
+      };
+    };
+    _count: {
+      select: {
+        offices: true;
+        propertyObjects: true;
+        clientIntents: true;
+      };
+    };
+  };
+}>;
+
+type PlatformOfficeRow = PlatformOrganizationRow["offices"][number];
+
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
-  response.writeHead(status, { "content-type": "application/json" });
+  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
 }
 
@@ -78,7 +103,7 @@ const server = createServer(async (request, response) => {
     sendJson(response, 200, {
       ok: true,
       service: serviceName,
-      organizations: organizations.map((organization) => ({
+      organizations: organizations.map((organization: PlatformOrganizationRow) => ({
         id: organization.id,
         slug: organization.slug,
         legalName: organization.legalName,
@@ -92,7 +117,7 @@ const server = createServer(async (request, response) => {
           propertyObjects: organization._count.propertyObjects,
           clientIntents: organization._count.clientIntents,
         },
-        offices: organization.offices.map((office) => ({
+        offices: organization.offices.map((office: PlatformOfficeRow) => ({
           id: office.id,
           slug: office.slug,
           legalName: office.legalName,

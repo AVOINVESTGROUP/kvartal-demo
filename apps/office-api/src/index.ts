@@ -18,7 +18,7 @@ const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
-  response.writeHead(status, { "content-type": "application/json" });
+  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
 }
 
