@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@source "../app";
+
+:root {
+  --gold: #d4af37;
+  --gold-light: #f3d578;
+  --bg-dark: #070b13;
+  --text-light: #ffffff;
+  --text-gray: #a0a5b0;
+}
+
+@theme inline {
+  --color-apart-gold: var(--gold);
+  --color-apart-gold-light: var(--gold-light);
+  --color-apart-dark: var(--bg-dark);
+  --color-apart-light: var(--text-light);
+  --color-apart-gray: var(--text-gray);
+}
+
+body {
+  margin: 0;
+  background: var(--bg-dark);
+  color: var(--text-light);
+  font-family: Arial, Helvetica, sans-serif;
+}

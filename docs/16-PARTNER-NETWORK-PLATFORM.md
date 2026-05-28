@@ -159,6 +159,55 @@ Purpose:
 - attribute leads to the source partner organization;
 - start buyer-side/seller-side cooperation flow.
 
+## 4. Shared Public Inventory / Общий опубликованный пул объектов
+
+Approved term:
+
+```text
+Shared Public Inventory
+= Общий опубликованный пул объектов
+```
+
+Definition:
+
+```text
+Общий опубликованный пул объектов =
+общий пул объектов, разрешенных к показу,
+который может отображаться на сайтах разных партнеров
+в их собственном дизайне.
+```
+
+This is not one shared website. It is a governed inventory layer that partner sites can render under their own brand.
+
+Example:
+
+```text
+KVARTAL Moscow publishes a Moscow object into the shared public inventory.
+Apart4u.co can display that Moscow object on apart4u.co in the Apart4u design.
+Client submits a request on apart4u.co.
+Lead belongs to Apart4u.co as buyer-side organization.
+Object remains controlled by KVARTAL Moscow as seller-side/information-owner organization.
+```
+
+Minimum rule for an object to enter the shared public inventory:
+
+```text
+visibility = public
+publicationStatus = published
+sharedToPartnerNetwork = true
+```
+
+Optional restrictions:
+
+```text
+allowedPartnerSiteIds
+allowedMarketIds
+requiresOwnerApprovalForLead
+expiresAt
+```
+
+Public inventory must never expose private or confidential fields.
+
 Proposed app name:
 
 ```text
@@ -178,7 +227,7 @@ future.ae       -> Dubai partner design and site context
 
 The existing `C:\Dev\Apart4U\apart.html` is an input design source for the Apart4u.co partner-site theme, not for platform admin.
 
-## 4. Shared Inventory on Partner Sites
+## 5. Shared Inventory on Partner Sites
 
 Each partner site can show:
 
@@ -202,7 +251,7 @@ Commission is split by agreement.
 Fixer.guru may receive platform fee, subscription fee, lead fee, transaction fee, or data access fee.
 ```
 
-## 5. Data Rights
+## 6. Data Rights
 
 Core rule:
 
@@ -232,7 +281,7 @@ Information rights holder controls:
 - publication decision for its own objects within platform policy;
 - approval for cooperation where required.
 
-## 6. Public vs Private Data
+## 7. Public vs Private Data
 
 Public showcase data is explicitly published inventory data.
 
@@ -256,7 +305,7 @@ Public showcase must not expose by default:
 - private address details when hidden;
 - draft or archived objects.
 
-## 7. Deal Roles
+## 8. Deal Roles
 
 The platform must separate object ownership from client ownership.
 
@@ -291,7 +340,7 @@ Deal room:
   commission split = agreement-specific
 ```
 
-## 8. Recommended App Names
+## 9. Recommended App Names
 
 Target names:
 
@@ -317,7 +366,7 @@ Meaning:
 
 Avoid using `office-admin` and `office-api` as product names because offices are branches inside partner organizations, not the main business tenant.
 
-## 9. Initial Partner Seeds
+## 10. Initial Partner Seeds
 
 The data model should seed and support:
 
@@ -350,7 +399,7 @@ Partner Organization:
   market: Dubai / UAE
 ```
 
-## 10. Monetization Model
+## 11. Monetization Model
 
 Fixer.guru monetizes platform access and network participation.
 
@@ -370,7 +419,7 @@ Possible monetization layers:
 
 The data model must not assume unlimited free access.
 
-## 11. Required Data Concepts
+## 12. Required Data Concepts
 
 Current schema already has many base entities. The product language should evolve toward:
 
@@ -399,7 +448,7 @@ AuditLog
 
 Implementation may map these to existing tables initially, but docs, API contracts, and UI names should use the business terms clearly.
 
-## 12. Non-Negotiable Rules
+## 13. Non-Negotiable Rules
 
 - Fixer.guru is platform owner/operator.
 - Partner organizations are tenants/clients/partners, not equal owners of the platform.

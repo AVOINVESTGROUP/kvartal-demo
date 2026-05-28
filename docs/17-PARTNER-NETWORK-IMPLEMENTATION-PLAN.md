@@ -11,7 +11,7 @@ Move the current project from "one public site plus experimental admin pages" to
 ```text
 Fixer.guru owns the platform.
 Partner organizations have their own branded sites and admin workspaces.
-All partner sites can show eligible shared inventory.
+All partner sites can show eligible shared inventory from the Shared Public Inventory / Общий опубликованный пул объектов.
 Leads, object ownership, deal sides, and commissions are tracked.
 Access to data is controlled and monetizable.
 ```
@@ -232,13 +232,14 @@ platformFeePolicyId
 
 ## 7. Public Inventory Rules
 
-Public partner sites can request inventory from `public-api`.
+Public partner sites can request the Shared Public Inventory / Общий опубликованный пул объектов from `public-api`.
 
 `public-api` must only return:
 
 ```text
 visibility = public
 publicationStatus = published
+sharedToPartnerNetwork = true
 allowed for requesting partner site or public network
 ```
 
@@ -449,7 +450,7 @@ The architecture is correct only when:
 - `apps/platform-admin` is separate from partner admin.
 - `apps/partner-admin` is tenant-scoped.
 - `apps/partner-site` supports at least Apart4u.co as branded tenant.
-- public inventory is read through public-safe rules.
+- Shared Public Inventory / Общий опубликованный пул объектов is read through public-safe rules.
 - leads store source site and buyer-side organization.
 - objects store seller-side/information-owner organization.
 - partner organizations cannot see unrelated private data.

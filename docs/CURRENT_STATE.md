@@ -283,6 +283,10 @@
   - `apps/platform-api` for platform owner backend;
   - `apps/partner-api` for authenticated partner operations;
   - `apps/public-api` for public-safe inventory and lead intake.
+- Approved shared inventory term:
+  - English: `Shared Public Inventory`
+  - Russian: `Общий опубликованный пул объектов`
+  - meaning: a common pool of objects approved for display that can be rendered on different partner websites in each partner's own design.
 - Current `/admin/*` pages inside `apps/web` are considered a temporary misplaced prototype and must be removed or moved before the next approved implementation slice.
 
 ## Google Data Management Layer (2026-05-28)
