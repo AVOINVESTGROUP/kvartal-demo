@@ -195,3 +195,40 @@ gcloud run deploy kvartal-office-api `
   --add-cloudsql-instances=kvartal-dev:europe-west4:kvartal-dev-postgres `
   --set-secrets=DATABASE_URL=kvartal-database-url:latest
 ```
+
+## 2026-05-29: App Hosting Secret Resolution and Next Proxy Runtime Env
+
+### Symptoms
+
+- App Hosting build fails with `fah/misconfigured-secret` even after direct Secret Manager IAM bindings.
+- Next `proxy.ts` cannot rely on runtime-only Cloud Run secrets, because middleware/proxy code may be evaluated with build-time env.
+- Browser URL returns `Admin authentication is not configured` although Cloud Run service env contains the secret.
+
+### Fix Used
+
+- Keep secrets out of `apps/kvartal-admin/apphosting.yaml` until Firebase CLI auth can run `firebase apphosting:secrets:grantaccess`.
+- Enforce admin auth in the server page and server actions, where runtime env is available.
+- After App Hosting rollout, patch the managed Cloud Run service with runtime secrets:
+
+```powershell
+gcloud run services update kvartal-admin-dev `
+  --region=europe-west4 `
+  --project=kvartal-dev `
+  --update-secrets="KVARTAL_ADMIN_BASIC_AUTH=kvartal-admin-basic-auth:latest,KVARTAL_ADMIN_SESSION_TOKEN=kvartal-admin-session-token:latest" `
+  --quiet
+```
+
+### Verification
+
+Unauthenticated admin URL should redirect to `/login`:
+
+```powershell
+try {
+  Invoke-WebRequest -Uri "https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app" -UseBasicParsing -MaximumRedirection 0
+} catch {
+  $_.Exception.Response.StatusCode.value__
+  $_.Exception.Response.Headers["Location"]
+}
+```
+
+With a valid `kvartal_admin_session` cookie from Secret Manager, the page should return `200`.
