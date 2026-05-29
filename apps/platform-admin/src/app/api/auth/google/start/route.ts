@@ -1,12 +1,10 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
-import { currentOrigin } from "../../../../../lib/auth";
-
-const fallbackClientId = "a6216f35d-0610-4f97-b9b8-6d0296d8e81d";
+import { currentOrigin, getSecretValue } from "../../../../../lib/auth";
 
 export async function GET() {
-  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"] ?? fallbackClientId;
+  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"] ?? (await getSecretValue("fixer-google-oauth-client-id"));
 
   if (!clientId) {
     return new NextResponse("Google OAuth is not configured.", { status: 503 });
