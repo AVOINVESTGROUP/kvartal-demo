@@ -1,8 +1,7 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { clearAdminSession } from "../../lib/auth";
 
 export async function GET() {
-  const cookieStore = await cookies();
-  cookieStore.delete("kvartal_admin_session");
+  await clearAdminSession();
   redirect("/login");
 }

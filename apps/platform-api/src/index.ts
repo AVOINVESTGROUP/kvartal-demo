@@ -11,6 +11,7 @@ export const ownedRoutes = [
   "/api/v1/platform/subscriptions",
   "/api/v1/platform/audit",
   "/api/v1/platform/access",
+  "/api/v1/platform/access/members",
   "/api/v1/platform/access/platform-member",
   "/api/v1/platform/access/organization-owner",
 ] as const;
@@ -314,6 +315,48 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/v1/platform/access/members" && request.method === "GET") {
+    const users = await prisma.appUser.findMany({
+      where: {
+        OR: [
+          { platformRoleAssignments: { some: {} } },
+          { organizationMemberships: { some: {} } },
+        ],
+      },
+      include: {
+        platformRoleAssignments: true,
+        organizationMemberships: {
+          include: {
+            organization: true,
+          },
+        },
+      },
+      orderBy: { email: "asc" },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      members: users.map((user) => ({
+        email: user.email,
+        displayName: user.displayName,
+        active: user.active,
+        platformRoles: (user.platformRoleAssignments as AccessPlatformRoleAssignment[])
+          .filter((role: AccessPlatformRoleAssignment) => role.active)
+          .map((role: AccessPlatformRoleAssignment) => role.role),
+        inactivePlatformRoles: (user.platformRoleAssignments as AccessPlatformRoleAssignment[])
+          .filter((role: AccessPlatformRoleAssignment) => !role.active)
+          .map((role: AccessPlatformRoleAssignment) => role.role),
+        organizationMemberships: (user.organizationMemberships as AccessOrganizationMembership[]).map((membership) => ({
+          organizationSlug: membership.organization.slug,
+          organizationName: membership.organization.legalName,
+          roles: membership.roles,
+          active: membership.active,
+        })),
+      })),
+    });
+    return;
+  }
+
   if (url.pathname === "/api/v1/platform/access/platform-member" && request.method === "POST") {
     if (!hasPlatformWriteAccess(request)) {
       sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
@@ -352,6 +395,64 @@ const server = createServer(async (request, response) => {
     });
 
     sendJson(response, 201, {
+      ok: true,
+      member: {
+        email: user.email,
+        displayName: user.displayName,
+        role: assignment.role,
+        active: assignment.active,
+      },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/platform/access/platform-member" && request.method === "PATCH") {
+    if (!hasPlatformWriteAccess(request)) {
+      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      email?: string;
+      displayName?: string;
+      role?: "platform_owner" | "platform_admin" | "platform_analyst" | "platform_viewer";
+      active?: boolean;
+    };
+    const body = await readJsonBody<Body>(request);
+    const email = normalizeEmail(body.email);
+    const role = optionalString(body.role) as Body["role"];
+    const active = body.active !== false;
+
+    if (!email || !role) {
+      sendError(response, 400, "required_fields_missing", "email and role are required.");
+      return;
+    }
+
+    const user = await prisma.appUser.upsert({
+      where: { email },
+      update: { displayName: optionalString(body.displayName), active: true },
+      create: {
+        firebaseUid: `google:${email}`,
+        email,
+        displayName: optionalString(body.displayName),
+        active: true,
+      },
+    });
+
+    if (active) {
+      await prisma.platformRoleAssignment.updateMany({
+        where: { userId: user.id },
+        data: { active: false },
+      });
+    }
+
+    const assignment = await prisma.platformRoleAssignment.upsert({
+      where: { userId_role: { userId: user.id, role } },
+      update: { active },
+      create: { userId: user.id, role, active },
+    });
+
+    sendJson(response, 200, {
       ok: true,
       member: {
         email: user.email,
@@ -413,6 +514,73 @@ const server = createServer(async (request, response) => {
     });
 
     sendJson(response, 201, {
+      ok: true,
+      member: {
+        email: user.email,
+        displayName: user.displayName,
+        organizationSlug: organization.slug,
+        organizationName: organization.legalName,
+        roles: membership.roles,
+        active: membership.active,
+      },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/platform/access/organization-owner" && request.method === "PATCH") {
+    if (!hasPlatformWriteAccess(request)) {
+      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      email?: string;
+      displayName?: string;
+      role?: "organization_owner" | "organization_admin";
+      active?: boolean;
+    };
+    const body = await readJsonBody<Body>(request);
+    const organizationSlug = optionalString(body.organizationSlug);
+    const email = normalizeEmail(body.email);
+    const role = (optionalString(body.role) ?? "organization_owner") as "organization_owner" | "organization_admin";
+    const active = body.active !== false;
+
+    if (!organizationSlug || !email) {
+      sendError(response, 400, "required_fields_missing", "organizationSlug and email are required.");
+      return;
+    }
+
+    const organization = await prisma.organization.findUnique({ where: { slug: organizationSlug } });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const user = await prisma.appUser.upsert({
+      where: { email },
+      update: { displayName: optionalString(body.displayName), active: true },
+      create: {
+        firebaseUid: `google:${email}`,
+        email,
+        displayName: optionalString(body.displayName),
+        active: true,
+      },
+    });
+
+    const membership = await prisma.organizationMembership.upsert({
+      where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
+      update: { roles: [role], active },
+      create: {
+        organizationId: organization.id,
+        userId: user.id,
+        roles: [role],
+        active,
+      },
+    });
+
+    sendJson(response, 200, {
       ok: true,
       member: {
         email: user.email,

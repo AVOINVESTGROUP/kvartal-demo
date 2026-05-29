@@ -1,6 +1,5 @@
 import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { requireAdminSession } from "../lib/auth";
 import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
 
 export const dynamic = "force-dynamic";
@@ -180,15 +179,6 @@ function formPayload(formData: FormData) {
   };
 }
 
-async function requireAdminSession() {
-  const sessionToken = process.env.KVARTAL_ADMIN_SESSION_TOKEN;
-  const cookieStore = await cookies();
-
-  if (!sessionToken || cookieStore.get("kvartal_admin_session")?.value !== sessionToken) {
-    redirect("/login");
-  }
-}
-
 async function createObjectAction(formData: FormData) {
   "use server";
 
@@ -239,7 +229,7 @@ async function createMemberAction(formData: FormData) {
 }
 
 export default async function KvartalAdminHome() {
-  await requireAdminSession();
+  const session = await requireAdminSession();
 
   const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow";
   const [context, objectResponse, reference] = await Promise.all([
@@ -280,10 +270,15 @@ export default async function KvartalAdminHome() {
               Рабочий кабинет организации: объекты, права на информацию, публикация в общей витрине и контроль качества карточек.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex max-w-[360px] flex-col gap-2 rounded-md border border-kv-line bg-kv-bg p-3 text-[13px]">
+            <div className="font-black text-kv-navy">{session.name ?? session.email}</div>
+            <div className="text-kv-muted">{session.email}</div>
+            <div className="flex flex-wrap gap-2">
             <Badge tone="dark">{organization?.status ?? "loading"}</Badge>
             <Badge>{organization?.countryOfRegistration ?? "RU"}</Badge>
             <Badge>{organization?.defaultCurrency ?? "RUB"}</Badge>
+            {session.roles.map((role) => <Badge key={role}>{role}</Badge>)}
+            </div>
             <a href="/logout" className="inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">
               Выйти
             </a>

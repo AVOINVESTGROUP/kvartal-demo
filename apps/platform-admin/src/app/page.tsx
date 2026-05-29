@@ -39,6 +39,22 @@ type PlatformSummaryResponse = {
   };
 };
 
+type PlatformAccessMembersResponse = {
+  members: Array<{
+    email: string;
+    displayName: string | null;
+    active: boolean;
+    platformRoles: string[];
+    inactivePlatformRoles: string[];
+    organizationMemberships: Array<{
+      organizationSlug: string;
+      organizationName: string;
+      roles: string[];
+      active: boolean;
+    }>;
+  }>;
+};
+
 function formValue(formData: FormData, key: string) {
   const value = formData.get(key);
 
@@ -69,6 +85,33 @@ async function grantOrganizationOwnerAction(formData: FormData) {
   revalidatePath("/");
 }
 
+async function updatePlatformAccessAction(formData: FormData) {
+  "use server";
+
+  await requirePlatformOwner();
+  await writeBackendJson(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/access/platform-member", "PATCH", {
+    email: formValue(formData, "email"),
+    displayName: formValue(formData, "displayName"),
+    role: formValue(formData, "role"),
+    active: formValue(formData, "active") === "true",
+  });
+  revalidatePath("/");
+}
+
+async function updateOrganizationAccessAction(formData: FormData) {
+  "use server";
+
+  await requirePlatformOwner();
+  await writeBackendJson(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/access/organization-owner", "PATCH", {
+    organizationSlug: formValue(formData, "organizationSlug"),
+    email: formValue(formData, "email"),
+    displayName: formValue(formData, "displayName"),
+    role: formValue(formData, "role"),
+    active: formValue(formData, "active") === "true",
+  });
+  revalidatePath("/");
+}
+
 const fallbackOrganizations: PlatformOrganizationsResponse["organizations"] = [
   {
     slug: "apart4u-tbilisi",
@@ -82,13 +125,15 @@ const fallbackOrganizations: PlatformOrganizationsResponse["organizations"] = [
 
 export default async function PlatformAdminHome() {
   const { session, access } = await requirePlatformOwner();
-  const [organizationsResponse, summaryResponse] = await Promise.all([
+  const [organizationsResponse, summaryResponse, accessMembersResponse] = await Promise.all([
     fetchBackendJson<PlatformOrganizationsResponse>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/organizations"),
     fetchBackendJson<PlatformSummaryResponse>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/summary"),
+    fetchBackendJson<PlatformAccessMembersResponse>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/access/members"),
   ]);
 
   const organizations = organizationsResponse?.organizations ?? fallbackOrganizations;
   const summary = summaryResponse?.summary;
+  const accessMembers = accessMembersResponse?.members ?? [];
 
   return (
     <main className="min-h-screen bg-kv-bg text-kv-ink">
@@ -213,6 +258,79 @@ export default async function PlatformAdminHome() {
             <button className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Добавить в Fixer.guru</button>
           </div>
         </form>
+      </section>
+
+      <section className="mx-auto max-w-[1280px] px-6 pb-8">
+        <div className="rounded-md border border-kv-line bg-white">
+          <div className="border-b border-kv-line px-4 py-3">
+            <h2 className="font-black text-kv-navy">Управление доступами</h2>
+            <p className="mt-1 text-[13px] text-kv-muted">Fixer.guru может менять роли, включать и снимать доступ у команды платформы и собственников организаций.</p>
+          </div>
+          <div className="grid gap-4 p-4">
+            {accessMembers.map((member) => (
+              <div key={member.email} className="rounded-md border border-kv-line p-4">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="font-black text-kv-navy">{member.displayName ?? member.email}</div>
+                    <div className="mt-1 text-[13px] text-kv-muted">{member.email}</div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[12px]">
+                      {member.platformRoles.map((role) => <span key={role} className="rounded-full bg-kv-navy px-2.5 py-1 font-black text-white">{role}</span>)}
+                      {member.organizationMemberships.map((membership) => (
+                        <span key={membership.organizationSlug} className={`rounded-full px-2.5 py-1 font-black ${membership.active ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                          {membership.organizationName}: {membership.roles.join(", ")} {membership.active ? "" : "(off)"}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <form action={updatePlatformAccessAction} className="grid gap-2 rounded-md bg-kv-bg p-3">
+                    <input type="hidden" name="email" value={member.email} />
+                    <input type="hidden" name="displayName" value={member.displayName ?? ""} />
+                    <label className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">
+                      Роль Fixer.guru
+                      <select name="role" defaultValue={member.platformRoles[0] ?? "platform_admin"} className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                        <option value="platform_owner">Собственник проекта</option>
+                        <option value="platform_admin">Администратор платформы</option>
+                        <option value="platform_analyst">Аналитик</option>
+                        <option value="platform_viewer">Просмотр</option>
+                      </select>
+                    </label>
+                    <div className="flex gap-2">
+                      <button name="active" value="true" className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">Сохранить роль</button>
+                      <button name="active" value="false" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Снять доступ</button>
+                    </div>
+                  </form>
+
+                  <form action={updateOrganizationAccessAction} className="grid gap-2 rounded-md bg-kv-bg p-3">
+                    <input type="hidden" name="email" value={member.email} />
+                    <input type="hidden" name="displayName" value={member.displayName ?? ""} />
+                    <label className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">
+                      Организация
+                      <select name="organizationSlug" defaultValue={member.organizationMemberships[0]?.organizationSlug ?? organizations[0]?.slug} className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                        {organizations.map((organization) => (
+                          <option key={organization.slug} value={organization.slug}>{organization.legalName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">
+                      Роль в организации
+                      <select name="role" defaultValue={member.organizationMemberships[0]?.roles[0] ?? "organization_owner"} className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                        <option value="organization_owner">Собственник организации</option>
+                        <option value="organization_admin">Администратор организации</option>
+                      </select>
+                    </label>
+                    <div className="flex gap-2">
+                      <button name="active" value="true" className="rounded-full bg-kv-red px-4 py-2 text-[12px] font-black text-white">Сохранить</button>
+                      <button name="active" value="false" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Снять доступ</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </section>
     </main>
   );
