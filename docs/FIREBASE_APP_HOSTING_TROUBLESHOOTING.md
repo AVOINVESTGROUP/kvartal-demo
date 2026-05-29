@@ -126,3 +126,72 @@ Expected:
 
 - `count = 9`
 - `mediaMissing = 0`
+
+## 2026-05-29: Firebase CLI Reauth Blocks App Hosting, Use REST with gcloud Token
+
+### Symptoms
+
+- `firebase apphosting:*` fails with `Authentication Error: Your credentials are no longer valid. Please run firebase login --reauth`.
+- `gcloud apphosting` is not available in the installed gcloud component set.
+
+### Fix
+
+Use Firebase App Hosting REST API with a fresh gcloud access token:
+
+```powershell
+$access = gcloud auth print-access-token
+$body = @{ source = @{ codebase = @{ branch = "main" } }; displayName = "kvartal-admin-management" } | ConvertTo-Json -Depth 10
+Invoke-RestMethod -Method Post `
+  -Uri "https://firebaseapphosting.googleapis.com/v1beta/projects/kvartal-dev/locations/europe-west4/backends/kvartal-admin-dev/builds?buildId=build-YYYY-MM-DD-NNN" `
+  -Headers @{Authorization="Bearer $access"; "Content-Type"="application/json"} `
+  -Body $body
+```
+
+After the build state is `READY`, create a rollout:
+
+```powershell
+$body = @{ build = "projects/kvartal-dev/locations/europe-west4/backends/kvartal-admin-dev/builds/build-YYYY-MM-DD-NNN" } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri "https://firebaseapphosting.googleapis.com/v1beta/projects/kvartal-dev/locations/europe-west4/backends/kvartal-admin-dev/rollouts?rolloutId=rollout-YYYY-MM-DD-NNN" `
+  -Headers @{Authorization="Bearer $access"; "Content-Type"="application/json"} `
+  -Body $body
+```
+
+### Verification
+
+```powershell
+$html = (Invoke-WebRequest -Uri "https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app" -UseBasicParsing).Content
+$html.Contains("Добавить объект")
+$html.Contains("Редактировать карточку")
+$html.Contains("Опубликовать в витрине")
+```
+
+## 2026-05-29: Cloud Run API in Monorepo Needs Root Build Context
+
+### Symptoms
+
+- `apps/office-api/Dockerfile` copies root workspace files and `packages/*`.
+- Building from `apps/office-api` alone is not enough.
+
+### Fix
+
+Use `cloudbuild.office-api.yaml` from the repository root:
+
+```powershell
+gcloud builds submit . `
+  --config=cloudbuild.office-api.yaml `
+  --substitutions=_IMAGE=europe-west4-docker.pkg.dev/kvartal-dev/kvartal/office-api:<tag> `
+  --project=kvartal-dev
+```
+
+Deploy to Cloud Run while preserving Cloud SQL and Secret Manager configuration:
+
+```powershell
+gcloud run deploy kvartal-office-api `
+  --image=europe-west4-docker.pkg.dev/kvartal-dev/kvartal/office-api:<tag> `
+  --region=europe-west4 `
+  --project=kvartal-dev `
+  --service-account=kvartal-office-api@kvartal-dev.iam.gserviceaccount.com `
+  --add-cloudsql-instances=kvartal-dev:europe-west4:kvartal-dev-postgres `
+  --set-secrets=DATABASE_URL=kvartal-database-url:latest
+```
