@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-28  
 **Status:** Approved baseline  
-**Related:** `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
+**Related:** `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
 
 > Product terminology correction: see `docs/16-PARTNER-NETWORK-PLATFORM.md`. Fixer.guru is the platform owner/operator. KVARTAL Moscow, Apart4u.co Tbilisi, and future firms are partner organizations. Office roles remain valid only as branch/city-level roles inside partner organizations.
 

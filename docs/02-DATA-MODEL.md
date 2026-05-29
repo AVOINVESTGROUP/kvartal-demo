@@ -2,7 +2,7 @@
 
 **Status:** active draft  
 **Last updated:** 2026-05-28  
-**Related:** `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`, `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/adr/0001-postgresql-mvp-ssot.md`
+**Related:** `docs/00-MASTER-ARCHITECTURE.md`, `docs/16-PARTNER-NETWORK-PLATFORM.md`, `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`, `docs/adr/0001-postgresql-mvp-ssot.md`
 
 > Product terminology correction: see `docs/16-PARTNER-NETWORK-PLATFORM.md`. The model is a Fixer.guru-owned partner network platform. Organizations such as KVARTAL Moscow and Apart4u.co are partner organizations. Offices are branches inside partner organizations. Future model updates should add partner sites, shared inventory grants, lead source sites, commission agreements, and platform monetization entities.
 

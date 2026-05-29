@@ -35,20 +35,22 @@
 
 ## Документация
 - Основные документы проекта созданы и приведены в соответствие с аудитом:
-  - `docs/01-ARCHITECTURE.md`
+  - `docs/00-MASTER-ARCHITECTURE.md`
   - `docs/02-DATA-MODEL.md`
   - `docs/03-API-CONTRACTS.md`
-  - `docs/04-MVP-SCOPE.md`
   - `docs/05-DEAL-ROOM-SPEC.md`
   - `docs/06-AI-SYSTEM.md`
-  - `docs/07-PARTNER-LAYER.md`
-  - `docs/08-COMPLIANCE-PLAN.md`
-  - `docs/09-DEPLOYMENT.md`
   - `docs/10-DEVELOPER-SETUP.md`
+  - `docs/13-ROLE-SCHEMA-DRAFT.md`
+  - `docs/14-AI-PROPERTY-INTAKE.md`
+  - `docs/15-GOOGLE-DATA-GOVERNANCE.md`
+  - `docs/16-PARTNER-NETWORK-PLATFORM.md`
+  - `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`
+  - `docs/18-GOOGLE-ACCOUNT-AUTH.md`
   - `docs/AGENT_MISTAKES_LOG.md` (Реестр ошибок)
 
 ## Изменения по результатам аудита (20.05.2026)
-- Устранено дублирование правил SSOT в `AGENTS.md`, `CLAUDE_COPILOT_OPERATING_SYSTEM.md` и `docs/00-OVERVIEW.md`.
+- Устранено дублирование правил SSOT в `AGENTS.md`, `CLAUDE_COPILOT_OPERATING_SYSTEM.md` и `docs/archived/superseded/00-OVERVIEW.md`.
 - Все ключевые правила вынесены в `.agents/rules/` (00–12).
 - Все навыки (`skills`) дополнены операционными деталями и привязаны к фазам MVP.
 - Зафиксирована иерархия документов в `rule 11`.
@@ -71,7 +73,7 @@
 - Восстановлена витрина объектов `#objects` в Next.js: фильтр, счетчик, empty-state и 5 карточек из утвержденного `index.html`.
 # Stage 3 Resume Note
 
-- Created `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` as the pause/resume document.
+- Created `docs/archived/superseded/11-STAGE-3-SSOT-ADMIN-PLAN.md` as the pause/resume document.
 - Current MVP direction: Cloud SQL/PostgreSQL as relational SSOT for offices, objects, leads, memberships, deal rooms, and audit.
 - Backend direction: two dedicated Cloud Run services from the start, `platform-api` and `office-api`.
 - Firebase Auth may remain the identity provider for `/admin` and `/platform`; roles and office memberships belong in PostgreSQL.
@@ -80,7 +82,7 @@
 
 ## Stage 3 Scope Expansion Note (2026-05-28)
 
-- Added `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`.
+- Added `docs/archived/superseded/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`.
 - Project direction expanded from a single-company brokerage site to a developer-owned multi-office platform.
 - Initial offices/markets to support conceptually: Moscow, Tbilisi, Yerevan.
 - Each connected office may have its own website, language, currency defaults, agents, and leads.
@@ -92,7 +94,7 @@
 
 ## Stage 3 Replan (2026-05-28)
 
-- Replaced `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` with a multi-office Stage 3 plan.
+- Replaced `docs/archived/superseded/11-STAGE-3-SSOT-ADMIN-PLAN.md` with a multi-office Stage 3 plan.
 - Updated `docs/02-DATA-MODEL.md` for offices, markets, object ownership, leads, co-broker requests, inter-office deal rooms, subscriptions, and analytics placeholders.
 - Updated `docs/03-API-CONTRACTS.md` for public, platform-admin, office-admin, client-intent, co-broker, deal-room, and analytics contracts.
 - Recommended first implementation slice: Stage 3A `Domain Types + Seed Data + Public Repository Layer`.
@@ -100,7 +102,7 @@
 
 ## Stage 3 Plan Hardening (2026-05-28)
 
-- Rewrote `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md` into approval-gated slices:
+- Rewrote `docs/archived/superseded/11-STAGE-3-SSOT-ADMIN-PLAN.md` into approval-gated slices:
   - Stage 3A: Relational Architecture and Schema Draft.
   - Stage 3B: Cloud Run Backend Foundation.
   - Stage 3C: Public Objects API and Frontend Repository.
@@ -115,7 +117,7 @@
 
 - Replaced Firestore-first Stage 3 direction with backend-first relational SSOT.
 - Removed `docs/adr/0001-firestore-mvp-ssot.md` and added `docs/adr/0001-postgresql-mvp-ssot.md`.
-- Updated `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`, and `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md` to align with PostgreSQL/Cloud SQL as the Stage 3 SSOT.
+- Updated `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`, and `docs/archived/superseded/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md` to align with PostgreSQL/Cloud SQL as the Stage 3 SSOT.
 
 ## Stage 3 Backend Split Decision (2026-05-28)
 
@@ -412,3 +414,11 @@
   - Kubinka land plot;
   - Istra/Holshcheviki land plot.
 - Added separate market rows for Bataysk, Sirius, Domodedovo, Kubinka, and Istra so the public vitrina can filter them correctly by city.
+
+## Documentation Master Architecture Cleanup (2026-05-29)
+
+- Added `docs/00-MASTER-ARCHITECTURE.md` as the current source of truth for the full Fixer.guru / KVARTAL platform architecture.
+- Moved superseded documents into `docs/archived/superseded/` instead of deleting them.
+- Added `docs/archived/superseded/README.md` with archive reasons and an encoding verification rule.
+- Updated active document references to use the master architecture, current partner-network architecture, and implementation plan.
+- Added a documentation process rule: do not claim a file has broken encoding based only on terminal output; verify the file itself first.

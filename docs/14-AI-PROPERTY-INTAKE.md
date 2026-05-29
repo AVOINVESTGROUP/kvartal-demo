@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-28  
 **Status:** Draft for owner approval  
-**Related:** `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`, `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`
+**Related:** `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
 
 ## 1. Purpose
 

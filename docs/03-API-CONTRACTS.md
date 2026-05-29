@@ -2,7 +2,7 @@
 
 **Status:** active draft  
 **Last updated:** 2026-05-28  
-**Related:** `docs/02-DATA-MODEL.md`, `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/12-MULTI-OFFICE-PLATFORM-ARCHITECTURE.md`
+**Related:** `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, `docs/16-PARTNER-NETWORK-PLATFORM.md`, `docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`
 
 ## 1. Purpose
 

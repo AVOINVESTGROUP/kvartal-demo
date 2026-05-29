@@ -2,9 +2,10 @@
 
 ## Project Overview
 
-**Project:** KVARTAL Real Estate Brokerage Platform  
-**Scope:** Commercial real estate brokerage + investment property matching for Moscow/Russia and Dubai/UAE markets  
-**Target User:** High-net-worth individuals, corporate real estate managers, institutional investors seeking properties, off-plan investments, and deal partnership opportunities
+**Project:** Fixer.guru / KVARTAL Real Estate Partner Platform  
+**Source of Truth:** `docs/00-MASTER-ARCHITECTURE.md`  
+**Scope:** Fixer.guru-owned partner-network real estate platform with branded partner sites, shared public inventory, organization admin, co-broker deal flow, AI-assisted intake, legal documents, and monetizable data access.  
+**Target Users:** Fixer.guru platform owner/team, partner organizations such as KVARTAL Moscow and Apart4u.co Tbilisi, organization employees, brokers, property owners, buyers, tenants, and investors.
 
 ## Central Product Model
 
@@ -80,14 +81,20 @@ C:\Dev\Kvartal\
 ├── AGENTS.md                     # This file
 ├── README.md                     # Project overview
 ├── docs/                         # Documentation
-│   ├── ARCHITECTURE.md
+│   ├── 00-MASTER-ARCHITECTURE.md # Current source of truth
+│   ├── 02-DATA-MODEL.md
+│   ├── 03-API-CONTRACTS.md
+│   ├── 05-DEAL-ROOM-SPEC.md
+│   ├── 06-AI-SYSTEM.md
+│   ├── 13-ROLE-SCHEMA-DRAFT.md
+│   ├── 14-AI-PROPERTY-INTAKE.md
+│   ├── 15-GOOGLE-DATA-GOVERNANCE.md
+│   ├── 16-PARTNER-NETWORK-PLATFORM.md
+│   ├── 17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md
+│   ├── 18-GOOGLE-ACCOUNT-AUTH.md
 │   ├── CURRENT_STATE.md
-│   ├── ROADMAP.md
-│   ├── AGENT_PROTOCOL.md
-│   ├── TECH_STACK.md
-│   ├── DATA_MODEL.md
-│   ├── ACCEPTANCE_CRITERIA.md
-│   ├── RESOURCE_INVENTORY.md
+│   ├── FIREBASE_APP_HOSTING_TROUBLESHOOTING.md
+│   ├── archived/superseded/      # Historical docs, not current SSOT
 │   └── design/
 │       ├── APPROVED_DESIGN.md
 │       ├── approved-index.html   # Copy of index.html (reference only)
@@ -123,21 +130,14 @@ C:\Dev\Kvartal\
 - **Project Number:** 544286782827
 - **App Hosting Backend:** kvartal-web-dev
 - **Region:** europe-west4
-- **First Rollout:** Failed (repo not yet a Next.js app — will fix in Stage 1/2)
-- **Status:** Ready for setup after Next.js scaffold
-- **Current Action:** Do not touch Firebase now. No deploy. No rollout changes.
+- **Status:** Active development project with App Hosting, Cloud Run, Cloud SQL, Firebase Auth, and Secret Manager resources.
+- **Current State:** See `docs/CURRENT_STATE.md`.
 
 ## Next Step
 
-After Stage 0 approval:
-
-1. Review all documentation and agent rules
-2. Confirm design token mapping
-3. Plan Stage 1: Next.js monorepo scaffold
-4. Create Stage 1 plan for approval
-5. Execute Stage 1: pnpm workspace + turbo + root config
+Use `docs/00-MASTER-ARCHITECTURE.md` and `docs/CURRENT_STATE.md` before planning or implementing new work.
 
 ---
 
-**Stage 0 Status:** Documentation and agent setup in progress  
-**Execution Mode:** Plan-first, approval required before Stage 1
+**Status:** Active implementation.  
+**Execution Mode:** Follow the current user request and project guardrails.

@@ -3,7 +3,7 @@
 **Date:** 2026-05-28  
 **Status:** Proposed  
 **Decision Owner:** KVARTAL platform owner  
-**Related:** `docs/11-STAGE-3-SSOT-ADMIN-PLAN.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
+**Related:** `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, `docs/03-API-CONTRACTS.md`
 
 ## Context
 
