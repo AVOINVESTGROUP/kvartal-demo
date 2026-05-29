@@ -1,0 +1,128 @@
+# Firebase App Hosting Troubleshooting Log
+
+This file records deployment problems and proven fixes for KVARTAL Firebase App Hosting.
+
+## 2026-05-29: App Hosting Build Succeeds Locally but Firebase Shows Old/Fallback Data
+
+### Symptoms
+
+- Firebase App Hosting rollout was green, but the live site rendered fallback inventory.
+- `PUBLIC_API_BASE_URL` was not available in the App Hosting build/runtime config.
+- The live HTML contained `fallback-moscow` instead of PostgreSQL / Cloud Run API data.
+
+### Root Cause
+
+`kvartal-web-dev` has `codebase.rootDirectory = "/"`, because the main web app is built from the monorepo root.  
+Firebase App Hosting only read `apphosting.yaml` from the backend root directory, so `apps/web/apphosting.yaml` was ignored.
+
+### Fix
+
+Add root-level `apphosting.yaml` for `kvartal-web-dev`:
+
+```yaml
+kind: "AppStack"
+schemaVersion: "v1"
+runConfig:
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 1024
+env:
+  - variable: NEXT_TELEMETRY_DISABLED
+    value: "1"
+  - variable: PORT
+    value: "8080"
+  - variable: PUBLIC_API_BASE_URL
+    value: "https://kvartal-office-api-544286782827.europe-west4.run.app"
+```
+
+### Verification
+
+Check the build config:
+
+```powershell
+$access = gcloud auth print-access-token
+Invoke-RestMethod -Uri "https://firebaseapphosting.googleapis.com/v1beta/projects/kvartal-dev/locations/europe-west4/backends/kvartal-web-dev/builds/<BUILD_ID>" -Headers @{Authorization="Bearer $access"} | ConvertTo-Json -Depth 20
+```
+
+Expected:
+
+- `PUBLIC_API_BASE_URL` exists in `config.effectiveEnv`.
+- `origin = APPHOSTING_YAML`.
+- `originFileName = apphosting.yaml`.
+
+## 2026-05-29: Firebase Build Failed Although Target App Was Web
+
+### Symptoms
+
+- App Hosting build failed for `kvartal-web-dev`.
+- The web app built locally, but Cloud Build failed inside monorepo `turbo build`.
+- Failure came from `@kvartal/platform-api` or `@kvartal/office-api` TypeScript errors.
+
+### Root Cause
+
+Firebase App Hosting executed the root monorepo build, not only `apps/web`. Therefore any package in `turbo build` can break the web rollout.
+
+### Fix
+
+Before creating a Firebase build, run:
+
+```powershell
+pnpm --filter @kvartal/platform-api build
+pnpm --filter @kvartal/office-api build
+pnpm --filter web exec next build --debug
+```
+
+When a Prisma generated helper type is missing in Cloud Build, prefer stable local row types instead of depending on generated `Prisma.*GetPayload` helper availability.
+
+## 2026-05-29: next/font Broke Cloud Build
+
+### Symptoms
+
+- Local/Cloud build failed or hung while downloading Google Fonts.
+- App Hosting environment could not reliably reach `fonts.gstatic.com`.
+
+### Fix
+
+Remove `next/font/google` from `apps/web/src/app/layout.tsx` and use the project/system font stack through CSS/Tailwind.
+
+## 2026-05-29: Database Seed Created Duplicate Public Objects
+
+### Symptoms
+
+- Public API returned 18 objects instead of 9.
+- Old objects had no `PropertyMedia`.
+- New localized records were created because seed lookup changed from old English titles to Russian titles.
+
+### Root Cause
+
+`ensurePublishedObject` matched objects by localized title. When titles were localized, it created new rows and left old seed rows.
+
+### Fix
+
+Seed now removes published public objects without media after recreating canonical media-backed rows:
+
+```ts
+await prisma.propertyObject.deleteMany({
+  where: {
+    status: "published",
+    visibility: "public",
+    media: { none: {} },
+  },
+});
+```
+
+### Verification
+
+```powershell
+$token = gcloud auth print-identity-token
+$json = (Invoke-WebRequest -Uri "https://kvartal-office-api-544286782827.europe-west4.run.app/api/v1/public/objects?tenant=kvartal&language=ru&limit=20" -Headers @{Authorization="Bearer $token"} -UseBasicParsing).Content | ConvertFrom-Json
+[pscustomobject]@{
+  count = $json.objects.Count
+  mediaMissing = ($json.objects | Where-Object {$_.media.Count -eq 0}).Count
+}
+```
+
+Expected:
+
+- `count = 9`
+- `mediaMissing = 0`

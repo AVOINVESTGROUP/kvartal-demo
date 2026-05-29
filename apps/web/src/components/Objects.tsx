@@ -71,7 +71,7 @@ const fallbackObjects: ObjectItem[] = [
   },
 ];
 
-export async function Objects() {
+export async function getObjectItems() {
   const [ruResponse, enResponse] = await Promise.all([
     fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=ru&limit=24"),
     fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=en&limit=24"),
@@ -106,5 +106,11 @@ export async function Objects() {
       };
     }) ?? fallbackObjects;
 
-  return <ObjectsClient objects={objects} />;
+  return objects;
+}
+
+export async function Objects() {
+  const objects = await getObjectItems();
+
+  return <ObjectsClient objects={objects} language="ru" />;
 }

@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import Image from "next/image";
+import type { SiteLanguage } from "./site-language";
 
 export type ObjectItem = {
   id: string;
@@ -27,10 +28,10 @@ export type ObjectItem = {
 
 type ObjectsClientProps = {
   objects: ObjectItem[];
+  language: SiteLanguage;
 };
 
-export function ObjectsClient({ objects }: ObjectsClientProps) {
-  const [language, setLanguage] = useState<"ru" | "en">("ru");
+export function ObjectsClient({ objects, language }: ObjectsClientProps) {
   const [type, setType] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
@@ -125,14 +126,6 @@ export function ObjectsClient({ objects }: ObjectsClientProps) {
               {t.title}
             </h2>
             <p className="mt-4 max-w-2xl leading-relaxed text-kv-muted">{t.subtitle}</p>
-          </div>
-          <div className="inline-flex w-fit rounded-full border border-kv-line bg-white p-1 text-sm font-extrabold text-kv-navy shadow-sm">
-            <button type="button" className={`rounded-full px-4 py-2 ${language === "ru" ? "bg-kv-navy text-white" : ""}`} onClick={() => setLanguage("ru")}>
-              RU
-            </button>
-            <button type="button" className={`rounded-full px-4 py-2 ${language === "en" ? "bg-kv-navy text-white" : ""}`} onClick={() => setLanguage("en")}>
-              EN
-            </button>
           </div>
         </div>
 
