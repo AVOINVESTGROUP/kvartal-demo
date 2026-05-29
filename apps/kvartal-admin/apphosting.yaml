@@ -17,3 +17,7 @@ env:
     value: "kvartal-moscow"
   - variable: PUBLIC_SITE_BASE_URL
     value: "https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app"
+  - variable: KVARTAL_ADMIN_BASIC_AUTH
+    secret: kvartal-admin-basic-auth
+    availability:
+      - RUNTIME
