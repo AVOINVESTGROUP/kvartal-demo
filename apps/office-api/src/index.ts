@@ -77,6 +77,61 @@ type AdminOfficeRow = {
   _count: { propertyObjects: number; clientIntents: number };
 };
 
+type AdminObjectRow = PublicObjectRow & {
+  assetSubtype: string | null;
+  status: string;
+  visibility: string;
+  canBeShownByOtherOffices: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+function serializeObject(object: PublicObjectRow, language = "ru") {
+  const localization =
+    object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
+    object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "ru") ??
+    object.localizations[0];
+
+  return {
+    id: object.id,
+    assetClass: object.assetClass,
+    market: {
+      slug: object.market.slug,
+      city: object.market.city,
+      country: object.market.country,
+    },
+    title: localization?.title ?? object.assetClass,
+    description: localization?.description ?? null,
+    addressDisplay: localization?.addressDisplay ?? null,
+    tags: localization?.tags ?? [],
+    priceDisplay: localization?.priceDisplay ?? null,
+    areaSqm: decimalToString(object.areaSqm),
+    landAreaSqm: decimalToString(object.landAreaSqm),
+    buildingAreaSqm: decimalToString(object.buildingAreaSqm),
+    priceAmount: decimalToString(object.priceAmount),
+    priceCurrency: object.priceCurrency,
+    representationSide: object.representationSide,
+    requiresOwnerOfficeApprovalForLead: object.requiresOwnerOfficeApprovalForLead,
+    sellerSide: {
+      organizationSlug: object.ownerOrganization.slug,
+      organizationName: object.ownerOrganization.legalName,
+      officeSlug: object.ownerOffice.slug,
+      officeName: object.ownerOffice.legalName,
+    },
+    informationRightsHolder: {
+      organizationSlug: object.informationOwnerOrganization.slug,
+      organizationName: object.informationOwnerOrganization.legalName,
+      officeSlug: object.informationOwnerOffice.slug,
+      officeName: object.informationOwnerOffice.legalName,
+    },
+    media: object.media.map((media: PublicObjectMediaRow) => ({
+      url: media.url,
+      kind: media.kind,
+    })),
+    publishedAt: object.publishedAt?.toISOString() ?? null,
+  };
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
@@ -141,50 +196,7 @@ const server = createServer(async (request, response) => {
       service: serviceName,
       tenant,
       visibilityRule: "status=published AND visibility=public AND canBeShownByOtherOffices=true",
-      objects: objects.map((object: PublicObjectRow) => {
-        const localization =
-          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
-          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "ru") ??
-          object.localizations[0];
-        return {
-          id: object.id,
-          assetClass: object.assetClass,
-          market: {
-            slug: object.market.slug,
-            city: object.market.city,
-            country: object.market.country,
-          },
-          title: localization?.title ?? object.assetClass,
-          description: localization?.description ?? null,
-          addressDisplay: localization?.addressDisplay ?? null,
-          tags: localization?.tags ?? [],
-          priceDisplay: localization?.priceDisplay ?? null,
-          areaSqm: decimalToString(object.areaSqm),
-          landAreaSqm: decimalToString(object.landAreaSqm),
-          buildingAreaSqm: decimalToString(object.buildingAreaSqm),
-          priceAmount: decimalToString(object.priceAmount),
-          priceCurrency: object.priceCurrency,
-          representationSide: object.representationSide,
-          requiresOwnerOfficeApprovalForLead: object.requiresOwnerOfficeApprovalForLead,
-          sellerSide: {
-            organizationSlug: object.ownerOrganization.slug,
-            organizationName: object.ownerOrganization.legalName,
-            officeSlug: object.ownerOffice.slug,
-            officeName: object.ownerOffice.legalName,
-          },
-          informationRightsHolder: {
-            organizationSlug: object.informationOwnerOrganization.slug,
-            organizationName: object.informationOwnerOrganization.legalName,
-            officeSlug: object.informationOwnerOffice.slug,
-            officeName: object.informationOwnerOffice.legalName,
-          },
-          media: object.media.map((media: PublicObjectMediaRow) => ({
-            url: media.url,
-            kind: media.kind,
-          })),
-          publishedAt: object.publishedAt?.toISOString() ?? null,
-        };
-      }),
+      objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
     });
     return;
   }
@@ -275,6 +287,50 @@ const server = createServer(async (request, response) => {
           },
         })),
       },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/objects" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const take = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
+
+    const objects = await prisma.propertyObject.findMany({
+      where: {
+        ownerOrganization: { slug: organizationSlug },
+      },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      take,
+      include: {
+        market: true,
+        ownerOrganization: true,
+        ownerOffice: true,
+        informationOwnerOrganization: true,
+        informationOwnerOffice: true,
+        localizations: true,
+        media: {
+          orderBy: { sortOrder: "asc" },
+          take: 5,
+        },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      service: serviceName,
+      organizationSlug,
+      scopeRule: "ownerOrganization.slug = requested organization",
+      objects: objects.map((object: AdminObjectRow) => ({
+        ...serializeObject(object, language),
+        assetSubtype: object.assetSubtype,
+        status: object.status,
+        visibility: object.visibility,
+        canBeShownByOtherOffices: object.canBeShownByOtherOffices,
+        mediaCount: object.media.length,
+        createdAt: object.createdAt.toISOString(),
+        updatedAt: object.updatedAt.toISOString(),
+      })),
     });
     return;
   }
