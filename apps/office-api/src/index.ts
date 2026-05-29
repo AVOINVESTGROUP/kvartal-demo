@@ -141,6 +141,24 @@ type AdminObjectRow = PublicObjectRow & {
   updatedAt: Date;
 };
 
+type AdminReferenceMarketRow = {
+  id: string;
+  slug: string;
+  city: string;
+  country: string;
+  defaultCurrency: string;
+  assetClasses: string[];
+};
+
+type AdminReferenceOfficeRow = {
+  id: string;
+  slug: string;
+  legalName: string;
+  city: string;
+  country: string;
+  defaultMarket: AdminReferenceMarketRow | null;
+};
+
 function serializeObject(object: PublicObjectRow, language = "ru") {
   const localization =
     object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
@@ -417,6 +435,8 @@ const server = createServer(async (request, response) => {
       where: { active: true },
       orderBy: [{ country: "asc" }, { city: "asc" }],
     });
+    const offices = organization.offices as AdminReferenceOfficeRow[];
+    const referenceMarkets = markets as AdminReferenceMarketRow[];
 
     sendJson(response, 200, {
       ok: true,
@@ -425,7 +445,7 @@ const server = createServer(async (request, response) => {
         slug: organization.slug,
         legalName: organization.legalName,
       },
-      offices: organization.offices.map((office) => ({
+      offices: offices.map((office: AdminReferenceOfficeRow) => ({
         id: office.id,
         slug: office.slug,
         legalName: office.legalName,
@@ -433,7 +453,7 @@ const server = createServer(async (request, response) => {
         country: office.country,
         defaultMarketSlug: office.defaultMarket?.slug ?? null,
       })),
-      markets: markets.map((market) => ({
+      markets: referenceMarkets.map((market: AdminReferenceMarketRow) => ({
         id: market.id,
         slug: market.slug,
         city: market.city,
@@ -525,9 +545,10 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    const offices = organization.offices as AdminReferenceOfficeRow[];
     const office =
-      organization.offices.find((item) => item.slug === optionalString(body.officeSlug)) ??
-      organization.offices[0];
+      offices.find((item: AdminReferenceOfficeRow) => item.slug === optionalString(body.officeSlug)) ??
+      offices[0];
 
     if (!office) {
       sendError(response, 400, "office_not_found", `Organization '${organizationSlug}' has no office.`);
