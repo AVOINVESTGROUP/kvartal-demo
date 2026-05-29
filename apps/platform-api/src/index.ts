@@ -1,12 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import {
-  PrismaClient,
-  type Office,
-  type OfficeMembership,
-  type Organization,
-  type OrganizationMembership,
-  type PlatformRoleAssignment,
-} from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 
 export const serviceName = "platform-api";
 
@@ -49,8 +42,22 @@ type PlatformOrganizationRow = {
   offices: PlatformOfficeRow[];
 };
 
-type AccessOrganizationMembership = OrganizationMembership & { organization: Organization };
-type AccessOfficeMembership = OfficeMembership & { office: Office };
+type AccessPlatformRoleAssignment = {
+  active: boolean;
+  role: "platform_owner" | "platform_admin" | "platform_analyst" | "platform_viewer";
+};
+
+type AccessOrganizationMembership = {
+  active: boolean;
+  roles: Array<"organization_owner" | "organization_admin">;
+  organization: { slug: string; legalName: string };
+};
+
+type AccessOfficeMembership = {
+  active: boolean;
+  roles: Array<"office_owner" | "office_admin" | "broker" | "office_analyst" | "office_viewer">;
+  office: { slug: string; legalName: string };
+};
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -280,8 +287,8 @@ const server = createServer(async (request, response) => {
     }
 
     const platformRoles = user.platformRoleAssignments
-      .filter((role: PlatformRoleAssignment) => role.active)
-      .map((role: PlatformRoleAssignment) => role.role);
+      .filter((role: AccessPlatformRoleAssignment) => role.active)
+      .map((role: AccessPlatformRoleAssignment) => role.role);
 
     sendJson(response, 200, {
       ok: true,
