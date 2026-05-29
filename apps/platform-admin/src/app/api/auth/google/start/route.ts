@@ -25,7 +25,7 @@ export async function GET() {
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", `${origin}/api/auth/google/callback`);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("scope", "openid email");
   url.searchParams.set("state", state);
   url.searchParams.set("prompt", "select_account");
 

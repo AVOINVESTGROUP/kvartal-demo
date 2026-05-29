@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 export default function LoginPage({ searchParams }: { searchParams?: { error?: string } }) {
   const configured = Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
 
