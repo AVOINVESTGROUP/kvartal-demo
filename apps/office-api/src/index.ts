@@ -674,7 +674,9 @@ const server = createServer(async (request, response) => {
       },
     });
 
-    const office = organization.offices.find((item) => item.slug === optionalString(body.officeSlug));
+    const office = (organization.offices as Array<{ id: string; slug: string }>).find(
+      (item: { id: string; slug: string }) => item.slug === optionalString(body.officeSlug),
+    );
     const officeRole = optionalString(body.officeRole);
 
     if (office && officeRole) {
