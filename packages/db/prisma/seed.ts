@@ -760,19 +760,9 @@ async function main() {
 
   await prisma.propertyObject.deleteMany({
     where: {
-      localizations: {
-        some: {
-          language: "ru",
-          title: {
-            in: [
-              "Moscow commercial property",
-              "Tbilisi premium apartment",
-              "Dubai development project",
-              "Yerevan land plot",
-            ],
-          },
-        },
-      },
+      status: "published",
+      visibility: "public",
+      media: { none: {} },
     },
   });
 
