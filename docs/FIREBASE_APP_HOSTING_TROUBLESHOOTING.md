@@ -263,3 +263,39 @@ try {
 ```
 
 With a valid `kvartal_admin_session` cookie from Secret Manager, the page should return `200`.
+
+## 2026-05-29: Production Prisma Migrations Use Cloud Run Job
+
+### Symptoms
+
+- Local `pnpm --filter @kvartal/db prisma:migrate:deploy` can fail because `DATABASE_URL` points to the Cloud SQL proxy / Cloud Run SQL connector path.
+- Running migrations from a developer machine is not reliable unless the local Cloud SQL proxy is active.
+
+### Fix Used
+
+Use the dedicated migration image and Cloud Run Job:
+
+```powershell
+gcloud builds submit . `
+  --config=cloudbuild.db-migrate.yaml `
+  --substitutions=_IMAGE=europe-west4-docker.pkg.dev/kvartal-dev/kvartal/db-migrate:<tag> `
+  --project=kvartal-dev
+
+gcloud run jobs update kvartal-db-migrate `
+  --image=europe-west4-docker.pkg.dev/kvartal-dev/kvartal/db-migrate:<tag> `
+  --region=europe-west4 `
+  --project=kvartal-dev `
+  --service-account=kvartal-office-api@kvartal-dev.iam.gserviceaccount.com `
+  --set-cloudsql-instances=kvartal-dev:europe-west4:kvartal-dev-postgres `
+  --set-secrets=DATABASE_URL=kvartal-database-url:latest `
+  --quiet
+
+gcloud run jobs execute kvartal-db-migrate `
+  --region=europe-west4 `
+  --project=kvartal-dev `
+  --wait
+```
+
+### Verification
+
+The job execution must finish successfully. For the site object visibility migration, execution `kvartal-db-migrate-x8wws` completed successfully.
