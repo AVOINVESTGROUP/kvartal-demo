@@ -39,6 +39,7 @@ Active child documents:
 - [`docs/17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md`](17-PARTNER-NETWORK-IMPLEMENTATION-PLAN.md) - implementation roadmap.
 - [`docs/18-GOOGLE-ACCOUNT-AUTH.md`](18-GOOGLE-ACCOUNT-AUTH.md) - Firebase Google account admin auth.
 - [`docs/CURRENT_STATE.md`](CURRENT_STATE.md) - factual implementation and deployment state.
+- [`docs/HANDOFF.md`](HANDOFF.md) - current continuation note for the owner and future agents.
 - [`docs/FIREBASE_APP_HOSTING_TROUBLESHOOTING.md`](FIREBASE_APP_HOSTING_TROUBLESHOOTING.md) - operational fixes and deployment lessons.
 - [`docs/AGENT_MISTAKES_LOG.md`](AGENT_MISTAKES_LOG.md) - recurring agent mistakes and prevention notes.
 
