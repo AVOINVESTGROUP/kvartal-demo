@@ -1,4 +1,4 @@
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PrismaClient } from "@prisma/client";
 
 export const serviceName = "office-api";
@@ -22,8 +22,52 @@ function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.end(JSON.stringify(payload));
 }
 
+function sendError(response: ServerResponse, status: number, code: string, message: string) {
+  sendJson(response, status, { ok: false, error: { code, message } });
+}
+
+async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? (JSON.parse(raw) as T) : ({} as T);
+}
+
 function decimalToString(value: unknown) {
   return value === null || value === undefined ? null : String(value);
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function optionalDecimal(value: unknown) {
+  const text = optionalString(value);
+  return text ? text.replace(",", ".") : undefined;
+}
+
+function optionalInteger(value: unknown) {
+  const text = optionalString(value);
+  return text ? Number.parseInt(text, 10) : undefined;
+}
+
+function booleanFromBody(value: unknown) {
+  return value === true || value === "true" || value === "on" || value === "1";
+}
+
+function tagsFromBody(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  return optionalString(value)
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean) ?? [];
 }
 
 const tenantOrganizationSlugs = {
@@ -323,6 +367,11 @@ const server = createServer(async (request, response) => {
       scopeRule: "ownerOrganization.slug = requested organization",
       objects: objects.map((object: AdminObjectRow) => ({
         ...serializeObject(object, language),
+        titleEn: object.localizations.find((item) => item.language === "en")?.title ?? null,
+        descriptionEn: object.localizations.find((item) => item.language === "en")?.description ?? null,
+        addressDisplayEn: object.localizations.find((item) => item.language === "en")?.addressDisplay ?? null,
+        tagsEn: object.localizations.find((item) => item.language === "en")?.tags ?? [],
+        priceDisplayEn: object.localizations.find((item) => item.language === "en")?.priceDisplay ?? null,
         assetSubtype: object.assetSubtype,
         status: object.status,
         visibility: object.visibility,
@@ -332,6 +381,400 @@ const server = createServer(async (request, response) => {
         updatedAt: object.updatedAt.toISOString(),
       })),
     });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/reference" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: {
+        offices: {
+          include: { defaultMarket: true },
+          orderBy: { legalName: "asc" },
+        },
+      },
+    });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const markets = await prisma.market.findMany({
+      where: { active: true },
+      orderBy: [{ country: "asc" }, { city: "asc" }],
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      organization: {
+        id: organization.id,
+        slug: organization.slug,
+        legalName: organization.legalName,
+      },
+      offices: organization.offices.map((office) => ({
+        id: office.id,
+        slug: office.slug,
+        legalName: office.legalName,
+        city: office.city,
+        country: office.country,
+        defaultMarketSlug: office.defaultMarket?.slug ?? null,
+      })),
+      markets: markets.map((market) => ({
+        id: market.id,
+        slug: market.slug,
+        city: market.city,
+        country: market.country,
+        defaultCurrency: market.defaultCurrency,
+        assetClasses: market.assetClasses,
+      })),
+      assetClasses: [
+        "land",
+        "apartment",
+        "house",
+        "warehouse",
+        "industrial_site",
+        "factory",
+        "hotel",
+        "office",
+        "retail",
+        "mixed_use",
+        "development_project",
+        "investment_project",
+        "other",
+      ],
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/objects" && request.method === "POST") {
+    type CreateObjectBody = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      marketSlug?: string;
+      assetClass?: string;
+      assetSubtype?: string;
+      status?: string;
+      visibility?: string;
+      canBeShownByOtherOffices?: unknown;
+      title?: string;
+      titleEn?: string;
+      description?: string;
+      descriptionEn?: string;
+      addressDisplay?: string;
+      addressDisplayEn?: string;
+      tags?: unknown;
+      tagsEn?: unknown;
+      areaSqm?: string;
+      landAreaSqm?: string;
+      buildingAreaSqm?: string;
+      rentableAreaSqm?: string;
+      floorNumber?: string;
+      floorsTotal?: string;
+      roomsCount?: string;
+      bedroomsCount?: string;
+      bathroomsCount?: string;
+      cadastralNumber?: string;
+      priceDisplay?: string;
+      priceDisplayEn?: string;
+      priceAmount?: string;
+      priceCurrency?: string;
+      mediaUrl?: string;
+    };
+
+    const body = await readJsonBody<CreateObjectBody>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const title = optionalString(body.title);
+    const addressDisplay = optionalString(body.addressDisplay);
+
+    if (!title || !addressDisplay) {
+      sendError(response, 400, "required_fields_missing", "Title and addressDisplay are required.");
+      return;
+    }
+
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: {
+        offices: {
+          include: { defaultMarket: true },
+          orderBy: { legalName: "asc" },
+        },
+      },
+    });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const office =
+      organization.offices.find((item) => item.slug === optionalString(body.officeSlug)) ??
+      organization.offices[0];
+
+    if (!office) {
+      sendError(response, 400, "office_not_found", `Organization '${organizationSlug}' has no office.`);
+      return;
+    }
+
+    const market = optionalString(body.marketSlug)
+      ? await prisma.market.findUnique({ where: { slug: optionalString(body.marketSlug) } })
+      : office.defaultMarket;
+
+    if (!market) {
+      sendError(response, 400, "market_not_found", "Market is required.");
+      return;
+    }
+
+    const createdByUser = await prisma.appUser.upsert({
+      where: { firebaseUid: "admin-console-system-user" },
+      update: { email: "admin-console@fixer.guru", active: true },
+      create: {
+        firebaseUid: "admin-console-system-user",
+        email: "admin-console@fixer.guru",
+        displayName: "KVARTAL Admin Console",
+        active: true,
+      },
+    });
+
+    const status = optionalString(body.status) === "published" ? "published" : "draft";
+    const visibility = optionalString(body.visibility) === "public" ? "public" : optionalString(body.visibility) === "office_network" ? "office_network" : "private";
+    const mediaUrl = optionalString(body.mediaUrl);
+
+    const propertyObject = await prisma.propertyObject.create({
+      data: {
+        ownerOrganizationId: organization.id,
+        ownerOfficeId: office.id,
+        informationOwnerOrganizationId: organization.id,
+        informationOwnerOfficeId: office.id,
+        createdByUserId: createdByUser.id,
+        marketId: market.id,
+        status,
+        visibility,
+        assetClass: (optionalString(body.assetClass) ?? "land") as never,
+        assetSubtype: optionalString(body.assetSubtype),
+        areaSqm: optionalDecimal(body.areaSqm),
+        landAreaSqm: optionalDecimal(body.landAreaSqm),
+        buildingAreaSqm: optionalDecimal(body.buildingAreaSqm),
+        rentableAreaSqm: optionalDecimal(body.rentableAreaSqm),
+        floorNumber: optionalInteger(body.floorNumber),
+        floorsTotal: optionalInteger(body.floorsTotal),
+        roomsCount: optionalInteger(body.roomsCount),
+        bedroomsCount: optionalInteger(body.bedroomsCount),
+        bathroomsCount: optionalInteger(body.bathroomsCount),
+        cadastralNumber: optionalString(body.cadastralNumber),
+        priceMode: optionalDecimal(body.priceAmount) ? "fixed" : "on_request",
+        priceAmount: optionalDecimal(body.priceAmount),
+        priceCurrency: optionalString(body.priceCurrency) as never,
+        representationSide: "seller",
+        exclusivity: "unknown",
+        canBeShownByOtherOffices: booleanFromBody(body.canBeShownByOtherOffices),
+        requiresOwnerOfficeApprovalForLead: true,
+        publishedAt: status === "published" ? new Date() : null,
+        localizations: {
+          create: [
+            {
+              language: "ru",
+              title,
+              description: optionalString(body.description),
+              addressDisplay,
+              tags: tagsFromBody(body.tags),
+              priceDisplay: optionalString(body.priceDisplay),
+            },
+            {
+              language: "en",
+              title: optionalString(body.titleEn) ?? title,
+              description: optionalString(body.descriptionEn) ?? optionalString(body.description),
+              addressDisplay: optionalString(body.addressDisplayEn) ?? addressDisplay,
+              tags: tagsFromBody(body.tagsEn).length ? tagsFromBody(body.tagsEn) : tagsFromBody(body.tags),
+              priceDisplay: optionalString(body.priceDisplayEn) ?? optionalString(body.priceDisplay),
+            },
+          ],
+        },
+        ...(mediaUrl
+          ? {
+              media: {
+                create: {
+                  ownerOrganizationId: organization.id,
+                  ownerOfficeId: office.id,
+                  url: mediaUrl,
+                  kind: "image",
+                  public: true,
+                  sortOrder: 10,
+                },
+              },
+            }
+          : {}),
+      },
+      include: {
+        market: true,
+        ownerOrganization: true,
+        ownerOffice: true,
+        informationOwnerOrganization: true,
+        informationOwnerOffice: true,
+        localizations: true,
+        media: true,
+      },
+    });
+
+    sendJson(response, 201, { ok: true, object: serializeObject(propertyObject as AdminObjectRow, "ru") });
+    return;
+  }
+
+  const objectMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)$/);
+
+  if (objectMatch && request.method === "PATCH") {
+    type UpdateObjectBody = {
+      organizationSlug?: string;
+      action?: "save" | "publish" | "unpublish" | "archive";
+      marketSlug?: string;
+      assetClass?: string;
+      assetSubtype?: string;
+      status?: string;
+      visibility?: string;
+      canBeShownByOtherOffices?: unknown;
+      title?: string;
+      titleEn?: string;
+      description?: string;
+      descriptionEn?: string;
+      addressDisplay?: string;
+      addressDisplayEn?: string;
+      tags?: unknown;
+      tagsEn?: unknown;
+      areaSqm?: string;
+      landAreaSqm?: string;
+      buildingAreaSqm?: string;
+      rentableAreaSqm?: string;
+      cadastralNumber?: string;
+      priceDisplay?: string;
+      priceDisplayEn?: string;
+      priceAmount?: string;
+      priceCurrency?: string;
+      mediaUrl?: string;
+      clearMedia?: unknown;
+    };
+
+    const objectId = decodeURIComponent(objectMatch[1]);
+    const body = await readJsonBody<UpdateObjectBody>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+
+    const existing = await prisma.propertyObject.findFirst({
+      where: { id: objectId, ownerOrganization: { slug: organizationSlug } },
+      include: {
+        ownerOrganization: true,
+        ownerOffice: true,
+        market: true,
+        localizations: true,
+      },
+    });
+
+    if (!existing) {
+      sendError(response, 404, "object_not_found", `Object '${objectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+
+    const market = optionalString(body.marketSlug)
+      ? await prisma.market.findUnique({ where: { slug: optionalString(body.marketSlug) } })
+      : null;
+    const action = body.action ?? "save";
+    const status = action === "publish" ? "published" : action === "archive" ? "archived" : action === "unpublish" ? "draft" : optionalString(body.status);
+    const visibility = action === "publish" ? "public" : action === "unpublish" ? "private" : optionalString(body.visibility);
+    const mediaUrl = optionalString(body.mediaUrl);
+
+    const updated = await prisma.propertyObject.update({
+      where: { id: existing.id },
+      data: {
+        ...(market ? { marketId: market.id } : {}),
+        ...(status ? { status: status as never } : {}),
+        ...(visibility ? { visibility: visibility as never } : {}),
+        ...(action === "publish" ? { publishedAt: new Date(), canBeShownByOtherOffices: true } : {}),
+        ...(action === "unpublish" ? { publishedAt: null, canBeShownByOtherOffices: false } : {}),
+        ...(action === "archive" ? { publishedAt: null, canBeShownByOtherOffices: false } : {}),
+        ...(body.canBeShownByOtherOffices !== undefined && action === "save" ? { canBeShownByOtherOffices: booleanFromBody(body.canBeShownByOtherOffices) } : {}),
+        ...(optionalString(body.assetClass) ? { assetClass: optionalString(body.assetClass) as never } : {}),
+        assetSubtype: optionalString(body.assetSubtype) ?? null,
+        areaSqm: optionalDecimal(body.areaSqm) ?? null,
+        landAreaSqm: optionalDecimal(body.landAreaSqm) ?? null,
+        buildingAreaSqm: optionalDecimal(body.buildingAreaSqm) ?? null,
+        rentableAreaSqm: optionalDecimal(body.rentableAreaSqm) ?? null,
+        cadastralNumber: optionalString(body.cadastralNumber) ?? null,
+        priceMode: optionalDecimal(body.priceAmount) ? "fixed" : "on_request",
+        priceAmount: optionalDecimal(body.priceAmount) ?? null,
+        priceCurrency: optionalString(body.priceCurrency) as never,
+      },
+      include: {
+        market: true,
+        ownerOrganization: true,
+        ownerOffice: true,
+        informationOwnerOrganization: true,
+        informationOwnerOffice: true,
+        localizations: true,
+        media: { orderBy: { sortOrder: "asc" } },
+      },
+    });
+
+    if (optionalString(body.title) && optionalString(body.addressDisplay)) {
+      await prisma.propertyObjectLocalization.upsert({
+        where: { propertyObjectId_language: { propertyObjectId: existing.id, language: "ru" } },
+        update: {
+          title: optionalString(body.title) ?? "",
+          description: optionalString(body.description),
+          addressDisplay: optionalString(body.addressDisplay) ?? "",
+          tags: tagsFromBody(body.tags),
+          priceDisplay: optionalString(body.priceDisplay),
+        },
+        create: {
+          propertyObjectId: existing.id,
+          language: "ru",
+          title: optionalString(body.title) ?? "",
+          description: optionalString(body.description),
+          addressDisplay: optionalString(body.addressDisplay) ?? "",
+          tags: tagsFromBody(body.tags),
+          priceDisplay: optionalString(body.priceDisplay),
+        },
+      });
+
+      await prisma.propertyObjectLocalization.upsert({
+        where: { propertyObjectId_language: { propertyObjectId: existing.id, language: "en" } },
+        update: {
+          title: optionalString(body.titleEn) ?? optionalString(body.title) ?? "",
+          description: optionalString(body.descriptionEn) ?? optionalString(body.description),
+          addressDisplay: optionalString(body.addressDisplayEn) ?? optionalString(body.addressDisplay) ?? "",
+          tags: tagsFromBody(body.tagsEn).length ? tagsFromBody(body.tagsEn) : tagsFromBody(body.tags),
+          priceDisplay: optionalString(body.priceDisplayEn) ?? optionalString(body.priceDisplay),
+        },
+        create: {
+          propertyObjectId: existing.id,
+          language: "en",
+          title: optionalString(body.titleEn) ?? optionalString(body.title) ?? "",
+          description: optionalString(body.descriptionEn) ?? optionalString(body.description),
+          addressDisplay: optionalString(body.addressDisplayEn) ?? optionalString(body.addressDisplay) ?? "",
+          tags: tagsFromBody(body.tagsEn).length ? tagsFromBody(body.tagsEn) : tagsFromBody(body.tags),
+          priceDisplay: optionalString(body.priceDisplayEn) ?? optionalString(body.priceDisplay),
+        },
+      });
+    }
+
+    if (booleanFromBody(body.clearMedia) || mediaUrl) {
+      await prisma.propertyMedia.deleteMany({ where: { propertyObjectId: existing.id, kind: "image" } });
+    }
+
+    if (mediaUrl) {
+      await prisma.propertyMedia.create({
+        data: {
+          propertyObjectId: existing.id,
+          ownerOrganizationId: existing.ownerOrganizationId,
+          ownerOfficeId: existing.ownerOfficeId,
+          url: mediaUrl,
+          kind: "image",
+          public: true,
+          sortOrder: 10,
+        },
+      });
+    }
+
+    sendJson(response, 200, { ok: true, object: serializeObject(updated as AdminObjectRow, "ru") });
     return;
   }
 

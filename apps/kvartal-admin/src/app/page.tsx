@@ -1,4 +1,5 @@
-import { fetchBackendJson } from "../lib/server-api";
+import { revalidatePath } from "next/cache";
+import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,12 @@ type AdminObjectsResponse = {
     buildingAreaSqm: string | null;
     priceDisplay: string | null;
     priceCurrency: string | null;
+    titleEn: string | null;
+    descriptionEn: string | null;
+    addressDisplayEn: string | null;
+    tags: string[];
+    tagsEn: string[];
+    priceDisplayEn: string | null;
     market: { city: string; country: string; slug: string };
     sellerSide: { officeName: string; organizationName: string };
     informationRightsHolder: { officeName: string; organizationName: string };
@@ -56,6 +63,24 @@ type AdminObjectsResponse = {
     publishedAt: string | null;
     updatedAt: string;
   }>;
+};
+
+type AdminReferenceResponse = {
+  offices: Array<{
+    slug: string;
+    legalName: string;
+    city: string;
+    country: string;
+    defaultMarketSlug: string | null;
+  }>;
+  markets: Array<{
+    slug: string;
+    city: string;
+    country: string;
+    defaultCurrency: string;
+    assetClasses: string[];
+  }>;
+  assetClasses: string[];
 };
 
 function formatArea(object: AdminObjectsResponse["objects"][number]) {
@@ -103,9 +128,67 @@ function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone
   return <span className={`inline-flex rounded-full border px-2.5 py-1 text-[12px] font-black ${toneClass}`}>{children}</span>;
 }
 
+function formValue(formData: FormData, key: string) {
+  const value = formData.get(key);
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formPayload(formData: FormData) {
+  return {
+    organizationSlug: formValue(formData, "organizationSlug"),
+    officeSlug: formValue(formData, "officeSlug"),
+    marketSlug: formValue(formData, "marketSlug"),
+    assetClass: formValue(formData, "assetClass"),
+    assetSubtype: formValue(formData, "assetSubtype"),
+    status: formValue(formData, "status"),
+    visibility: formValue(formData, "visibility"),
+    canBeShownByOtherOffices: formData.get("canBeShownByOtherOffices") === "on",
+    title: formValue(formData, "title"),
+    titleEn: formValue(formData, "titleEn"),
+    description: formValue(formData, "description"),
+    descriptionEn: formValue(formData, "descriptionEn"),
+    addressDisplay: formValue(formData, "addressDisplay"),
+    addressDisplayEn: formValue(formData, "addressDisplayEn"),
+    tags: formValue(formData, "tags"),
+    tagsEn: formValue(formData, "tagsEn"),
+    areaSqm: formValue(formData, "areaSqm"),
+    landAreaSqm: formValue(formData, "landAreaSqm"),
+    buildingAreaSqm: formValue(formData, "buildingAreaSqm"),
+    rentableAreaSqm: formValue(formData, "rentableAreaSqm"),
+    cadastralNumber: formValue(formData, "cadastralNumber"),
+    priceDisplay: formValue(formData, "priceDisplay"),
+    priceDisplayEn: formValue(formData, "priceDisplayEn"),
+    priceAmount: formValue(formData, "priceAmount"),
+    priceCurrency: formValue(formData, "priceCurrency"),
+    mediaUrl: formValue(formData, "mediaUrl"),
+  };
+}
+
+async function createObjectAction(formData: FormData) {
+  "use server";
+
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData));
+  revalidatePath("/");
+}
+
+async function updateObjectAction(formData: FormData) {
+  "use server";
+
+  const objectId = formValue(formData, "objectId");
+  const action = formValue(formData, "action") || "save";
+
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
+    ...formPayload(formData),
+    action,
+    clearMedia: formData.get("clearMedia") === "on",
+  });
+  revalidatePath("/");
+}
+
 export default async function KvartalAdminHome() {
   const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow";
-  const [context, objectResponse] = await Promise.all([
+  const [context, objectResponse, reference] = await Promise.all([
     fetchBackendJson<AdminContextResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/context?organizationSlug=${encodeURIComponent(organizationSlug)}`,
@@ -113,6 +196,10 @@ export default async function KvartalAdminHome() {
     fetchBackendJson<AdminObjectsResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/objects?organizationSlug=${encodeURIComponent(organizationSlug)}&language=ru&limit=100`,
+    ),
+    fetchBackendJson<AdminReferenceResponse>(
+      process.env.PARTNER_API_BASE_URL,
+      `/api/v1/admin/reference?organizationSlug=${encodeURIComponent(organizationSlug)}`,
     ),
   ]);
 
@@ -122,6 +209,9 @@ export default async function KvartalAdminHome() {
   const sharedObjects = publicObjects.filter((object) => object.canBeShownByOtherOffices);
   const missingMedia = objects.filter((object) => object.mediaCount === 0);
   const markets = new Set(objects.map((object) => `${object.market.city}, ${object.market.country}`));
+  const offices = reference?.offices ?? [];
+  const marketOptions = reference?.markets ?? [];
+  const assetClasses = reference?.assetClasses ?? ["land", "apartment", "house", "office", "industrial_site", "development_project"];
 
   return (
     <main className="min-h-screen bg-kv-bg text-kv-ink">
@@ -155,6 +245,141 @@ export default async function KvartalAdminHome() {
             <div className="mt-2 text-[30px] font-black text-kv-navy">{value}</div>
           </div>
         ))}
+      </section>
+
+      <section className="mx-auto max-w-[1440px] px-6 pb-6">
+        <form action={createObjectAction} className="rounded-md border border-kv-line bg-white p-5">
+          <input type="hidden" name="organizationSlug" value={organizationSlug} />
+          <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-xl font-black text-kv-navy">Добавить объект</h2>
+              <p className="mt-1 text-[13px] text-kv-muted">Карточка создаётся в PostgreSQL. Публикация в общей витрине включается только отдельным статусом и разрешением.</p>
+            </div>
+            <button type="submit" className="rounded-full bg-kv-red px-5 py-3 text-sm font-black text-white">Создать объект</button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="text-[13px] font-bold text-kv-muted">
+              Офис
+              <select name="officeSlug" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                {offices.map((office) => (
+                  <option key={office.slug} value={office.slug}>{office.legalName}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Рынок
+              <select name="marketSlug" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                {marketOptions.map((market) => (
+                  <option key={market.slug} value={market.slug}>{market.city}, {market.country}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Тип
+              <select name="assetClass" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="land">
+                {assetClasses.map((assetClass) => (
+                  <option key={assetClass} value={assetClass}>{assetLabel(assetClass)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Подтип
+              <input name="assetSubtype" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" placeholder="например: участок ИЖС, склад" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Название RU
+              <input name="title" required className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Название EN
+              <input name="titleEn" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Адрес/локация RU
+              <input name="addressDisplay" required className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Адрес/локация EN
+              <input name="addressDisplayEn" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Описание RU
+              <textarea name="description" className="mt-1 min-h-[96px] w-full rounded-md border border-kv-line px-3 py-2 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Описание EN
+              <textarea name="descriptionEn" className="mt-1 min-h-[96px] w-full rounded-md border border-kv-line px-3 py-2 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Площадь, м²
+              <input name="areaSqm" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Земля, м²
+              <input name="landAreaSqm" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Здание, м²
+              <input name="buildingAreaSqm" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Кадастровый номер
+              <input name="cadastralNumber" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Цена текстом RU
+              <input name="priceDisplay" placeholder="По запросу" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Цена текстом EN
+              <input name="priceDisplayEn" placeholder="On request" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Сумма
+              <input name="priceAmount" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="text-[13px] font-bold text-kv-muted">
+              Валюта
+              <select name="priceCurrency" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="RUB">
+                {["RUB", "USD", "EUR", "GEL", "AMD", "AED"].map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+              </select>
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Теги RU через запятую
+              <input name="tags" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              Теги EN через запятую
+              <input name="tagsEn" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <label className="md:col-span-2 text-[13px] font-bold text-kv-muted">
+              URL изображения
+              <input name="mediaUrl" placeholder="/images/object.jpg или https://..." className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+            </label>
+            <div className="flex items-end gap-4">
+              <label className="text-[13px] font-bold text-kv-muted">
+                Статус
+                <select name="status" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="draft">
+                  <option value="draft">Черновик</option>
+                  <option value="published">Опубликован</option>
+                </select>
+              </label>
+              <label className="text-[13px] font-bold text-kv-muted">
+                Видимость
+                <select name="visibility" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="private">
+                  <option value="private">Приватно</option>
+                  <option value="office_network">Сеть офисов</option>
+                  <option value="public">Публично</option>
+                </select>
+              </label>
+              <label className="flex min-h-11 items-center gap-2 text-[13px] font-bold text-kv-muted">
+                <input name="canBeShownByOtherOffices" type="checkbox" />
+                Общая витрина
+              </label>
+            </div>
+          </div>
+        </form>
       </section>
 
       <section className="mx-auto grid max-w-[1440px] gap-5 px-6 pb-6 xl:grid-cols-[280px_1fr]">
@@ -257,6 +482,132 @@ export default async function KvartalAdminHome() {
                     </div>
                   </dl>
                 </div>
+
+                <details className="rounded-md border border-kv-line bg-white lg:col-span-3">
+                  <summary className="cursor-pointer px-4 py-3 text-sm font-black text-kv-navy">Редактировать карточку, публикацию и медиа</summary>
+                  <form action={updateObjectAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2 xl:grid-cols-4">
+                    <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                    <input type="hidden" name="objectId" value={object.id} />
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Рынок
+                      <select name="marketSlug" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.market.slug}>
+                        {marketOptions.map((market) => (
+                          <option key={market.slug} value={market.slug}>{market.city}, {market.country}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Тип
+                      <select name="assetClass" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.assetClass}>
+                        {assetClasses.map((assetClass) => (
+                          <option key={assetClass} value={assetClass}>{assetLabel(assetClass)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Статус
+                      <select name="status" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.status}>
+                        <option value="draft">Черновик</option>
+                        <option value="published">Опубликован</option>
+                        <option value="archived">Архив</option>
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Видимость
+                      <select name="visibility" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.visibility}>
+                        <option value="private">Приватно</option>
+                        <option value="office_network">Сеть офисов</option>
+                        <option value="public">Публично</option>
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Название RU
+                      <input name="title" required defaultValue={object.title} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Название EN
+                      <input name="titleEn" defaultValue={object.titleEn ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Адрес/локация RU
+                      <input name="addressDisplay" required defaultValue={object.addressDisplay ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Адрес/локация EN
+                      <input name="addressDisplayEn" defaultValue={object.addressDisplayEn ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Описание RU
+                      <textarea name="description" defaultValue={object.description ?? ""} className="mt-1 min-h-[96px] w-full rounded-md border border-kv-line px-3 py-2 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Описание EN
+                      <textarea name="descriptionEn" defaultValue={object.descriptionEn ?? ""} className="mt-1 min-h-[96px] w-full rounded-md border border-kv-line px-3 py-2 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Подтип
+                      <input name="assetSubtype" defaultValue={object.assetSubtype ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Площадь, м²
+                      <input name="areaSqm" defaultValue={object.areaSqm ?? ""} inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Земля, м²
+                      <input name="landAreaSqm" defaultValue={object.landAreaSqm ?? ""} inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Здание, м²
+                      <input name="buildingAreaSqm" defaultValue={object.buildingAreaSqm ?? ""} inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Цена текстом RU
+                      <input name="priceDisplay" defaultValue={object.priceDisplay ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Цена текстом EN
+                      <input name="priceDisplayEn" defaultValue={object.priceDisplayEn ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Сумма
+                      <input name="priceAmount" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Валюта
+                      <select name="priceCurrency" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.priceCurrency ?? "RUB"}>
+                        {["RUB", "USD", "EUR", "GEL", "AMD", "AED"].map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Теги RU через запятую
+                      <input name="tags" defaultValue={object.tags.join(", ")} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Теги EN через запятую
+                      <input name="tagsEn" defaultValue={object.tagsEn.join(", ")} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                      Новый URL изображения
+                      <input name="mediaUrl" placeholder={object.media[0]?.url ?? "/images/object.jpg"} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+                    </label>
+                    <div className="flex flex-wrap items-end gap-4 md:col-span-2">
+                      <label className="flex min-h-11 items-center gap-2 text-[13px] font-bold text-kv-muted">
+                        <input name="canBeShownByOtherOffices" type="checkbox" defaultChecked={object.canBeShownByOtherOffices} />
+                        Разрешить общую витрину
+                      </label>
+                      <label className="flex min-h-11 items-center gap-2 text-[13px] font-bold text-kv-muted">
+                        <input name="clearMedia" type="checkbox" />
+                        Очистить изображения
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2 border-t border-kv-line pt-4 md:col-span-2 xl:col-span-4">
+                      <button name="action" value="save" className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Сохранить</button>
+                      <button name="action" value="publish" className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-black text-white">Опубликовать в витрине</button>
+                      <button name="action" value="unpublish" className="rounded-full bg-amber-600 px-5 py-3 text-sm font-black text-white">Снять с публикации</button>
+                      <button name="action" value="archive" className="rounded-full border border-kv-line px-5 py-3 text-sm font-black text-kv-navy">В архив</button>
+                    </div>
+                  </form>
+                </details>
               </article>
             ))}
             {!objects.length ? <div className="p-5 text-kv-muted">Объекты не загружены.</div> : null}
