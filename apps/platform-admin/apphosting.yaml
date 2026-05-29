@@ -13,3 +13,9 @@ env:
     value: "https://kvartal-platform-api-qslxzoismq-ez.a.run.app"
   - variable: PARTNER_API_BASE_URL
     value: "https://kvartal-office-api-qslxzoismq-ez.a.run.app"
+  - variable: NEXT_PUBLIC_FIREBASE_API_KEY
+    value: "AIzaSyDjotfXTWEs2zIRQx9SJ7ILVa-Olf0bP00"
+  - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    value: "kvartal-dev.firebaseapp.com"
+  - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+    value: "kvartal-dev"

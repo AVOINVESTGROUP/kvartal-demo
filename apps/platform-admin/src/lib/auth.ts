@@ -1,6 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createVerify, timingSafeEqual } from "node:crypto";
 import { fetchBackendJson } from "./server-api";
 
 export type PlatformSession = {
@@ -21,6 +21,7 @@ export type PlatformAccess = {
 
 const sessionCookieName = "fixer_platform_session";
 let cachedCookieSecret: string | null = null;
+let cachedFirebaseCerts: Record<string, string> | null = null;
 
 async function getAccessToken() {
   try {
@@ -124,6 +125,88 @@ export async function setPlatformSession(session: PlatformSession) {
     path: "/",
     maxAge: 60 * 60 * 10,
   });
+}
+
+function decodeBase64Url(value: string) {
+  return Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+
+function decodeJwtPart<T>(value: string) {
+  return JSON.parse(decodeBase64Url(value).toString("utf8")) as T;
+}
+
+async function getFirebaseCerts() {
+  if (cachedFirebaseCerts) {
+    return cachedFirebaseCerts;
+  }
+
+  const response = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com", {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error("Firebase token certificates are unavailable.");
+  }
+
+  cachedFirebaseCerts = (await response.json()) as Record<string, string>;
+  return cachedFirebaseCerts;
+}
+
+export async function verifyFirebaseIdToken(idToken: string): Promise<PlatformSession | null> {
+  const [encodedHeader, encodedPayload, encodedSignature] = idToken.split(".");
+
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    return null;
+  }
+
+  const header = decodeJwtPart<{ alg?: string; kid?: string }>(encodedHeader);
+  const payload = decodeJwtPart<{
+    aud?: string;
+    iss?: string;
+    exp?: number;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    picture?: string;
+  }>(encodedPayload);
+
+  if (header.alg !== "RS256" || !header.kid) {
+    return null;
+  }
+
+  const projectId = process.env["NEXT_PUBLIC_FIREBASE_PROJECT_ID"] ?? "kvartal-dev";
+  const now = Math.floor(Date.now() / 1000);
+
+  if (
+    payload.aud !== projectId ||
+    payload.iss !== `https://securetoken.google.com/${projectId}` ||
+    !payload.exp ||
+    payload.exp <= now ||
+    !payload.email ||
+    payload.email_verified !== true
+  ) {
+    return null;
+  }
+
+  const cert = (await getFirebaseCerts())[header.kid];
+
+  if (!cert) {
+    return null;
+  }
+
+  const verifier = createVerify("RSA-SHA256");
+  verifier.update(`${encodedHeader}.${encodedPayload}`);
+  verifier.end();
+
+  if (!verifier.verify(cert, decodeBase64Url(encodedSignature))) {
+    return null;
+  }
+
+  return {
+    email: payload.email.toLowerCase(),
+    name: payload.name,
+    picture: payload.picture,
+  };
 }
 
 export async function clearPlatformSession() {

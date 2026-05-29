@@ -2,41 +2,72 @@
 
 ## Decision
 
-Admin access is based on Google accounts, not passwords.
+Admin access is based on Google accounts through Firebase Authentication, not passwords and not a hand-written OAuth client.
 
-- Fixer.guru owner/team users sign in with Google and are authorized by `PlatformRoleAssignment`.
+- Firebase Auth proves the user owns the Google account.
+- PostgreSQL platform tables decide what this Google account can do.
+- Fixer.guru owner/team users are authorized by `PlatformRoleAssignment`.
 - Fixer.guru grants `organization_owner` to a partner owner's Gmail.
 - The partner organization owner then manages organization employees through the organization admin.
 
-## Required Runtime Configuration
+## Why Firebase Auth
 
-The admin apps need a Google OAuth Web Client:
+Firebase Auth is the approved path for admin Google sign-in in this Firebase App Hosting project. It avoids manually managing a Google OAuth Web Client ID/secret in application code.
 
-- `GOOGLE_OAUTH_CLIENT_ID`
-- `GOOGLE_OAUTH_CLIENT_SECRET`
-- `FIXER_AUTH_COOKIE_SECRET`
-
-The platform API should receive:
-
-- `FIXER_PLATFORM_OWNER_EMAILS`, comma-separated bootstrap owner Gmail list.
-- `PLATFORM_WRITE_TOKEN` or `ADMIN_WRITE_TOKEN`.
+Do not use `gcloud iam oauth-clients` for browser Google sign-in. That creates an IAM OAuth client type and Google Accounts can reject it with `401 invalid_client`.
 
 ## Current Implementation
 
-- `apps/platform-admin` has Google OAuth routes:
-  - `/api/auth/google/start`
-  - `/api/auth/google/callback`
-  - `/logout`
-- `apps/platform-admin` checks platform roles before showing the owner console.
-- `apps/platform-api` exposes:
-  - `GET /api/v1/platform/access`
-  - `POST /api/v1/platform/access/platform-member`
-  - `POST /api/v1/platform/access/organization-owner`
+`apps/platform-admin` uses Firebase Web SDK on `/login`:
 
-## Access Flow
+- client signs in with Google using Firebase Auth;
+- client sends Firebase ID token to `/api/auth/firebase/session`;
+- server verifies the Firebase token signature, issuer, audience, expiry, email and `email_verified`;
+- server asks `platform-api` whether the Gmail has platform access;
+- server sets the `fixer_platform_session` cookie only after authorization succeeds.
+
+`apps/platform-admin` no longer uses:
+
+- `/api/auth/google/start`;
+- `/api/auth/google/callback`;
+- `GOOGLE_OAUTH_CLIENT_ID`;
+- `GOOGLE_OAUTH_CLIENT_SECRET`.
+
+## Required Firebase Console Setup
+
+In project `kvartal-dev`, not `capital-index-2026`:
+
+1. Firebase Console -> Authentication -> Sign-in method.
+2. Enable Google provider.
+3. Authentication -> Settings -> Authorized domains.
+4. Add:
+   - `fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app`
+   - `kvartal-dev.firebaseapp.com`
+
+If Firebase Auth is in test mode, add test users:
+
+- `office@integrayachtsuae.com`
+- `dogecryptoco@gmail.com`
+
+## Runtime Configuration
+
+`apps/platform-admin/apphosting.yaml` contains public Firebase web config:
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+
+The API key is restricted to `identitytoolkit.googleapis.com` and the App Hosting domain.
+
+The server session still needs a cookie signing secret:
+
+- `FIXER_AUTH_COOKIE_SECRET`, or Secret Manager `fixer-auth-cookie-secret`.
+
+## Platform API Access Flow
 
 1. Owner opens Fixer.guru admin.
-2. Owner signs in with Google.
-3. Platform API checks the Gmail in PostgreSQL.
-4. If the Gmail is in `FIXER_PLATFORM_OWNER_EMAILS`, the API bootstraps `platform_owner`.
-5. Owner adds partner organization owners and Fixer.guru team members by Gmail.
+2. Owner signs in with Google through Firebase Auth.
+3. Platform admin verifies the Firebase ID token.
+4. Platform API checks the Gmail in PostgreSQL.
+5. If the Gmail is in `FIXER_PLATFORM_OWNER_EMAILS`, the API bootstraps `platform_owner`.
+6. Owner adds partner organization owners and Fixer.guru team members by Gmail.

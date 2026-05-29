@@ -2,6 +2,36 @@
 
 This file records deployment problems and proven fixes for KVARTAL Firebase App Hosting.
 
+## 2026-05-29: Google OAuth `401 invalid_client` in Platform Admin
+
+### Symptoms
+
+- `/login` redirected to Google Accounts.
+- Google showed `The OAuth client was not found`.
+- Error: `401 invalid_client`.
+
+### Root Cause
+
+The client id was created with `gcloud iam oauth-clients`. That is not the normal Firebase/Google Auth Platform Web OAuth client used by browser Google sign-in.
+
+### Fix
+
+Stop using the hand-written OAuth routes and move platform admin sign-in to Firebase Authentication:
+
+- `/login` uses Firebase Web SDK and Google provider.
+- client posts Firebase ID token to `/api/auth/firebase/session`.
+- server verifies the Firebase ID token and then asks `platform-api` for Gmail authorization.
+
+Do not store a fallback Google OAuth client id in code. Do not use `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` for `platform-admin`.
+
+### Required Console Check
+
+In Firebase project `kvartal-dev`, enable Authentication -> Sign-in method -> Google and add the App Hosting domain to Authorized domains:
+
+```text
+fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app
+```
+
 ## 2026-05-29: App Hosting Build Succeeds Locally but Firebase Shows Old/Fallback Data
 
 ### Symptoms
