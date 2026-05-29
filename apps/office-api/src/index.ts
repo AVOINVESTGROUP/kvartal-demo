@@ -70,6 +70,16 @@ function tagsFromBody(value: unknown) {
     .filter(Boolean) ?? [];
 }
 
+function hasAdminWriteAccess(request: IncomingMessage) {
+  const expectedToken = process.env.ADMIN_WRITE_TOKEN;
+
+  if (!expectedToken) {
+    return false;
+  }
+
+  return request.headers["x-kvartal-admin-write-token"] === expectedToken;
+}
+
 const tenantOrganizationSlugs = {
   apart4u: "apart4u-tbilisi",
   dubai: "dubai-partner",
@@ -450,6 +460,11 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/admin/objects" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
     type CreateObjectBody = {
       organizationSlug?: string;
       officeSlug?: string;
@@ -625,6 +640,11 @@ const server = createServer(async (request, response) => {
   const objectMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)$/);
 
   if (objectMatch && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
     type UpdateObjectBody = {
       organizationSlug?: string;
       action?: "save" | "publish" | "unpublish" | "archive";
