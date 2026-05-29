@@ -2,22 +2,16 @@ import Image from "next/image";
 
 export const Footer = () => {
   return (
-    <footer id="contacts" className="bg-kv-navy py-8 text-white/72">
+    <footer className="bg-kv-navy py-8 text-white/72">
       <div className="mx-auto max-w-kv-container px-5">
         <div className="flex flex-col gap-7 md:flex-row md:items-start md:justify-between">
           <div className="rounded bg-white p-2">
-            <Image
-              src="/images/kvartal-logo.png"
-              alt="KVARTAL центр недвижимости"
-              width={240}
-              height={72}
-              className="h-auto w-[210px] md:w-[240px]"
-            />
+            <Image src="/images/kvartal-logo.png" alt="KVARTAL центр недвижимости" width={240} height={72} className="h-auto w-[210px] md:w-[240px]" />
           </div>
 
           <div className="max-w-xl text-sm leading-relaxed md:text-right">
             <p className="font-bold text-white">ООО «КВАРТАЛ»</p>
-            <p>107113, г. Москва, Сокольническая площадь, д. 4А, пом. 34/3</p>
+            <p>107113, Москва, Сокольническая площадь, д. 4А, пом. 34/3</p>
             <p>
               Тел.:{" "}
               <a href="tel:+79772919573" className="border-b border-white/22 text-white transition-colors hover:text-white/80">

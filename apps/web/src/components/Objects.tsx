@@ -38,11 +38,27 @@ function toNumber(value: string | null) {
   return value ? Number(value) : undefined;
 }
 
+function assetClassLabel(assetClass: string, language: "ru" | "en") {
+  const labels: Record<string, { ru: string; en: string }> = {
+    land: { ru: "Земля", en: "Land" },
+    apartment: { ru: "Квартира", en: "Apartment" },
+    house: { ru: "Дом", en: "House" },
+    office: { ru: "Офис", en: "Office" },
+    industrial_site: { ru: "Промышленный объект", en: "Industrial site" },
+    development_project: { ru: "Проект развития", en: "Development project" },
+    investment_project: { ru: "Инвестиционный проект", en: "Investment project" },
+  };
+
+  return labels[assetClass]?.[language] ?? assetClass;
+}
+
 const fallbackObjects: ObjectItem[] = [
   {
     id: "fallback-moscow",
     title: "Moscow commercial property",
     type: "office",
+    typeLabel: "Офис",
+    typeLabelEn: "Office",
     country: "RU",
     city: "Moscow",
     market: "Moscow, RU",
@@ -56,24 +72,39 @@ const fallbackObjects: ObjectItem[] = [
 ];
 
 export async function Objects() {
-  const response = await fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&limit=24");
+  const [ruResponse, enResponse] = await Promise.all([
+    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=ru&limit=24"),
+    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=en&limit=24"),
+  ]);
+
+  const enById = new Map(enResponse?.objects.map((object) => [object.id, object]));
 
   const objects =
-    response?.objects.map((object) => ({
+    ruResponse?.objects.map((object) => {
+      const enObject = enById.get(object.id);
+
+      return {
       id: object.id,
       title: object.title,
+      titleEn: enObject?.title ?? object.title,
       type: object.assetClass,
+      typeLabel: assetClassLabel(object.assetClass, "ru"),
+      typeLabelEn: assetClassLabel(object.assetClass, "en"),
       country: object.market.country,
       city: object.market.city,
       market: `${object.market.city}, ${object.market.country}`,
       area: toNumber(object.areaSqm ?? object.landAreaSqm ?? object.buildingAreaSqm),
       areaDisplay: formatArea(object),
       address: object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
+      addressEn: enObject?.addressDisplay ?? object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
       owner: object.sellerSide.organizationName,
       description: object.description ?? "Published object from the shared public inventory.",
+      descriptionEn: enObject?.description ?? object.description ?? "Published object from the shared public inventory.",
       imageUrl: object.media[0]?.url,
       tags: object.tags.length ? object.tags : [object.assetClass, object.market.city],
-    })) ?? fallbackObjects;
+      tagsEn: enObject?.tags?.length ? enObject.tags : object.tags,
+      };
+    }) ?? fallbackObjects;
 
   return <ObjectsClient objects={objects} />;
 }

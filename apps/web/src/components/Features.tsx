@@ -1,27 +1,27 @@
-export const Features = () => {
-  const features = [
-    {
-      num: "01",
-      title: "Представление стороны",
-      text: "Ведем объект или покупателя как отдельную сторону сделки и защищаем коммерческие интересы клиента.",
-    },
-    {
-      num: "02",
-      title: "Объекты от собственников",
-      text: "Работаем с объектами, где важно сохранить контроль над информацией, условиями и переговорным процессом.",
-    },
-    {
-      num: "03",
-      title: "Коммерческий аудит",
-      text: "Смотрим не только на площадь и цену, но и на назначение, документы, ограничения и потенциал использования.",
-    },
-    {
-      num: "04",
-      title: "Сделка под ключ",
-      text: "Сопровождаем подбор, переговоры, проверку данных, структуру сделки и взаимодействие сторон.",
-    },
-  ];
+const features = [
+  {
+    num: "01",
+    title: "Представление стороны",
+    text: "Ведем объект или покупателя как отдельную сторону сделки и защищаем коммерческие интересы клиента.",
+  },
+  {
+    num: "02",
+    title: "Объекты от правообладателей",
+    text: "Сохраняем контроль над информацией, условиями публикации и переговорным процессом по каждому объекту.",
+  },
+  {
+    num: "03",
+    title: "Коммерческий и юридический контур",
+    text: "Смотрим не только на площадь и цену, но и на документы, ограничения, назначение и сценарии использования.",
+  },
+  {
+    num: "04",
+    title: "Сделка между партнерами",
+    text: "Поддерживаем модель, где покупатель может прийти через одну организацию, а объект принадлежит другой стороне сети.",
+  },
+];
 
+export const Features = () => {
   return (
     <section id="about" className="bg-white py-20">
       <div className="mx-auto max-w-kv-container px-5">
@@ -35,20 +35,14 @@ export const Features = () => {
             </h2>
           </div>
           <p className="max-w-[460px] leading-relaxed text-kv-muted">
-            Мы начинаем с задачи клиента, проверяем объектную информацию и выстраиваем понятный
-            маршрут сделки между собственником, покупателем и представителями сторон.
+            Начинаем с задачи клиента, проверяем объектную информацию и выстраиваем понятный маршрут сделки между собственником, покупателем и представителями сторон.
           </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4.5 sm:grid-cols-2 lg:grid-cols-4">
           {features.map((feature) => (
-            <div
-              key={feature.num}
-              className="min-h-[230px] rounded-kv-main border border-kv-line bg-white p-6.5 shadow-sm transition-shadow hover:shadow-xl"
-            >
-              <div className="mb-4.5 inline-grid h-10.5 w-10.5 place-items-center rounded-full bg-kv-navy text-sm font-black text-white">
-                {feature.num}
-              </div>
+            <div key={feature.num} className="min-h-[230px] rounded-kv-main border border-kv-line bg-white p-6.5 shadow-sm transition-shadow hover:shadow-xl">
+              <div className="mb-4.5 inline-grid h-10.5 w-10.5 place-items-center rounded-full bg-kv-navy text-sm font-black text-white">{feature.num}</div>
               <h3 className="mb-2.5 text-xl font-bold leading-tight text-kv-navy">{feature.title}</h3>
               <p className="text-[15px] leading-relaxed text-kv-muted">{feature.text}</p>
             </div>

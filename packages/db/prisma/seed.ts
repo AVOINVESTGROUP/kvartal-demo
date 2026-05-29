@@ -22,6 +22,12 @@ type SeedObjectInput = {
   addressDisplay: string;
   tags: string[];
   priceDisplay: string;
+  titleEn?: string;
+  descriptionEn?: string;
+  addressDisplayEn?: string;
+  tagsEn?: string[];
+  priceDisplayEn?: string;
+  mediaUrl?: string;
 };
 
 async function ensurePublishedObject(input: SeedObjectInput) {
@@ -30,7 +36,7 @@ async function ensurePublishedObject(input: SeedObjectInput) {
       ownerOfficeId: input.ownerOfficeId,
       localizations: {
         some: {
-          language: "en",
+          language: "ru",
           title: input.title,
         },
       },
@@ -73,7 +79,7 @@ async function ensurePublishedObject(input: SeedObjectInput) {
           ...data,
           localizations: {
             create: {
-              language: "en",
+              language: "ru",
               title: input.title,
               description: input.description,
               addressDisplay: input.addressDisplay,
@@ -85,7 +91,7 @@ async function ensurePublishedObject(input: SeedObjectInput) {
       });
 
   await prisma.propertyObjectLocalization.upsert({
-    where: { propertyObjectId_language: { propertyObjectId: propertyObject.id, language: "en" } },
+    where: { propertyObjectId_language: { propertyObjectId: propertyObject.id, language: "ru" } },
     update: {
       title: input.title,
       description: input.description,
@@ -95,7 +101,7 @@ async function ensurePublishedObject(input: SeedObjectInput) {
     },
     create: {
       propertyObjectId: propertyObject.id,
-      language: "en",
+      language: "ru",
       title: input.title,
       description: input.description,
       addressDisplay: input.addressDisplay,
@@ -103,6 +109,42 @@ async function ensurePublishedObject(input: SeedObjectInput) {
       priceDisplay: input.priceDisplay,
     },
   });
+
+  await prisma.propertyObjectLocalization.upsert({
+    where: { propertyObjectId_language: { propertyObjectId: propertyObject.id, language: "en" } },
+    update: {
+      title: input.titleEn ?? input.title,
+      description: input.descriptionEn ?? input.description,
+      addressDisplay: input.addressDisplayEn ?? input.addressDisplay,
+      tags: input.tagsEn ?? input.tags,
+      priceDisplay: input.priceDisplayEn ?? input.priceDisplay,
+    },
+    create: {
+      propertyObjectId: propertyObject.id,
+      language: "en",
+      title: input.titleEn ?? input.title,
+      description: input.descriptionEn ?? input.description,
+      addressDisplay: input.addressDisplayEn ?? input.addressDisplay,
+      tags: input.tagsEn ?? input.tags,
+      priceDisplay: input.priceDisplayEn ?? input.priceDisplay,
+    },
+  });
+
+  await prisma.propertyMedia.deleteMany({ where: { propertyObjectId: propertyObject.id, kind: "image" } });
+
+  if (input.mediaUrl) {
+    await prisma.propertyMedia.create({
+      data: {
+        propertyObjectId: propertyObject.id,
+        ownerOrganizationId: input.ownerOrganizationId,
+        ownerOfficeId: input.ownerOfficeId,
+        url: input.mediaUrl,
+        kind: "image",
+        public: true,
+        sortOrder: 10,
+      },
+    });
+  }
 
   return propertyObject;
 }
@@ -513,11 +555,17 @@ async function main() {
     assetClass: "office",
     areaSqm: "420.00",
     priceCurrency: "RUB",
-    title: "Moscow commercial property",
-    description: "Published seller-side object from KVARTAL Moscow for partner network display.",
-    addressDisplay: "Moscow, commercial district",
-    tags: ["commercial", "moscow", "seller-side"],
-    priceDisplay: "Price on request",
+    title: "Коммерческий объект в Москве",
+    description: "Опубликованный объект KVARTAL Moscow для показа в партнерской сети.",
+    addressDisplay: "Москва, коммерческий район",
+    tags: ["Коммерция", "Москва", "Сторона продавца"],
+    priceDisplay: "По запросу",
+    titleEn: "Moscow commercial property",
+    descriptionEn: "Published seller-side object from KVARTAL Moscow for partner network display.",
+    addressDisplayEn: "Moscow, commercial district",
+    tagsEn: ["commercial", "moscow", "seller-side"],
+    priceDisplayEn: "Price on request",
+    mediaUrl: "/images/hero-moscow-dubai.png",
   });
 
   await ensurePublishedObject({
@@ -535,6 +583,12 @@ async function main() {
     addressDisplay: "Ростовская область, г. Батайск, Совхозная ул., район 6Б",
     tags: ["Склад", "Батайск", "Производство"],
     priceDisplay: "По запросу",
+    titleEn: "Warehouse complex in Bataysk",
+    descriptionEn: "Warehouse premises with high ceilings, rack storage and access to an industrial zone.",
+    addressDisplayEn: "Rostov region, Bataysk, Sovkhoznaya Street, district 6B",
+    tagsEn: ["Warehouse", "Bataysk", "Industrial"],
+    priceDisplayEn: "On request",
+    mediaUrl: "/images/objects/bataysk-warehouse.jpg",
   });
 
   await ensurePublishedObject({
@@ -554,6 +608,12 @@ async function main() {
     addressDisplay: "Краснодарский край, ф.т. Сириус, пгт. Сириус, ул. Фигурная, з/у 45",
     tags: ["Гостиница", "Сириус", "57 868 м²"],
     priceDisplay: "По запросу",
+    titleEn: "Hotel complex, Figurnaya 45",
+    descriptionEn: "Land plot for two four-star hotel complexes with 700 and 420 rooms.",
+    addressDisplayEn: "Krasnodar region, Sirius, Figurnaya Street, plot 45",
+    tagsEn: ["Hotel", "Sirius", "57,868 sqm"],
+    priceDisplayEn: "On request",
+    mediaUrl: "/images/objects/figurnaya-45-map.jpg",
   });
 
   await ensurePublishedObject({
@@ -573,6 +633,12 @@ async function main() {
     addressDisplay: "Московская область, г.о. Домодедово, мкр. Южный",
     tags: ["Земля", "Домодедово", "М-4"],
     priceDisplay: "По запросу",
+    titleEn: "Land plot in Domodedovo",
+    descriptionEn: "Land plot near the M-4 highway and established retail infrastructure; permitted use: shops.",
+    addressDisplayEn: "Moscow region, Domodedovo urban district, Yuzhny microdistrict",
+    tagsEn: ["Land", "Domodedovo", "M-4"],
+    priceDisplayEn: "On request",
+    mediaUrl: "/images/objects/domodedovo-land.jpg",
   });
 
   await ensurePublishedObject({
@@ -592,6 +658,12 @@ async function main() {
     addressDisplay: "Московская область, Кубинка, район строительного рынка",
     tags: ["Земля", "Кубинка", "Трафик"],
     priceDisplay: "По запросу",
+    titleEn: "Land plot in Kubinka",
+    descriptionEn: "Land plot next to active retail traffic; permitted use: vehicle parking.",
+    addressDisplayEn: "Moscow region, Kubinka, construction market area",
+    tagsEn: ["Land", "Kubinka", "Traffic"],
+    priceDisplayEn: "On request",
+    mediaUrl: "/images/objects/kubinka-land.jpg",
   });
 
   await ensurePublishedObject({
@@ -609,6 +681,12 @@ async function main() {
     addressDisplay: "Московская область, Истринский район, п. ст. Холщевики",
     tags: ["Земля", "Истра", "Холщевики"],
     priceDisplay: "По запросу",
+    titleEn: "Land plot, Istra district, Kholshcheviki",
+    descriptionEn: "Land plot in the Istra district. Detailed parameters, documents and terms are available on request.",
+    addressDisplayEn: "Moscow region, Istra district, Kholshcheviki station settlement",
+    tagsEn: ["Land", "Istra", "Kholshcheviki"],
+    priceDisplayEn: "On request",
+    mediaUrl: "/images/hero-moscow-dubai.png",
   });
 
   await ensurePublishedObject({

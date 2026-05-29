@@ -9,28 +9,16 @@ export const Header = () => {
         </a>
 
         <nav className="hidden items-center gap-6 text-[13px] font-extrabold uppercase tracking-wider text-kv-navy lg:flex">
-          <a href="#about" className="transition-colors hover:text-kv-red">
-            О компании
-          </a>
-          <a href="#objects" className="transition-colors hover:text-kv-red">
-            Объекты
-          </a>
-          <a href="#services" className="transition-colors hover:text-kv-red">
-            Услуги
-          </a>
-          <a href="#contacts" className="transition-colors hover:text-kv-red">
-            Контакты
-          </a>
+          <a href="#about" className="transition-colors hover:text-kv-red">О компании</a>
+          <a href="#objects" className="transition-colors hover:text-kv-red">Объекты</a>
+          <a href="#services" className="transition-colors hover:text-kv-red">Услуги</a>
+          <a href="#process" className="transition-colors hover:text-kv-red">Процесс</a>
+          <a href="#contacts" className="transition-colors hover:text-kv-red">Контакты</a>
         </nav>
 
         <div className="hidden min-w-max items-center gap-3 lg:flex">
-          <a href="tel:+79772919573" className="hidden font-extrabold text-kv-navy sm:block">
-            +7 (977) 291-95-73
-          </a>
-          <a
-            href="#request"
-            className="cursor-pointer rounded-full bg-kv-red px-5 py-3 text-[13px] font-extrabold text-white shadow-lg transition-all hover:-translate-y-px hover:bg-kv-red-dark"
-          >
+          <a href="tel:+79772919573" className="hidden font-extrabold text-kv-navy sm:block">+7 (977) 291-95-73</a>
+          <a href="#request" className="cursor-pointer rounded-full bg-kv-red px-5 py-3 text-[13px] font-extrabold text-white shadow-lg transition-all hover:-translate-y-px hover:bg-kv-red-dark">
             Оставить заявку
           </a>
         </div>

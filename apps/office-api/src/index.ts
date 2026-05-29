@@ -109,6 +109,7 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/api/v1/public/objects" && request.method === "GET") {
     const tenant = url.searchParams.get("tenant") ?? "apart4u";
     const ownerSlug = url.searchParams.get("ownerOrganizationSlug");
+    const language = url.searchParams.get("language") ?? "ru";
     const take = Math.min(Number(url.searchParams.get("limit") ?? 12), 50);
 
     const objects = await prisma.propertyObject.findMany({
@@ -142,7 +143,8 @@ const server = createServer(async (request, response) => {
       visibilityRule: "status=published AND visibility=public AND canBeShownByOtherOffices=true",
       objects: objects.map((object: PublicObjectRow) => {
         const localization =
-          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "en") ??
+          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
+          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "ru") ??
           object.localizations[0];
         return {
           id: object.id,
