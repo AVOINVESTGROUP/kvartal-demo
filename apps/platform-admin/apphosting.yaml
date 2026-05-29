@@ -13,3 +13,13 @@ env:
     value: "https://kvartal-platform-api-qslxzoismq-ez.a.run.app"
   - variable: PARTNER_API_BASE_URL
     value: "https://kvartal-office-api-qslxzoismq-ez.a.run.app"
+  - variable: GOOGLE_OAUTH_CLIENT_ID
+    value: "a6216f35d-0610-4f97-b9b8-6d0296d8e81d"
+  - variable: GOOGLE_OAUTH_CLIENT_SECRET
+    secret: fixer-google-oauth-client-secret
+    availability:
+      - RUNTIME
+  - variable: FIXER_AUTH_COOKIE_SECRET
+    secret: fixer-auth-cookie-secret
+    availability:
+      - RUNTIME
