@@ -72,12 +72,13 @@ function tagsFromBody(value: unknown) {
 
 function hasAdminWriteAccess(request: IncomingMessage) {
   const expectedToken = process.env.ADMIN_WRITE_TOKEN;
+  const suppliedToken = request.headers["x-kvartal-admin-write-token"];
 
   if (!expectedToken) {
     return false;
   }
 
-  return request.headers["x-kvartal-admin-write-token"] === expectedToken;
+  return typeof suppliedToken === "string" && suppliedToken.trim() === expectedToken.trim();
 }
 
 const tenantOrganizationSlugs = {

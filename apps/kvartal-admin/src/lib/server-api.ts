@@ -50,7 +50,7 @@ async function getSecretValue(secretName: string) {
   }
 
   const payload = (await response.json()) as { payload?: { data?: string } };
-  return payload.payload?.data ? Buffer.from(payload.payload.data, "base64").toString("utf8") : null;
+  return payload.payload?.data ? Buffer.from(payload.payload.data, "base64").toString("utf8").trim() : null;
 }
 
 export async function fetchBackendJson<T>(baseUrl: string | undefined, path: string): Promise<T | null> {
