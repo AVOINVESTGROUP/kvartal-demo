@@ -758,6 +758,24 @@ async function main() {
     mediaUrl: "/images/hero-moscow-dubai.png",
   });
 
+  await prisma.propertyObject.deleteMany({
+    where: {
+      localizations: {
+        some: {
+          language: "ru",
+          title: {
+            in: [
+              "Moscow commercial property",
+              "Tbilisi premium apartment",
+              "Dubai development project",
+              "Yerevan land plot",
+            ],
+          },
+        },
+      },
+    },
+  });
+
   const platformOwnerFirebaseUid = process.env.KVARTAL_PLATFORM_OWNER_FIREBASE_UID;
   const platformOwnerEmail = process.env.KVARTAL_PLATFORM_OWNER_EMAIL;
 
