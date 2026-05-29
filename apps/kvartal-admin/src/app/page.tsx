@@ -1,4 +1,6 @@
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
 
 export const dynamic = "force-dynamic";
@@ -178,9 +180,19 @@ function formPayload(formData: FormData) {
   };
 }
 
+async function requireAdminSession() {
+  const sessionToken = process.env.KVARTAL_ADMIN_SESSION_TOKEN;
+  const cookieStore = await cookies();
+
+  if (!sessionToken || cookieStore.get("kvartal_admin_session")?.value !== sessionToken) {
+    redirect("/login");
+  }
+}
+
 async function createObjectAction(formData: FormData) {
   "use server";
 
+  await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData));
   revalidatePath("/");
 }
@@ -191,6 +203,7 @@ async function updateObjectAction(formData: FormData) {
   const objectId = formValue(formData, "objectId");
   const action = formValue(formData, "action") || "save";
 
+  await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
     ...formPayload(formData),
     action,
@@ -202,6 +215,7 @@ async function updateObjectAction(formData: FormData) {
 async function updateAccessSettingsAction(formData: FormData) {
   "use server";
 
+  await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/access-settings", "PATCH", {
     organizationSlug: formValue(formData, "organizationSlug"),
     showPartnerObjects: formData.get("showPartnerObjects") === "on",
@@ -212,6 +226,7 @@ async function updateAccessSettingsAction(formData: FormData) {
 async function createMemberAction(formData: FormData) {
   "use server";
 
+  await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/members", "POST", {
     organizationSlug: formValue(formData, "organizationSlug"),
     email: formValue(formData, "email"),
@@ -224,6 +239,8 @@ async function createMemberAction(formData: FormData) {
 }
 
 export default async function KvartalAdminHome() {
+  await requireAdminSession();
+
   const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow";
   const [context, objectResponse, reference] = await Promise.all([
     fetchBackendJson<AdminContextResponse>(
