@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { currentOrigin } from "../../../../../lib/auth";
 
+const fallbackClientId = "a6216f35d-0610-4f97-b9b8-6d0296d8e81d";
+
 export async function GET() {
-  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"];
+  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"] ?? fallbackClientId;
 
   if (!clientId) {
     return new NextResponse("Google OAuth is not configured.", { status: 503 });

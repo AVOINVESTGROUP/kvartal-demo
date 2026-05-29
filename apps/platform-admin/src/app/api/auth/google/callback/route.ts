@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { currentOrigin, setPlatformSession } from "../../../../../lib/auth";
+import { currentOrigin, getSecretValue, setPlatformSession } from "../../../../../lib/auth";
 
 type GoogleTokenResponse = {
   id_token?: string;
@@ -17,9 +17,11 @@ type GoogleTokenInfo = {
   picture?: string;
 };
 
+const fallbackClientId = "a6216f35d-0610-4f97-b9b8-6d0296d8e81d";
+
 export async function GET(request: Request) {
-  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"];
-  const clientSecret = process.env["GOOGLE_OAUTH_CLIENT_SECRET"];
+  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"] ?? fallbackClientId;
+  const clientSecret = process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ?? (await getSecretValue("fixer-google-oauth-client-secret"));
 
   if (!clientId || !clientSecret) {
     return new NextResponse("Google OAuth is not configured.", { status: 503 });

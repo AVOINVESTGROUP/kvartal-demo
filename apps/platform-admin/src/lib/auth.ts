@@ -20,22 +20,72 @@ export type PlatformAccess = {
 };
 
 const sessionCookieName = "fixer_platform_session";
+let cachedCookieSecret: string | null = null;
 
-function authSecret() {
-  return process.env["FIXER_AUTH_COOKIE_SECRET"] ?? process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ?? "";
+async function getAccessToken() {
+  try {
+    const response = await fetch(
+      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+      { headers: { "Metadata-Flavor": "Google" }, cache: "no-store" },
+    );
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = (await response.json()) as { access_token?: string };
+    return payload.access_token ?? null;
+  } catch {
+    return null;
+  }
 }
 
-function sign(payload: string) {
-  return createHmac("sha256", authSecret()).update(payload).digest("hex");
+export async function getSecretValue(secretName: string) {
+  const token = await getAccessToken();
+
+  if (!token) {
+    return null;
+  }
+
+  const response = await fetch(`https://secretmanager.googleapis.com/v1/projects/kvartal-dev/secrets/${secretName}/versions/latest:access`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as { payload?: { data?: string } };
+  return payload.payload?.data ? Buffer.from(payload.payload.data, "base64").toString("utf8").trim() : null;
 }
 
-function encodeSession(session: PlatformSession) {
+async function authSecret() {
+  if (cachedCookieSecret) {
+    return cachedCookieSecret;
+  }
+
+  cachedCookieSecret =
+    process.env["FIXER_AUTH_COOKIE_SECRET"] ??
+    (await getSecretValue("fixer-auth-cookie-secret")) ??
+    process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??
+    (await getSecretValue("fixer-google-oauth-client-secret")) ??
+    "";
+
+  return cachedCookieSecret;
+}
+
+async function sign(payload: string) {
+  return createHmac("sha256", await authSecret()).update(payload).digest("hex");
+}
+
+async function encodeSession(session: PlatformSession) {
   const payload = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
-  return `${payload}.${sign(payload)}`;
+  return `${payload}.${await sign(payload)}`;
 }
 
-function decodeSession(value: string | undefined) {
-  if (!value || !authSecret()) {
+async function decodeSession(value: string | undefined) {
+  if (!value || !(await authSecret())) {
     return null;
   }
 
@@ -45,7 +95,7 @@ function decodeSession(value: string | undefined) {
     return null;
   }
 
-  const expected = sign(payload);
+  const expected = await sign(payload);
   const actualBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
 
@@ -67,7 +117,7 @@ export async function getPlatformSession() {
 
 export async function setPlatformSession(session: PlatformSession) {
   const cookieStore = await cookies();
-  cookieStore.set(sessionCookieName, encodeSession(session), {
+  cookieStore.set(sessionCookieName, await encodeSession(session), {
     httpOnly: true,
     sameSite: "lax",
     secure: true,
