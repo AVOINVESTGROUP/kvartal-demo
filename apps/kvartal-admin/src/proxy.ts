@@ -1,28 +1,21 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export function proxy(request: NextRequest) {
-  const expected = process.env.KVARTAL_ADMIN_BASIC_AUTH;
+  const sessionToken = process.env.KVARTAL_ADMIN_SESSION_TOKEN;
 
-  if (!expected) {
+  if (!sessionToken) {
     return new NextResponse("Admin authentication is not configured.", { status: 503 });
   }
 
-  const header = request.headers.get("authorization");
-
-  if (header?.startsWith("Basic ")) {
-    const decoded = atob(header.slice("Basic ".length));
-
-    if (decoded === expected) {
-      return NextResponse.next();
-    }
+  if (request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/logout")) {
+    return NextResponse.next();
   }
 
-  return new NextResponse("Authentication required.", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="KVARTAL Admin", charset="UTF-8"',
-    },
-  });
+  if (request.cookies.get("kvartal_admin_session")?.value === sessionToken) {
+    return NextResponse.next();
+  }
+
+  return NextResponse.redirect(new URL("/login", request.url));
 }
 
 export const config = {

@@ -21,3 +21,7 @@ env:
     secret: kvartal-admin-basic-auth
     availability:
       - RUNTIME
+  - variable: KVARTAL_ADMIN_SESSION_TOKEN
+    secret: kvartal-admin-session-token
+    availability:
+      - RUNTIME

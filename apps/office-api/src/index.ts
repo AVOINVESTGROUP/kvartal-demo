@@ -8,6 +8,8 @@ export const ownedRoutes = [
   "/api/v1/public/client-intents",
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
+  "/api/v1/admin/access-settings",
+  "/api/v1/admin/members",
   "/api/v1/admin/property-intakes",
   "/api/v1/admin/client-intents",
   "/api/v1/admin/cobroker-requests",
@@ -82,10 +84,15 @@ function hasAdminWriteAccess(request: IncomingMessage) {
 }
 
 const tenantOrganizationSlugs = {
+  kvartal: "kvartal-moscow",
   apart4u: "apart4u-tbilisi",
   dubai: "dubai-partner",
   yerevan: "yerevan-partner",
 } as const;
+
+function organizationSlugForTenant(tenant: string) {
+  return tenantOrganizationSlugs[tenant as keyof typeof tenantOrganizationSlugs] ?? tenant;
+}
 
 type PublicObjectLocalizationRow = {
   language: string;
@@ -157,6 +164,21 @@ type AdminReferenceOfficeRow = {
   city: string;
   country: string;
   defaultMarket: AdminReferenceMarketRow | null;
+};
+
+type AdminSiteConfigRow = {
+  id: string;
+  domain: string | null;
+  subdomain: string | null;
+  showPartnerObjects: boolean;
+  active: boolean;
+};
+
+type AdminOrganizationMembershipRow = {
+  id: string;
+  roles: string[];
+  active: boolean;
+  user: { id: string; email: string; displayName: string | null; active: boolean };
 };
 
 function serializeObject(object: PublicObjectRow, language = "ru") {
@@ -239,13 +261,20 @@ const server = createServer(async (request, response) => {
     const ownerSlug = url.searchParams.get("ownerOrganizationSlug");
     const language = url.searchParams.get("language") ?? "ru";
     const take = Math.min(Number(url.searchParams.get("limit") ?? 12), 50);
+    const tenantOrganizationSlug = organizationSlugForTenant(tenant);
+
+    const tenantSiteConfig = await prisma.siteConfig.findFirst({
+      where: { organization: { slug: tenantOrganizationSlug }, active: true },
+      orderBy: { updatedAt: "desc" },
+    });
+    const effectiveOwnerSlug = ownerSlug ?? (tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined);
 
     const objects = await prisma.propertyObject.findMany({
       where: {
         status: "published",
         visibility: "public",
         canBeShownByOtherOffices: true,
-        ...(ownerSlug ? { ownerOrganization: { slug: ownerSlug } } : {}),
+        ...(effectiveOwnerSlug ? { ownerOrganization: { slug: effectiveOwnerSlug } } : {}),
       },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
       take,
@@ -268,7 +297,11 @@ const server = createServer(async (request, response) => {
       ok: true,
       service: serviceName,
       tenant,
-      visibilityRule: "status=published AND visibility=public AND canBeShownByOtherOffices=true",
+      tenantOrganizationSlug,
+      showPartnerObjects: tenantSiteConfig?.showPartnerObjects ?? true,
+      visibilityRule: effectiveOwnerSlug
+        ? "status=published AND visibility=public AND canBeShownByOtherOffices=true AND ownerOrganization=tenant"
+        : "status=published AND visibility=public AND canBeShownByOtherOffices=true",
       objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
     });
     return;
@@ -296,6 +329,14 @@ const server = createServer(async (request, response) => {
           },
           orderBy: { legalName: "asc" },
         },
+        siteConfigs: {
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+        },
+        memberships: {
+          include: { user: true },
+          orderBy: { createdAt: "asc" },
+        },
         _count: {
           select: {
             propertyObjects: true,
@@ -320,6 +361,8 @@ const server = createServer(async (request, response) => {
     const sharedPublicInventoryCount = await prisma.propertyObject.count({
       where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
     });
+    const siteConfig = (organization.siteConfigs[0] as AdminSiteConfigRow | undefined) ?? null;
+    const memberships = organization.memberships as AdminOrganizationMembershipRow[];
 
     sendJson(response, 200, {
       ok: true,
@@ -334,6 +377,12 @@ const server = createServer(async (request, response) => {
         status: organization.status,
         defaultLanguage: organization.defaultLanguage,
         defaultCurrency: organization.defaultCurrency,
+        siteConfig: {
+          domain: siteConfig?.domain ?? null,
+          subdomain: siteConfig?.subdomain ?? null,
+          showPartnerObjects: siteConfig?.showPartnerObjects ?? true,
+          active: siteConfig?.active ?? true,
+        },
         counts: {
           ownedObjects: organization._count.propertyObjects,
           informationOwnedObjects: organization._count.informationOwnedObjects,
@@ -358,6 +407,13 @@ const server = createServer(async (request, response) => {
             propertyObjects: office._count.propertyObjects,
             clientIntents: office._count.clientIntents,
           },
+        })),
+        members: memberships.map((membership) => ({
+          id: membership.id,
+          email: membership.user.email,
+          displayName: membership.user.displayName,
+          roles: membership.roles,
+          active: membership.active && membership.user.active,
         })),
       },
     });
@@ -476,6 +532,177 @@ const server = createServer(async (request, response) => {
         "investment_project",
         "other",
       ],
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/access-settings" && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type AccessSettingsBody = {
+      organizationSlug?: string;
+      showPartnerObjects?: unknown;
+    };
+
+    const body = await readJsonBody<AccessSettingsBody>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: {
+        offices: {
+          include: { defaultMarket: true },
+          orderBy: { legalName: "asc" },
+        },
+      },
+    });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const offices = organization.offices as AdminReferenceOfficeRow[];
+    const office = offices[0];
+
+    if (!office) {
+      sendError(response, 400, "office_not_found", `Organization '${organizationSlug}' has no office.`);
+      return;
+    }
+
+    const existingSiteConfig = await prisma.siteConfig.findFirst({
+      where: { organizationId: organization.id },
+      orderBy: { updatedAt: "desc" },
+    });
+    const showPartnerObjects = booleanFromBody(body.showPartnerObjects);
+    const siteConfig = existingSiteConfig
+      ? await prisma.siteConfig.update({
+          where: { id: existingSiteConfig.id },
+          data: { showPartnerObjects, active: true },
+        })
+      : await prisma.siteConfig.create({
+          data: {
+            organizationId: organization.id,
+            officeId: office.id,
+            defaultLanguage: organization.defaultLanguage,
+            supportedLanguages: organization.supportedLanguages,
+            defaultCurrency: organization.defaultCurrency,
+            supportedCurrencies: organization.supportedCurrencies,
+            primaryMarketIds: office.defaultMarket ? [office.defaultMarket.id] : [],
+            showPartnerObjects,
+            active: true,
+          },
+        });
+
+    sendJson(response, 200, {
+      ok: true,
+      organizationSlug,
+      siteConfig: {
+        domain: siteConfig.domain,
+        subdomain: siteConfig.subdomain,
+        showPartnerObjects: siteConfig.showPartnerObjects,
+        active: siteConfig.active,
+      },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/members" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type CreateMemberBody = {
+      organizationSlug?: string;
+      email?: string;
+      displayName?: string;
+      organizationRole?: "organization_owner" | "organization_admin";
+      officeSlug?: string;
+      officeRole?: "office_owner" | "office_admin" | "broker" | "office_analyst" | "office_viewer";
+    };
+
+    const body = await readJsonBody<CreateMemberBody>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const email = optionalString(body.email)?.toLowerCase();
+
+    if (!email) {
+      sendError(response, 400, "email_required", "User email is required.");
+      return;
+    }
+
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: {
+        offices: true,
+      },
+    });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const user = await prisma.appUser.upsert({
+      where: { email },
+      update: {
+        displayName: optionalString(body.displayName),
+        active: true,
+      },
+      create: {
+        firebaseUid: `pending:${email}`,
+        email,
+        displayName: optionalString(body.displayName),
+        active: true,
+      },
+    });
+
+    const organizationRole = (optionalString(body.organizationRole) ?? "organization_admin") as never;
+    const membership = await prisma.organizationMembership.upsert({
+      where: { organizationId_userId: { organizationId: organization.id, userId: user.id } },
+      update: {
+        roles: [organizationRole],
+        active: true,
+      },
+      create: {
+        organizationId: organization.id,
+        userId: user.id,
+        roles: [organizationRole],
+        active: true,
+      },
+    });
+
+    const office = organization.offices.find((item) => item.slug === optionalString(body.officeSlug));
+    const officeRole = optionalString(body.officeRole);
+
+    if (office && officeRole) {
+      await prisma.officeMembership.upsert({
+        where: { officeId_userId: { officeId: office.id, userId: user.id } },
+        update: {
+          roles: [officeRole as never],
+          active: true,
+        },
+        create: {
+          organizationId: organization.id,
+          officeId: office.id,
+          userId: user.id,
+          roles: [officeRole as never],
+          active: true,
+        },
+      });
+    }
+
+    sendJson(response, 201, {
+      ok: true,
+      member: {
+        id: membership.id,
+        email: user.email,
+        displayName: user.displayName,
+        roles: membership.roles,
+        active: membership.active && user.active,
+      },
     });
     return;
   }

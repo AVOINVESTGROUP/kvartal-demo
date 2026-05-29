@@ -12,6 +12,12 @@ type AdminContextResponse = {
     status: string;
     defaultLanguage: string;
     defaultCurrency: string;
+    siteConfig: {
+      domain: string | null;
+      subdomain: string | null;
+      showPartnerObjects: boolean;
+      active: boolean;
+    };
     counts: {
       ownedObjects: number;
       informationOwnedObjects: number;
@@ -29,6 +35,13 @@ type AdminContextResponse = {
         propertyObjects: number;
         clientIntents: number;
       };
+    }>;
+    members: Array<{
+      id: string;
+      email: string;
+      displayName: string | null;
+      roles: string[];
+      active: boolean;
     }>;
   };
 };
@@ -186,6 +199,30 @@ async function updateObjectAction(formData: FormData) {
   revalidatePath("/");
 }
 
+async function updateAccessSettingsAction(formData: FormData) {
+  "use server";
+
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/access-settings", "PATCH", {
+    organizationSlug: formValue(formData, "organizationSlug"),
+    showPartnerObjects: formData.get("showPartnerObjects") === "on",
+  });
+  revalidatePath("/");
+}
+
+async function createMemberAction(formData: FormData) {
+  "use server";
+
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/members", "POST", {
+    organizationSlug: formValue(formData, "organizationSlug"),
+    email: formValue(formData, "email"),
+    displayName: formValue(formData, "displayName"),
+    organizationRole: formValue(formData, "organizationRole"),
+    officeSlug: formValue(formData, "officeSlug"),
+    officeRole: formValue(formData, "officeRole"),
+  });
+  revalidatePath("/");
+}
+
 export default async function KvartalAdminHome() {
   const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow";
   const [context, objectResponse, reference] = await Promise.all([
@@ -212,6 +249,8 @@ export default async function KvartalAdminHome() {
   const offices = reference?.offices ?? [];
   const marketOptions = reference?.markets ?? [];
   const assetClasses = reference?.assetClasses ?? ["land", "apartment", "house", "office", "industrial_site", "development_project"];
+  const members = organization?.members ?? [];
+  const showPartnerObjects = organization?.siteConfig.showPartnerObjects ?? true;
 
   return (
     <main className="min-h-screen bg-kv-bg text-kv-ink">
@@ -228,6 +267,9 @@ export default async function KvartalAdminHome() {
             <Badge tone="dark">{organization?.status ?? "loading"}</Badge>
             <Badge>{organization?.countryOfRegistration ?? "RU"}</Badge>
             <Badge>{organization?.defaultCurrency ?? "RUB"}</Badge>
+            <a href="/logout" className="inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">
+              Выйти
+            </a>
           </div>
         </div>
       </header>
@@ -248,7 +290,9 @@ export default async function KvartalAdminHome() {
       </section>
 
       <section className="mx-auto max-w-[1440px] px-6 pb-6">
-        <form action={createObjectAction} className="rounded-md border border-kv-line bg-white p-5">
+        <details className="rounded-md border border-kv-line bg-white">
+          <summary className="cursor-pointer px-5 py-4 text-lg font-black text-kv-navy">Добавить новый объект</summary>
+          <form action={createObjectAction} className="border-t border-kv-line p-5">
           <input type="hidden" name="organizationSlug" value={organizationSlug} />
           <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -379,7 +423,8 @@ export default async function KvartalAdminHome() {
               </label>
             </div>
           </div>
-        </form>
+          </form>
+        </details>
       </section>
 
       <section className="mx-auto grid max-w-[1440px] gap-5 px-6 pb-6 xl:grid-cols-[280px_1fr]">
@@ -404,6 +449,81 @@ export default async function KvartalAdminHome() {
               {!organization?.offices.length ? <div className="text-[14px] text-kv-muted">Контекст организации не загружен.</div> : null}
             </div>
           </div>
+
+          <form action={updateAccessSettingsAction} className="rounded-md border border-kv-line bg-white p-4">
+            <h2 className="font-black text-kv-navy">Доступ к витрине</h2>
+            <p className="mt-2 text-[13px] leading-5 text-kv-muted">
+              Организация может скрыть объекты других партнеров на своем сайте. Собственные опубликованные объекты остаются в управлении организации.
+            </p>
+            <input type="hidden" name="organizationSlug" value={organizationSlug} />
+            <label className="mt-4 flex items-start gap-3 rounded-md border border-kv-line bg-kv-bg p-3 text-[13px] font-bold text-kv-muted">
+              <input name="showPartnerObjects" type="checkbox" defaultChecked={showPartnerObjects} className="mt-1" />
+              <span>Показывать объекты других партнеров из общего опубликованного пула</span>
+            </label>
+            <button className="mt-4 rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Сохранить правило</button>
+          </form>
+
+          <div className="rounded-md border border-kv-line bg-white">
+            <div className="border-b border-kv-line px-4 py-3">
+              <h2 className="font-black text-kv-navy">Пользователи организации</h2>
+            </div>
+            <div className="space-y-3 p-4">
+              {members.map((member) => (
+                <div key={member.id} className="rounded-md border border-kv-line bg-kv-bg p-3">
+                  <div className="font-black text-kv-navy">{member.displayName ?? member.email}</div>
+                  <div className="mt-1 text-[13px] text-kv-muted">{member.email}</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {member.roles.map((role) => <Badge key={role}>{role}</Badge>)}
+                    <Badge tone={member.active ? "good" : "warn"}>{member.active ? "active" : "inactive"}</Badge>
+                  </div>
+                </div>
+              ))}
+              {!members.length ? <div className="text-[14px] text-kv-muted">Пользователи еще не заведены.</div> : null}
+            </div>
+          </div>
+
+          <details className="rounded-md border border-kv-line bg-white">
+            <summary className="cursor-pointer px-4 py-3 font-black text-kv-navy">Добавить сотрудника</summary>
+            <form action={createMemberAction} className="grid gap-3 border-t border-kv-line p-4">
+              <input type="hidden" name="organizationSlug" value={organizationSlug} />
+              <label className="text-[13px] font-bold text-kv-muted">
+                Email
+                <input name="email" required type="email" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+              </label>
+              <label className="text-[13px] font-bold text-kv-muted">
+                Имя
+                <input name="displayName" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
+              </label>
+              <label className="text-[13px] font-bold text-kv-muted">
+                Роль в организации
+                <select name="organizationRole" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="organization_admin">
+                  <option value="organization_owner">Собственник организации</option>
+                  <option value="organization_admin">Администратор организации</option>
+                </select>
+              </label>
+              <label className="text-[13px] font-bold text-kv-muted">
+                Офис
+                <select name="officeSlug" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                  <option value="">Без привязки к офису</option>
+                  {offices.map((office) => (
+                    <option key={office.slug} value={office.slug}>{office.legalName}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-[13px] font-bold text-kv-muted">
+                Роль в офисе
+                <select name="officeRole" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="">
+                  <option value="">Не назначать</option>
+                  <option value="office_owner">Собственник офиса</option>
+                  <option value="office_admin">Администратор офиса</option>
+                  <option value="broker">Брокер</option>
+                  <option value="office_analyst">Аналитик</option>
+                  <option value="office_viewer">Просмотр</option>
+                </select>
+              </label>
+              <button className="rounded-full bg-kv-red px-5 py-3 text-sm font-black text-white">Выдать доступ</button>
+            </form>
+          </details>
 
           <div className="rounded-md border border-kv-line bg-white p-4">
             <h2 className="font-black text-kv-navy">Правила доступа</h2>

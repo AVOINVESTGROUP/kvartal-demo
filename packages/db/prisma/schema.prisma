@@ -419,6 +419,7 @@ model SiteConfig {
   defaultCurrency     CurrencyCode
   supportedCurrencies CurrencyCode[]
   primaryMarketIds    String[]
+  showPartnerObjects  Boolean        @default(true)
   contactEmail        String?
   contactPhone        String?
   active              Boolean        @default(true)
