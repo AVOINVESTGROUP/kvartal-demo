@@ -23,6 +23,7 @@ Stop using the hand-written OAuth routes and move platform admin sign-in to Fire
 - server verifies the Firebase ID token and then asks `platform-api` for Gmail authorization.
 
 Do not store a fallback Google OAuth client id in code. Do not use `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` for `platform-admin`.
+Do not create a separate ad-hoc API key for Firebase Auth. Use the official Firebase Web App config from `kvartal-dev`.
 
 ### Required Console Check
 

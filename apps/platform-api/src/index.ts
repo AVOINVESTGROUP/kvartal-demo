@@ -1,5 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { PrismaClient } from "@prisma/client";
+import {
+  PrismaClient,
+  type Office,
+  type OfficeMembership,
+  type Organization,
+  type OrganizationMembership,
+  type PlatformRoleAssignment,
+} from "@prisma/client";
 
 export const serviceName = "platform-api";
 
@@ -41,6 +48,9 @@ type PlatformOrganizationRow = {
   _count: { offices: number; propertyObjects: number; clientIntents: number };
   offices: PlatformOfficeRow[];
 };
+
+type AccessOrganizationMembership = OrganizationMembership & { organization: Organization };
+type AccessOfficeMembership = OfficeMembership & { office: Office };
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -269,7 +279,9 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const platformRoles = user.platformRoleAssignments.filter((role) => role.active).map((role) => role.role);
+    const platformRoles = user.platformRoleAssignments
+      .filter((role: PlatformRoleAssignment) => role.active)
+      .map((role: PlatformRoleAssignment) => role.role);
 
     sendJson(response, 200, {
       ok: true,
@@ -277,16 +289,16 @@ const server = createServer(async (request, response) => {
       displayName: user.displayName,
       authorized: platformRoles.includes("platform_owner") || platformRoles.includes("platform_admin"),
       platformRoles,
-      organizationMemberships: user.organizationMemberships
-        .filter((membership) => membership.active)
-        .map((membership) => ({
+      organizationMemberships: (user.organizationMemberships as AccessOrganizationMembership[])
+        .filter((membership: AccessOrganizationMembership) => membership.active)
+        .map((membership: AccessOrganizationMembership) => ({
           organizationSlug: membership.organization.slug,
           organizationName: membership.organization.legalName,
           roles: membership.roles,
         })),
-      officeMemberships: user.officeMemberships
-        .filter((membership) => membership.active)
-        .map((membership) => ({
+      officeMemberships: (user.officeMemberships as AccessOfficeMembership[])
+        .filter((membership: AccessOfficeMembership) => membership.active)
+        .map((membership: AccessOfficeMembership) => ({
           officeSlug: membership.office.slug,
           officeName: membership.office.legalName,
           roles: membership.roles,

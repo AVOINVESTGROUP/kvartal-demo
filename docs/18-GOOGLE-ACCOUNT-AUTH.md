@@ -56,8 +56,9 @@ If Firebase Auth is in test mode, add test users:
 - `NEXT_PUBLIC_FIREBASE_API_KEY`
 - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
 - `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
 
-The API key is restricted to `identitytoolkit.googleapis.com` and the App Hosting domain.
+Use the official Firebase Web App config from project `kvartal-dev`. Do not create ad-hoc API keys for admin sign-in.
 
 The server session still needs a cookie signing secret:
 
