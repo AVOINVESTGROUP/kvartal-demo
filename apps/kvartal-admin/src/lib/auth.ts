@@ -13,6 +13,7 @@ export type AdminSession = {
 
 type PlatformAccess = {
   authorized: boolean;
+  platformRoles: string[];
   organizationMemberships: Array<{
     organizationSlug: string;
     organizationName: string;
@@ -229,8 +230,13 @@ export async function getOrganizationAccess(email: string, displayName?: string)
     `/api/v1/platform/access?email=${encodeURIComponent(email)}&displayName=${encodeURIComponent(displayName ?? "")}`,
   );
   const membership = access?.organizationMemberships.find((item) => item.organizationSlug === organizationSlug);
+  const platformRoles = access?.platformRoles ?? [];
   const roles = membership?.roles ?? [];
-  const allowed = roles.includes("organization_owner") || roles.includes("organization_admin");
+  const allowed =
+    platformRoles.includes("platform_owner") ||
+    platformRoles.includes("platform_admin") ||
+    roles.includes("organization_owner") ||
+    roles.includes("organization_admin");
 
-  return { organizationSlug, roles, allowed };
+  return { organizationSlug, roles: [...platformRoles, ...roles], allowed };
 }
