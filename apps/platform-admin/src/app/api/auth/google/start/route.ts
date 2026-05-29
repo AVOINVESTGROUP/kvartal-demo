@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { currentOrigin } from "../../../../../lib/auth";
 
 export async function GET() {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"];
 
   if (!clientId) {
     return new NextResponse("Google OAuth is not configured.", { status: 503 });

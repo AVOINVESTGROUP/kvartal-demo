@@ -18,8 +18,8 @@ type GoogleTokenInfo = {
 };
 
 export async function GET(request: Request) {
-  const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const clientId = process.env["GOOGLE_OAUTH_CLIENT_ID"];
+  const clientSecret = process.env["GOOGLE_OAUTH_CLIENT_SECRET"];
 
   if (!clientId || !clientSecret) {
     return new NextResponse("Google OAuth is not configured.", { status: 503 });

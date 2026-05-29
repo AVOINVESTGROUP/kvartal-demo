@@ -22,7 +22,7 @@ export type PlatformAccess = {
 const sessionCookieName = "fixer_platform_session";
 
 function authSecret() {
-  return process.env.FIXER_AUTH_COOKIE_SECRET ?? process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "";
+  return process.env["FIXER_AUTH_COOKIE_SECRET"] ?? process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ?? "";
 }
 
 function sign(payload: string) {
