@@ -6,6 +6,29 @@ type HeaderProps = {
   onLanguageChange: (language: SiteLanguage) => void;
 };
 
+function LanguageSwitch({ language, onLanguageChange }: HeaderProps) {
+  return (
+    <div className="inline-flex rounded-full border border-kv-line bg-white p-1 text-xs font-black text-kv-navy">
+      <button
+        type="button"
+        aria-pressed={language === "ru"}
+        className={`rounded-full px-3 py-2 ${language === "ru" ? "bg-kv-navy text-white" : ""}`}
+        onClick={() => onLanguageChange("ru")}
+      >
+        RU
+      </button>
+      <button
+        type="button"
+        aria-pressed={language === "en"}
+        className={`rounded-full px-3 py-2 ${language === "en" ? "bg-kv-navy text-white" : ""}`}
+        onClick={() => onLanguageChange("en")}
+      >
+        EN
+      </button>
+    </div>
+  );
+}
+
 export const Header = ({ language, onLanguageChange }: HeaderProps) => {
   const nav = {
     ru: ["О компании", "Объекты", "Услуги", "Процесс", "Контакты"],
@@ -27,13 +50,13 @@ export const Header = ({ language, onLanguageChange }: HeaderProps) => {
           <a href="#contacts" className="transition-colors hover:text-kv-red">{nav[4]}</a>
         </nav>
 
-        <div className="hidden min-w-max items-center gap-3 lg:flex">
-          <a href="tel:+79772919573" className="hidden font-extrabold text-kv-navy sm:block">+7 (977) 291-95-73</a>
-          <div className="inline-flex rounded-full border border-kv-line bg-white p-1 text-xs font-black text-kv-navy">
-            <button type="button" className={`rounded-full px-3 py-2 ${language === "ru" ? "bg-kv-navy text-white" : ""}`} onClick={() => onLanguageChange("ru")}>RU</button>
-            <button type="button" className={`rounded-full px-3 py-2 ${language === "en" ? "bg-kv-navy text-white" : ""}`} onClick={() => onLanguageChange("en")}>EN</button>
-          </div>
-          <a href="#request" className="cursor-pointer rounded-full bg-kv-red px-5 py-3 text-[13px] font-extrabold text-white shadow-lg transition-all hover:-translate-y-px hover:bg-kv-red-dark">
+        <div className="flex min-w-max items-center gap-2">
+          <a href="tel:+79772919573" className="hidden font-extrabold text-kv-navy xl:block">+7 (977) 291-95-73</a>
+          <LanguageSwitch language={language} onLanguageChange={onLanguageChange} />
+          <a
+            href="#request"
+            className="hidden cursor-pointer rounded-full bg-kv-red px-5 py-3 text-[13px] font-extrabold text-white shadow-lg transition-all hover:-translate-y-px hover:bg-kv-red-dark lg:inline-flex"
+          >
             {language === "ru" ? "Оставить заявку" : "Send request"}
           </a>
         </div>

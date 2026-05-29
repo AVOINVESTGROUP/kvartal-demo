@@ -78,6 +78,20 @@ function assetLabel(assetClass: string) {
   return labels[assetClass] ?? assetClass;
 }
 
+function resolveMediaUrl(url: string | undefined) {
+  if (!url) {
+    return null;
+  }
+
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+
+  const baseUrl = process.env.PUBLIC_SITE_BASE_URL ?? "https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app";
+
+  return `${baseUrl}${url}`;
+}
+
 function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "dark" }) {
   const toneClass = {
     neutral: "border-kv-line bg-white text-kv-muted",
@@ -192,9 +206,9 @@ export default async function KvartalAdminHome() {
             {objects.map((object) => (
               <article key={object.id} className="grid gap-4 p-4 lg:grid-cols-[160px_1fr_250px]">
                 <div className="h-[112px] overflow-hidden rounded-md border border-kv-line bg-kv-bg">
-                  {object.media[0]?.url ? (
+                  {resolveMediaUrl(object.media[0]?.url) ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={object.media[0].url} alt={object.title} className="h-full w-full object-cover" />
+                    <img src={resolveMediaUrl(object.media[0]?.url) ?? ""} alt={object.title} className="h-full w-full object-cover" />
                   ) : (
                     <div className="grid h-full place-items-center px-3 text-center text-[12px] font-bold text-kv-muted">Нет изображения</div>
                   )}
