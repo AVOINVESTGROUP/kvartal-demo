@@ -258,6 +258,7 @@ model Organization {
   displayNames             OrganizationLocalization[]
   memberships              OrganizationMembership[]
   siteConfigs              SiteConfig[]
+  siteObjectVisibilityOverrides SiteObjectVisibilityOverride[]
   propertyObjects          PropertyObject[]             @relation("PropertyOwnerOrganization")
   informationOwnedObjects  PropertyObject[]             @relation("PropertyInformationOwnerOrganization")
   clientIntents            ClientIntent[]
@@ -445,6 +446,21 @@ model SiteConfigLocalization {
   @@unique([siteConfigId, language])
 }
 
+model SiteObjectVisibilityOverride {
+  id               String         @id @default(cuid())
+  organizationId   String
+  propertyObjectId String
+  hidden           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, propertyObjectId])
+  @@index([organizationId, hidden])
+  @@index([propertyObjectId])
+}
+
 model PropertyObject {
   id                                  String                       @id @default(cuid())
   ownerOrganizationId                 String
@@ -496,6 +512,7 @@ model PropertyObject {
   coBrokerRequests                    CoBrokerRequest[]
   dealRoomObjects                     DealRoomObject[]
   aiExternalChecks                    PropertyAIExternalCheck[]
+  siteVisibilityOverrides             SiteObjectVisibilityOverride[]
 
   @@index([ownerOrganizationId])
   @@index([ownerOfficeId])

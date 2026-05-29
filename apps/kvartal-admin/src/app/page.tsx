@@ -79,6 +79,12 @@ type AdminObjectsResponse = {
   }>;
 };
 
+type AdminPartnerObjectsResponse = {
+  objects: Array<AdminObjectsResponse["objects"][number] & {
+    hiddenOnThisSite: boolean;
+  }>;
+};
+
 type AdminReferenceResponse = {
   offices: Array<{
     slug: string;
@@ -206,9 +212,22 @@ async function updateAccessSettingsAction(formData: FormData) {
   "use server";
 
   await requireAdminSession();
+  const showPartnerObjectsValue = formValue(formData, "showPartnerObjects");
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/access-settings", "PATCH", {
     organizationSlug: formValue(formData, "organizationSlug"),
-    showPartnerObjects: formData.get("showPartnerObjects") === "on",
+    showPartnerObjects: showPartnerObjectsValue ? showPartnerObjectsValue === "true" : formData.get("showPartnerObjects") === "on",
+  });
+  revalidatePath("/");
+}
+
+async function updatePartnerObjectVisibilityAction(formData: FormData) {
+  "use server";
+
+  await requireAdminSession();
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/partner-object-visibility", "PATCH", {
+    organizationSlug: formValue(formData, "organizationSlug"),
+    propertyObjectId: formValue(formData, "propertyObjectId"),
+    hidden: formValue(formData, "hidden") === "true",
   });
   revalidatePath("/");
 }
@@ -232,7 +251,7 @@ export default async function KvartalAdminHome() {
   const session = await requireAdminSession();
 
   const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow";
-  const [context, objectResponse, reference] = await Promise.all([
+  const [context, objectResponse, partnerObjectResponse, reference] = await Promise.all([
     fetchBackendJson<AdminContextResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/context?organizationSlug=${encodeURIComponent(organizationSlug)}`,
@@ -240,6 +259,10 @@ export default async function KvartalAdminHome() {
     fetchBackendJson<AdminObjectsResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/objects?organizationSlug=${encodeURIComponent(organizationSlug)}&language=ru&limit=100`,
+    ),
+    fetchBackendJson<AdminPartnerObjectsResponse>(
+      process.env.PARTNER_API_BASE_URL,
+      `/api/v1/admin/partner-objects?organizationSlug=${encodeURIComponent(organizationSlug)}&language=ru&limit=100`,
     ),
     fetchBackendJson<AdminReferenceResponse>(
       process.env.PARTNER_API_BASE_URL,
@@ -249,6 +272,9 @@ export default async function KvartalAdminHome() {
 
   const organization = context?.organization;
   const objects = objectResponse?.objects ?? [];
+  const partnerObjects = partnerObjectResponse?.objects ?? [];
+  const visiblePartnerObjects = partnerObjects.filter((object) => !object.hiddenOnThisSite);
+  const hiddenPartnerObjects = partnerObjects.filter((object) => object.hiddenOnThisSite);
   const publicObjects = objects.filter((object) => object.status === "published" && object.visibility === "public");
   const sharedObjects = publicObjects.filter((object) => object.canBeShownByOtherOffices);
   const missingMedia = objects.filter((object) => object.mediaCount === 0);
@@ -543,6 +569,44 @@ export default async function KvartalAdminHome() {
               <p>KVARTAL видит свои объекты и объекты общей витрины.</p>
               <p>Другие организации не получают приватные данные KVARTAL без разрешения правообладателя информации.</p>
               <p>Публикация в общей витрине требует: `published`, `public`, `canBeShownByOtherOffices`.</p>
+            </div>
+          </div>
+          <div className="rounded-md border border-kv-line bg-white">
+            <div className="border-b border-kv-line px-4 py-3">
+              <h2 className="font-black text-kv-navy">Объекты партнеров на сайте</h2>
+              <p className="mt-1 text-[13px] text-kv-muted">
+                Видимые: {visiblePartnerObjects.length}. Скрытые: {hiddenPartnerObjects.length}.
+              </p>
+            </div>
+            <div className="max-h-[520px] space-y-3 overflow-y-auto p-4">
+              {partnerObjects.map((object) => (
+                <div key={object.id} className="rounded-md border border-kv-line bg-kv-bg p-3">
+                  <div className="font-black text-kv-navy">{object.title}</div>
+                  <div className="mt-1 text-[13px] text-kv-muted">
+                    {object.sellerSide.organizationName} · {object.market.city}, {object.market.country}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge tone={object.hiddenOnThisSite ? "warn" : "good"}>
+                      {object.hiddenOnThisSite ? "скрыт на сайте" : "показывается"}
+                    </Badge>
+                    <Badge>{object.assetClass}</Badge>
+                  </div>
+                  <form action={updatePartnerObjectVisibilityAction} className="mt-3">
+                    <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                    <input type="hidden" name="propertyObjectId" value={object.id} />
+                    {object.hiddenOnThisSite ? (
+                      <button name="hidden" value="false" className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">
+                        Вернуть на сайт
+                      </button>
+                    ) : (
+                      <button name="hidden" value="true" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">
+                        Скрыть на сайте
+                      </button>
+                    )}
+                  </form>
+                </div>
+              ))}
+              {!partnerObjects.length ? <div className="text-[14px] text-kv-muted">Партнерских объектов в общей витрине пока нет.</div> : null}
             </div>
           </div>
         </aside>

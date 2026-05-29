@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 export const serviceName = "office-api";
@@ -9,6 +10,8 @@ export const ownedRoutes = [
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
   "/api/v1/admin/access-settings",
+  "/api/v1/admin/partner-objects",
+  "/api/v1/admin/partner-object-visibility",
   "/api/v1/admin/members",
   "/api/v1/admin/property-intakes",
   "/api/v1/admin/client-intents",
@@ -267,6 +270,13 @@ const server = createServer(async (request, response) => {
       where: { organization: { slug: tenantOrganizationSlug }, active: true },
       orderBy: { updatedAt: "desc" },
     });
+    const hiddenOverrides = await prisma.$queryRaw<Array<{ propertyObjectId: string }>>`
+      SELECT svo."propertyObjectId"
+      FROM "SiteObjectVisibilityOverride" svo
+      JOIN "Organization" o ON o.id = svo."organizationId"
+      WHERE o.slug = ${tenantOrganizationSlug} AND svo.hidden = true
+    `;
+    const hiddenObjectIds = hiddenOverrides.map((item: { propertyObjectId: string }) => item.propertyObjectId);
     const effectiveOwnerSlug = ownerSlug ?? (tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined);
 
     const objects = await prisma.propertyObject.findMany({
@@ -274,6 +284,7 @@ const server = createServer(async (request, response) => {
         status: "published",
         visibility: "public",
         canBeShownByOtherOffices: true,
+        ...(hiddenObjectIds.length ? { id: { notIn: hiddenObjectIds } } : {}),
         ...(effectiveOwnerSlug ? { ownerOrganization: { slug: effectiveOwnerSlug } } : {}),
       },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -605,6 +616,124 @@ const server = createServer(async (request, response) => {
         showPartnerObjects: siteConfig.showPartnerObjects,
         active: siteConfig.active,
       },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/partner-objects" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const take = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
+    const organization = await prisma.organization.findUnique({ where: { slug: organizationSlug } });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const objects = await prisma.propertyObject.findMany({
+      where: {
+        status: "published",
+        visibility: "public",
+        canBeShownByOtherOffices: true,
+        ownerOrganization: { slug: { not: organizationSlug } },
+      },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      take,
+      include: {
+        market: true,
+        ownerOrganization: true,
+        ownerOffice: true,
+        informationOwnerOrganization: true,
+        informationOwnerOffice: true,
+        localizations: true,
+        media: {
+          where: { public: true },
+          orderBy: { sortOrder: "asc" },
+          take: 3,
+        },
+      },
+    });
+    const visibilityOverrides = await prisma.$queryRaw<Array<{ propertyObjectId: string; hidden: boolean }>>`
+      SELECT "propertyObjectId", hidden
+      FROM "SiteObjectVisibilityOverride"
+      WHERE "organizationId" = ${organization.id}
+    `;
+    const hiddenByObjectId = new Map(visibilityOverrides.map((override) => [override.propertyObjectId, override.hidden]));
+
+    sendJson(response, 200, {
+      ok: true,
+      organizationSlug,
+      objects: objects.map((object: AdminObjectRow) => ({
+        ...serializeObject(object, language),
+        status: object.status,
+        visibility: object.visibility,
+        canBeShownByOtherOffices: object.canBeShownByOtherOffices,
+        hiddenOnThisSite: hiddenByObjectId.get(object.id) === true,
+        mediaCount: object.media.length,
+        updatedAt: object.updatedAt.toISOString(),
+      })),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/partner-object-visibility" && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      propertyObjectId?: string;
+      hidden?: unknown;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const propertyObjectId = optionalString(body.propertyObjectId);
+    const hidden = booleanFromBody(body.hidden);
+
+    if (!propertyObjectId) {
+      sendError(response, 400, "property_object_required", "propertyObjectId is required.");
+      return;
+    }
+
+    const [organization, propertyObject] = await Promise.all([
+      prisma.organization.findUnique({ where: { slug: organizationSlug } }),
+      prisma.propertyObject.findUnique({
+        where: { id: propertyObjectId },
+        include: { ownerOrganization: true },
+      }),
+    ]);
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    if (!propertyObject) {
+      sendError(response, 404, "property_object_not_found", `Property object '${propertyObjectId}' was not found.`);
+      return;
+    }
+
+    if (propertyObject.ownerOrganization.slug === organizationSlug) {
+      sendError(response, 400, "own_object_not_allowed", "Own organization objects are controlled through publication settings, not partner visibility overrides.");
+      return;
+    }
+
+    await prisma.$executeRaw`
+      INSERT INTO "SiteObjectVisibilityOverride" ("id", "organizationId", "propertyObjectId", "hidden", "createdAt", "updatedAt")
+      VALUES (${randomUUID()}, ${organization.id}, ${propertyObjectId}, ${hidden}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT ("organizationId", "propertyObjectId")
+      DO UPDATE SET "hidden" = EXCLUDED."hidden", "updatedAt" = CURRENT_TIMESTAMP
+    `;
+
+    sendJson(response, 200, {
+      ok: true,
+      organizationSlug,
+      propertyObjectId,
+      hidden,
     });
     return;
   }
