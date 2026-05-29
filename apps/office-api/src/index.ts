@@ -32,6 +32,51 @@ const tenantOrganizationSlugs = {
   yerevan: "yerevan-partner",
 } as const;
 
+type PublicObjectLocalizationRow = {
+  language: string;
+  title: string;
+  description: string | null;
+  addressDisplay: string;
+  tags: string[];
+  priceDisplay: string | null;
+};
+
+type PublicObjectMediaRow = {
+  url: string;
+  kind: string;
+};
+
+type PublicObjectRow = {
+  id: string;
+  assetClass: string;
+  market: { slug: string; city: string; country: string };
+  localizations: PublicObjectLocalizationRow[];
+  areaSqm: unknown;
+  landAreaSqm: unknown;
+  buildingAreaSqm: unknown;
+  priceAmount: unknown;
+  priceCurrency: string | null;
+  representationSide: string;
+  requiresOwnerOfficeApprovalForLead: boolean;
+  ownerOrganization: { slug: string; legalName: string };
+  ownerOffice: { slug: string; legalName: string };
+  informationOwnerOrganization: { slug: string; legalName: string };
+  informationOwnerOffice: { slug: string; legalName: string };
+  media: PublicObjectMediaRow[];
+  publishedAt: Date | null;
+};
+
+type AdminOfficeRow = {
+  id: string;
+  slug: string;
+  legalName: string;
+  city: string;
+  country: string;
+  status: string;
+  defaultMarket: { slug: string; city: string; country: string } | null;
+  _count: { propertyObjects: number; clientIntents: number };
+};
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
@@ -95,8 +140,10 @@ const server = createServer(async (request, response) => {
       service: serviceName,
       tenant,
       visibilityRule: "status=published AND visibility=public AND canBeShownByOtherOffices=true",
-      objects: objects.map((object) => {
-        const localization = object.localizations.find((item) => item.language === "en") ?? object.localizations[0];
+      objects: objects.map((object: PublicObjectRow) => {
+        const localization =
+          object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "en") ??
+          object.localizations[0];
         return {
           id: object.id,
           assetClass: object.assetClass,
@@ -129,7 +176,7 @@ const server = createServer(async (request, response) => {
             officeSlug: object.informationOwnerOffice.slug,
             officeName: object.informationOwnerOffice.legalName,
           },
-          media: object.media.map((media) => ({
+          media: object.media.map((media: PublicObjectMediaRow) => ({
             url: media.url,
             kind: media.kind,
           })),
@@ -206,7 +253,7 @@ const server = createServer(async (request, response) => {
           clientIntents: organization._count.clientIntents,
           sharedPublicInventory: sharedPublicInventoryCount,
         },
-        offices: organization.offices.map((office) => ({
+        offices: organization.offices.map((office: AdminOfficeRow) => ({
           id: office.id,
           slug: office.slug,
           legalName: office.legalName,
