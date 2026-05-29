@@ -117,9 +117,9 @@ export function ObjectsClient({ objects, language }: ObjectsClientProps) {
   };
 
   return (
-    <section id="objects" aria-labelledby="objects-title" className="bg-white py-20">
+    <section id="objects" aria-labelledby="objects-title" className="bg-white py-14">
       <div className="mx-auto max-w-kv-container px-5">
-        <div className="mb-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+        <div className="mb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{t.kicker}</span>
             <h2 id="objects-title" className="max-w-3xl text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">
@@ -129,7 +129,7 @@ export function ObjectsClient({ objects, language }: ObjectsClientProps) {
           </div>
         </div>
 
-        <form id="object-filter" aria-label="Object filter" className="mb-7 rounded-kv-main border border-kv-line bg-white p-6 shadow-sm" onSubmit={handleSubmit}>
+        <form id="object-filter" aria-label="Object filter" className="mb-5 rounded-kv-main border border-kv-line bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 items-end gap-3.5 md:grid-cols-2 lg:grid-cols-5">
             <div className="flex flex-col">
               <label htmlFor="filter-type" className="mb-2 block text-[12px] font-extrabold uppercase tracking-widest text-kv-muted">
@@ -214,7 +214,7 @@ export function ObjectsClient({ objects, language }: ObjectsClientProps) {
           </div>
         </form>
 
-        <div className="mb-5 flex flex-wrap justify-between gap-5 text-sm text-kv-muted">
+        <div className="mb-4 flex flex-wrap justify-between gap-5 text-sm text-kv-muted">
           <span>{t.shown}: {visibleObjects.length}</span>
           <span>{t.source}</span>
         </div>

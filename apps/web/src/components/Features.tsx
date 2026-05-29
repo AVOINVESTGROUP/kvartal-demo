@@ -29,9 +29,9 @@ export const Features = ({ language }: { language: SiteLanguage }) => {
   const t = content[language];
 
   return (
-    <section id="about" className="bg-white py-20">
+    <section id="about" className="bg-white py-14">
       <div className="mx-auto max-w-kv-container px-5">
-        <div className="mb-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+        <div className="mb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="mb-2.5 flex items-center gap-2.5 text-[13px] font-black uppercase tracking-widest text-kv-red before:h-[2px] before:w-[30px] before:bg-current before:content-['']">
               {t.kicker}
@@ -43,8 +43,8 @@ export const Features = ({ language }: { language: SiteLanguage }) => {
 
         <div className="grid grid-cols-1 gap-4.5 sm:grid-cols-2 lg:grid-cols-4">
           {t.features.map(([num, title, text]) => (
-            <div key={num} className="min-h-[230px] rounded-kv-main border border-kv-line bg-white p-6.5 shadow-sm transition-shadow hover:shadow-xl">
-              <div className="mb-4.5 inline-grid h-10.5 w-10.5 place-items-center rounded-full bg-kv-navy text-sm font-black text-white">{num}</div>
+            <div key={num} className="min-h-[200px] rounded-kv-main border border-kv-line bg-white p-5 shadow-sm transition-shadow hover:shadow-xl">
+              <div className="mb-3.5 inline-grid h-10 w-10 place-items-center rounded-full bg-kv-navy text-sm font-black text-white">{num}</div>
               <h3 className="mb-2.5 text-xl font-bold leading-tight text-kv-navy">{title}</h3>
               <p className="text-[15px] leading-relaxed text-kv-muted">{text}</p>
             </div>

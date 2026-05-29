@@ -39,7 +39,7 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
   return (
     <section className="kv-hero relative isolate overflow-hidden text-white">
       <div className="kv-hero-grid pointer-events-none absolute inset-0" />
-      <div className="relative z-10 mx-auto w-full max-w-kv-container px-5 py-12 sm:py-14 lg:py-18 xl:py-20">
+      <div className="relative z-10 mx-auto w-full max-w-kv-container px-5 py-9 sm:py-11 lg:py-12 xl:py-14">
         <div className="min-w-0 max-w-[720px]">
           <div className="mb-4 flex items-center gap-2.5 text-[12px] font-extrabold uppercase tracking-widest text-white/80 before:h-[2px] before:w-[34px] before:bg-kv-gold before:content-[''] sm:text-[13px]">
             {t.kicker}
@@ -49,11 +49,11 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
             {t.title}
           </h1>
 
-          <p className="mt-5 max-w-[620px] text-base leading-relaxed text-white/78 sm:text-xl">
+          <p className="mt-4 max-w-[620px] text-base leading-relaxed text-white/78 sm:text-xl">
             {t.lead}
           </p>
 
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <a href="#objects" className="min-h-[52px] rounded-full bg-kv-red px-6 py-3.5 text-center font-extrabold text-white shadow-xl transition-all hover:-translate-y-px hover:bg-kv-red-dark sm:px-8">
               {t.objects}
             </a>
@@ -62,23 +62,23 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
             </a>
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
-              <span className="block text-3xl font-black text-white">9</span>
+          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
+              <span className="block text-2xl font-black text-white">9</span>
               <span className="mt-1 block text-[13px] text-white/68">{t.stat1}</span>
             </div>
-            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
-              <span className="block text-3xl font-black text-white">5</span>
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
+              <span className="block text-2xl font-black text-white">5</span>
               <span className="mt-1 block text-[13px] text-white/68">{t.stat2}</span>
             </div>
-            <div className="rounded-kv-form border border-white/12 bg-white/6 p-4">
-              <span className="block text-3xl font-black text-white">RU / EN</span>
+            <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
+              <span className="block text-2xl font-black text-white">RU / EN</span>
               <span className="mt-1 block text-[13px] text-white/68">{t.stat3}</span>
             </div>
           </div>
 
-          <div id="request" className="mt-7 rounded-kv-main border border-white/16 bg-white/10 p-4 shadow-2xl backdrop-blur-xl sm:p-5">
-            <div className="mb-3">
+          <div id="request" className="mt-4 rounded-kv-main border border-white/16 bg-white/10 p-4 shadow-2xl backdrop-blur-xl sm:p-4">
+            <div className="mb-2.5">
               <h2 className="text-xl font-bold leading-tight">{t.formTitle}</h2>
               <p className="mt-1 text-[13px] leading-snug text-white/68">{t.formText}</p>
             </div>

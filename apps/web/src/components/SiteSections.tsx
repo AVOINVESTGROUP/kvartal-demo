@@ -88,9 +88,9 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
 
   return (
     <>
-      <section className="bg-kv-bg py-20" id="services" aria-labelledby="services-title">
+      <section className="bg-kv-bg py-14" id="services" aria-labelledby="services-title">
         <div className="mx-auto max-w-kv-container px-5">
-          <div className="mb-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+          <div className="mb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
               <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{t.servicesKicker}</span>
               <h2 id="services-title" className="max-w-3xl text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">{t.servicesTitle}</h2>
@@ -99,7 +99,7 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
           </div>
           <div className="grid grid-cols-1 gap-4.5 sm:grid-cols-2 lg:grid-cols-4">
             {t.services.map(([title, text], index) => (
-              <article key={title} className="min-h-[230px] rounded-kv-main border border-kv-line bg-white p-6.5 shadow-sm">
+              <article key={title} className="min-h-[200px] rounded-kv-main border border-kv-line bg-white p-5 shadow-sm">
                 <span className="mb-4 block text-sm font-black text-kv-red">{String(index + 1).padStart(2, "0")}</span>
                 <h3 className="mb-3 text-xl font-bold leading-tight text-kv-navy">{title}</h3>
                 <p className="text-[15px] leading-relaxed text-kv-muted">{text}</p>
@@ -109,17 +109,17 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
         </div>
       </section>
 
-      <section className="bg-kv-bg-warm py-20" id="owners" aria-labelledby="owners-title">
+      <section className="bg-kv-bg-warm py-14" id="owners" aria-labelledby="owners-title">
         <div className="mx-auto grid max-w-kv-container gap-5 px-5 lg:grid-cols-2">
           {[
             [t.buyerKicker, t.buyerTitle, t.buyerText, t.buyerItems],
             [t.ownerKicker, t.ownerTitle, t.ownerText, t.ownerItems],
           ].map(([kicker, title, text, items]) => (
-            <div key={String(title)} className="rounded-kv-main border border-kv-line bg-white p-7 shadow-sm">
+            <div key={String(title)} className="rounded-kv-main border border-kv-line bg-white p-5 shadow-sm">
               <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{String(kicker)}</span>
               <h3 className="mb-4 text-2xl font-black leading-tight text-kv-navy md:text-3xl">{String(title)}</h3>
-              <p className="mb-5 leading-relaxed text-kv-muted">{String(text)}</p>
-              <ul className="space-y-3 text-sm font-semibold text-kv-ink">
+              <p className="mb-4 leading-relaxed text-kv-muted">{String(text)}</p>
+              <ul className="space-y-2 text-sm font-semibold text-kv-ink">
                 {(items as string[]).map((item) => <li key={item}>{item}</li>)}
               </ul>
             </div>
@@ -127,9 +127,9 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
         </div>
       </section>
 
-      <section className="bg-white py-20" id="process" aria-labelledby="process-title">
+      <section className="bg-white py-14" id="process" aria-labelledby="process-title">
         <div className="mx-auto max-w-kv-container px-5">
-          <div className="mb-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+          <div className="mb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
               <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{t.processKicker}</span>
               <h2 id="process-title" className="text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">{t.processTitle}</h2>
@@ -138,7 +138,7 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             {t.process.map(([label, title, text]) => (
-              <article key={label} className="rounded-kv-main border border-kv-line bg-kv-bg p-6">
+              <article key={label} className="rounded-kv-main border border-kv-line bg-kv-bg p-5">
                 <span className="text-sm font-black uppercase tracking-widest text-kv-red">{label}</span>
                 <h3 className="mt-3 text-xl font-bold text-kv-navy">{title}</h3>
                 <p className="mt-3 text-sm leading-relaxed text-kv-muted">{text}</p>
@@ -148,7 +148,7 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
         </div>
       </section>
 
-      <section className="bg-kv-navy py-16 text-white" aria-labelledby="cta-title">
+      <section className="bg-kv-navy py-12 text-white" aria-labelledby="cta-title">
         <div className="mx-auto grid max-w-kv-container gap-7 px-5 lg:grid-cols-[1.2fr,0.8fr] lg:items-center">
           <div>
             <h2 id="cta-title" className="text-3xl font-black leading-tight md:text-5xl">{t.ctaTitle}</h2>
@@ -162,9 +162,9 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
         </div>
       </section>
 
-      <section className="bg-white py-20" id="contacts" aria-labelledby="contacts-title">
+      <section className="bg-white py-12" id="contacts" aria-labelledby="contacts-title">
         <div className="mx-auto max-w-kv-container px-5">
-          <div className="mb-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+          <div className="mb-6 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div>
               <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{t.contactsKicker}</span>
               <h2 id="contacts-title" className="text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">{t.contactsTitle}</h2>
@@ -172,8 +172,8 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
             <p className="max-w-[460px] leading-relaxed text-kv-muted">{t.contactsText}</p>
           </div>
           <div className="grid gap-5 lg:grid-cols-[0.9fr,1.1fr]">
-            <div className="rounded-kv-main border border-kv-line bg-kv-bg p-6">
-              <ul className="space-y-4 text-sm">
+            <div className="rounded-kv-main border border-kv-line bg-kv-bg p-5">
+              <ul className="space-y-3 text-sm">
                 <li><span className="block text-kv-muted">{t.phone}</span><a href="tel:+79772919573" className="font-bold text-kv-navy">+7 (977) 291-95-73</a></li>
                 <li><span className="block text-kv-muted">Email</span><a href="mailto:info@kvartal-pro.ru" className="font-bold text-kv-navy">info@kvartal-pro.ru</a></li>
                 <li>
@@ -185,9 +185,9 @@ export const SiteSections = ({ language }: { language: SiteLanguage }) => {
                 <li><span className="block text-kv-muted">{t.messengers}</span><strong className="text-kv-navy">Telegram / WhatsApp</strong></li>
               </ul>
             </div>
-            <div className="rounded-kv-main border border-kv-line bg-[linear-gradient(135deg,#071d3a,#173c6b)] p-7 text-white">
-              <h3 className="text-2xl font-black">{t.mapTitle}</h3>
-              <p className="mt-3 max-w-xl text-white/72">{t.mapText}</p>
+            <div className="rounded-kv-main border border-kv-line bg-[linear-gradient(135deg,#071d3a,#173c6b)] p-5 text-white">
+              <h3 className="text-xl font-black">{t.mapTitle}</h3>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-white/72">{t.mapText}</p>
             </div>
           </div>
         </div>

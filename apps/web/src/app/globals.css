@@ -48,7 +48,7 @@ body {
 }
 
 .kv-hero {
-  min-height: 720px;
+  min-height: 660px;
   background:
     radial-gradient(circle at 20% 20%, rgba(201, 166, 107, 0.15), transparent 30%),
     linear-gradient(120deg, #071d3a 0%, #111d35 55%, #17213a 100%);
