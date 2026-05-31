@@ -154,9 +154,9 @@ function formValue(formData: FormData, key: string) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function formPayload(formData: FormData) {
+function formPayload(formData: FormData, organizationSlug: string) {
   return {
-    organizationSlug: formValue(formData, "organizationSlug"),
+    organizationSlug,
     officeSlug: formValue(formData, "officeSlug"),
     marketSlug: formValue(formData, "marketSlug"),
     assetClass: formValue(formData, "assetClass"),
@@ -188,8 +188,8 @@ function formPayload(formData: FormData) {
 async function createObjectAction(formData: FormData) {
   "use server";
 
-  await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData));
+  const session = await requireAdminSession();
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData, session.organizationSlug));
   revalidatePath("/");
 }
 
@@ -199,9 +199,9 @@ async function updateObjectAction(formData: FormData) {
   const objectId = formValue(formData, "objectId");
   const action = formValue(formData, "action") || "save";
 
-  await requireAdminSession();
+  const session = await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
-    ...formPayload(formData),
+    ...formPayload(formData, session.organizationSlug),
     action,
     clearMedia: formData.get("clearMedia") === "on",
   });
@@ -211,10 +211,10 @@ async function updateObjectAction(formData: FormData) {
 async function updateAccessSettingsAction(formData: FormData) {
   "use server";
 
-  await requireAdminSession();
+  const session = await requireAdminSession();
   const showPartnerObjectsValue = formValue(formData, "showPartnerObjects");
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/access-settings", "PATCH", {
-    organizationSlug: formValue(formData, "organizationSlug"),
+    organizationSlug: session.organizationSlug,
     showPartnerObjects: showPartnerObjectsValue ? showPartnerObjectsValue === "true" : formData.get("showPartnerObjects") === "on",
   });
   revalidatePath("/");
@@ -223,9 +223,9 @@ async function updateAccessSettingsAction(formData: FormData) {
 async function updatePartnerObjectVisibilityAction(formData: FormData) {
   "use server";
 
-  await requireAdminSession();
+  const session = await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/partner-object-visibility", "PATCH", {
-    organizationSlug: formValue(formData, "organizationSlug"),
+    organizationSlug: session.organizationSlug,
     propertyObjectId: formValue(formData, "propertyObjectId"),
     hidden: formValue(formData, "hidden") === "true",
   });
@@ -235,9 +235,9 @@ async function updatePartnerObjectVisibilityAction(formData: FormData) {
 async function createMemberAction(formData: FormData) {
   "use server";
 
-  await requireAdminSession();
+  const session = await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/members", "POST", {
-    organizationSlug: formValue(formData, "organizationSlug"),
+    organizationSlug: session.organizationSlug,
     email: formValue(formData, "email"),
     displayName: formValue(formData, "displayName"),
     organizationRole: formValue(formData, "organizationRole"),
@@ -250,7 +250,7 @@ async function createMemberAction(formData: FormData) {
 export default async function PartnerAdminHome() {
   const session = await requireAdminSession();
 
-  const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "apart4u-tbilisi";
+  const organizationSlug = session.organizationSlug;
   const [context, objectResponse, partnerObjectResponse, reference] = await Promise.all([
     fetchBackendJson<AdminContextResponse>(
       process.env.PARTNER_API_BASE_URL,

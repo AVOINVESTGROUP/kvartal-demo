@@ -225,13 +225,18 @@ export async function requireAdminSession() {
 }
 
 export async function getOrganizationAccess(email: string, displayName?: string) {
-  const organizationSlug = process.env.PARTNER_ORGANIZATION_SLUG ?? "apart4u-tbilisi";
   const access = await fetchBackendJson<PlatformAccess>(
     process.env.PLATFORM_API_BASE_URL,
     `/api/v1/platform/access?email=${encodeURIComponent(email)}&displayName=${encodeURIComponent(displayName ?? "")}`,
   );
-  const membership = access?.organizationMemberships.find((item) => item.organizationSlug === organizationSlug);
+  const memberships = access?.organizationMemberships ?? [];
   const platformRoles = access?.platformRoles ?? [];
+  const preferredOrganizationSlug = process.env.PARTNER_ORGANIZATION_SLUG;
+  const membership =
+    memberships.length === 1
+      ? memberships[0]
+      : memberships.find((item) => item.organizationSlug === preferredOrganizationSlug) ?? memberships[0];
+  const organizationSlug = membership?.organizationSlug ?? preferredOrganizationSlug ?? "";
   const roles = membership?.roles ?? [];
   const allowed =
     platformRoles.includes("platform_owner") ||
