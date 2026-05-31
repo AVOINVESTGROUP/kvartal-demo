@@ -541,5 +541,22 @@
   - Prisma schema validation passed
   - Prisma client generation passed
   - `pnpm exec turbo build --force` passed for all 10 packages
+  - `kvartal-office-api` deployed revision `kvartal-office-api-00015-tm5`
   - `kvartal-office-api /readyz` returned database ready after deploy
   - `kvartal-office-api /api/v1/public/objects` still returns legacy `media.url` values
+  - `kvartal-office-api` generated a V4 signed POST policy for a KVARTAL object upload
+- App Hosting builds created from Git commit `597d044`:
+  - `partner-admin-dev`: `build-2026-05-31-media-001`
+  - `kvartal-admin-dev`: `build-2026-05-31-media-001`
+  - `partner-site-dev`: `build-2026-05-31-media-001`
+  - `kvartal-web-dev`: `build-2026-05-31-media-001`
+- App Hosting rollouts succeeded:
+  - `partner-admin-dev`: `rollout-2026-05-31-media-001`
+  - `kvartal-admin-dev`: `rollout-2026-05-31-media-001`
+  - `partner-site-dev`: `rollout-2026-05-31-media-001`
+  - `kvartal-web-dev`: `rollout-2026-05-31-media-001`
+- Live URL checks returned `200`:
+  - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login`
+  - `https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app/login`
+  - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u`
+  - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app`
