@@ -271,7 +271,7 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
           <p className="apart-eyebrow">APARTMENTS&nbsp;&nbsp; INVESTMENTS&nbsp;&nbsp; REAL SOLUTIONS</p>
           <div className="apart-gold-line" />
           <div className="apart-logo-large">
-            <img src="/apart4u/logo-wide.png" alt="Apart4U Real Estate Agency" />
+            <img src="/apart4u/favicon.png" alt="Apart4U Real Estate Agency" />
           </div>
           <h1>
             Apart<span>4U</span>
