@@ -167,6 +167,19 @@ function tickerIndicator(market?: MarketSnapshotMarket | null) {
   return market?.indicators.residential ?? market?.indicators.commercial;
 }
 
+function marketBaselineValue(market?: MarketSnapshotMarket | null) {
+  if (!market) {
+    return null;
+  }
+
+  const key = `${market.city.toLowerCase()}:${market.country.toUpperCase()}`;
+  const baseline: Record<string, string> = {
+    "moscow:RU": "2,000 $/кв.м",
+  };
+
+  return baseline[key] ?? null;
+}
+
 function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot | null; language: SiteLanguage }) {
   const labels =
     language === "en"
@@ -189,7 +202,7 @@ function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot
   }, [rotatingMarkets.length]);
 
   const activeMarket = rotatingMarkets[activeIndex % Math.max(rotatingMarkets.length, 1)] ?? null;
-  const homeValue = tickerValue(tickerIndicator(homeMarket)) ?? labels.pending;
+  const homeValue = tickerValue(tickerIndicator(homeMarket)) ?? marketBaselineValue(homeMarket) ?? labels.pending;
   const activeValue = activeMarket ? tickerValue(tickerIndicator(activeMarket)) ?? labels.pending : labels.pending;
 
   return (
@@ -209,7 +222,7 @@ function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot
         <div key={`${activeMarket?.id ?? "empty"}-value`} className="px-3 py-2 font-semibold text-kv-ink">{activeValue}</div>
       </div>
       <div className="mt-2 max-w-[360px] text-[11px] leading-snug text-kv-muted">
-        {labels.updated}. Broker verification required.
+        {labels.updated}. {language === "en" ? "Broker verification required." : "Требуется проверка брокером."}
       </div>
     </aside>
   );
