@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Partner Admin",
-  description: "Partner organization console for Fixer.guru real estate network.",
+  title: "Fixer.guru Partner Admin",
+  description: "Shared partner organization console.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
