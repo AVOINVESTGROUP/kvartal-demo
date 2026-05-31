@@ -1,5 +1,6 @@
 import type { PartnerInventoryByLanguage, PartnerTenantConfig } from "../tenants";
 import { Apart4uSite } from "./Apart4uSite";
+import { AurumSite } from "./AurumSite";
 
 type PartnerSitePageProps = {
   tenant: PartnerTenantConfig;
@@ -12,6 +13,10 @@ export function PartnerSitePage({ tenant, inventoryOverride, inventoryByLanguage
 
   if (tenant.key === "apart4u") {
     return <Apart4uSite tenant={tenant} inventoryByLanguage={inventoryByLanguage ?? { ru: inventoryOverride ?? [] }} />;
+  }
+
+  if (tenant.key === "aurum") {
+    return <AurumSite tenant={tenant} inventoryByLanguage={inventoryByLanguage ?? { en: inventoryOverride ?? [] }} />;
   }
 
   return (

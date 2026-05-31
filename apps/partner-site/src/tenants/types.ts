@@ -1,4 +1,4 @@
-export type PartnerTenantKey = "apart4u" | "dubai" | "yerevan";
+export type PartnerTenantKey = "apart4u" | "dubai" | "yerevan" | "aurum";
 export type PartnerSiteLanguage = "ru" | "en" | "ka";
 
 export type PartnerInventoryItem = {

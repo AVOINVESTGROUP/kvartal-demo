@@ -55,7 +55,14 @@ export async function fetchPartnerInventory(tenant: PartnerTenantKey, language: 
       areaSqm: object.areaSqm,
       mediaUrl: coverMedia?.url ?? null,
       sellerSidePartner: object.sellerSide.organizationName,
-      buyerSidePartner: tenant === "apart4u" ? "Apart4u.co Tbilisi" : tenant === "dubai" ? "Dubai Partner" : "Yerevan Partner",
+      buyerSidePartner:
+        tenant === "apart4u"
+          ? "Apart4u.co Tbilisi"
+          : tenant === "dubai"
+            ? "Dubai Partner"
+            : tenant === "aurum"
+              ? "Aurum Key Realty NYC"
+              : "Yerevan Partner",
     };
   });
 }

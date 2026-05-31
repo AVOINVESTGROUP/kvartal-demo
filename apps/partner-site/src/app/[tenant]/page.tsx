@@ -27,6 +27,14 @@ export async function generateMetadata({ params }: TenantPageProps) {
   return {
     title: `${tenant.name} | Partner Network`,
     description: tenant.tagline,
+    icons:
+      tenant.key === "aurum"
+        ? {
+            icon: "/aurum/key-mark-light.png",
+            shortcut: "/aurum/key-mark-light.png",
+            apple: "/aurum/key-mark-light.png",
+          }
+        : undefined,
   };
 }
 

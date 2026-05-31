@@ -224,14 +224,14 @@ export async function requireAdminSession() {
   return session;
 }
 
-export async function getOrganizationAccess(email: string, displayName?: string) {
+export async function getOrganizationAccess(email: string, displayName?: string, requestedOrganizationSlug?: string) {
   const access = await fetchBackendJson<PlatformAccess>(
     process.env.PLATFORM_API_BASE_URL,
     `/api/v1/platform/access?email=${encodeURIComponent(email)}&displayName=${encodeURIComponent(displayName ?? "")}`,
   );
   const memberships = access?.organizationMemberships ?? [];
   const platformRoles = access?.platformRoles ?? [];
-  const preferredOrganizationSlug = process.env.PARTNER_ORGANIZATION_SLUG;
+  const preferredOrganizationSlug = requestedOrganizationSlug ?? process.env.PARTNER_ORGANIZATION_SLUG;
   const membership =
     memberships.length === 1
       ? memberships[0]

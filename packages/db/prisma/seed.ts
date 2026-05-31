@@ -149,6 +149,55 @@ async function ensurePublishedObject(input: SeedObjectInput) {
   return propertyObject;
 }
 
+async function ensureSiteConfig(input: {
+  organizationId: string;
+  officeId: string;
+  domain?: string;
+  subdomain?: string;
+  defaultLanguage: "ru" | "en" | "ka" | "hy" | "ar";
+  supportedLanguages: Array<"ru" | "en" | "ka" | "hy" | "ar">;
+  defaultCurrency: "RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED";
+  supportedCurrencies: Array<"RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED">;
+  primaryMarketIds: string[];
+  contactEmail?: string;
+  contactPhone?: string;
+  brandName: string;
+}) {
+  const existing = await prisma.siteConfig.findFirst({
+    where: { organizationId: input.organizationId, officeId: input.officeId },
+  });
+  const data = {
+    domain: input.domain,
+    subdomain: input.subdomain,
+    defaultLanguage: input.defaultLanguage,
+    supportedLanguages: input.supportedLanguages,
+    defaultCurrency: input.defaultCurrency,
+    supportedCurrencies: input.supportedCurrencies,
+    primaryMarketIds: input.primaryMarketIds,
+    showPartnerObjects: true,
+    contactEmail: input.contactEmail,
+    contactPhone: input.contactPhone,
+    active: true,
+  };
+  const siteConfig = existing
+    ? await prisma.siteConfig.update({ where: { id: existing.id }, data })
+    : await prisma.siteConfig.create({
+        data: {
+          organizationId: input.organizationId,
+          officeId: input.officeId,
+          ...data,
+        },
+      });
+
+  await prisma.siteConfigLocalization.upsert({
+    where: { siteConfigId_language: { siteConfigId: siteConfig.id, language: input.defaultLanguage } },
+    update: { brandName: input.brandName },
+    create: { siteConfigId: siteConfig.id, language: input.defaultLanguage, brandName: input.brandName },
+  });
+
+  return siteConfig;
+}
+
 async function main() {
   const moscowMarket = await prisma.market.upsert({
     where: { slug: "moscow-commercial" },
@@ -339,6 +388,27 @@ async function main() {
     },
   });
 
+  const newYorkMarket = await prisma.market.upsert({
+    where: { slug: "new-york-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "house", "office", "retail", "mixed_use", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "new-york-residential",
+      city: "New York",
+      country: "US",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["ru", "en"],
+      assetClasses: ["apartment", "house", "office", "retail", "mixed_use", "investment_project"],
+      complianceRegion: "US-NY",
+      active: true,
+    },
+  });
+
   const fixer = await prisma.organization.upsert({
     where: { slug: "fixer-guru" },
     update: {
@@ -444,6 +514,27 @@ async function main() {
     },
   });
 
+  const aurumKey = await prisma.organization.upsert({
+    where: { slug: "aurum-key-nyc" },
+    update: {
+      status: "active",
+      operatingCountryCodes: ["US"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["ru", "en"],
+    },
+    create: {
+      slug: "aurum-key-nyc",
+      legalName: "Aurum Key Realty NYC",
+      countryOfRegistration: "US",
+      operatingCountryCodes: ["US"],
+      defaultLanguage: "en",
+      supportedLanguages: ["ru", "en"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      status: "active",
+    },
+  });
+
   const platformOffice = await prisma.office.upsert({
     where: { organizationId_slug: { organizationId: fixer.id, slug: "platform-operator" } },
     update: { status: "active", defaultMarketId: dubaiMarket.id },
@@ -534,6 +625,39 @@ async function main() {
     },
   });
 
+  const aurumOffice = await prisma.office.upsert({
+    where: { organizationId_slug: { organizationId: aurumKey.id, slug: "nyc-office" } },
+    update: { status: "active", defaultMarketId: newYorkMarket.id },
+    create: {
+      organizationId: aurumKey.id,
+      slug: "nyc-office",
+      legalName: "Aurum Key NYC Office",
+      city: "New York",
+      country: "US",
+      defaultMarketId: newYorkMarket.id,
+      defaultLanguage: "en",
+      supportedLanguages: ["ru", "en"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      status: "active",
+    },
+  });
+
+  await ensureSiteConfig({
+    organizationId: aurumKey.id,
+    officeId: aurumOffice.id,
+    domain: "aurumkeynyc.com",
+    subdomain: "aurum",
+    defaultLanguage: "en",
+    supportedLanguages: ["ru", "en"],
+    defaultCurrency: "USD",
+    supportedCurrencies: ["USD"],
+    primaryMarketIds: [newYorkMarket.id],
+    contactEmail: "hello@aurumkeynyc.com",
+    contactPhone: "+1 212 555 0126",
+    brandName: "Aurum Key Realty NYC",
+  });
+
   const seedUser = await prisma.appUser.upsert({
     where: { firebaseUid: "seed-system-user" },
     update: { email: "seed-system@fixer.guru", active: true },
@@ -541,6 +665,40 @@ async function main() {
       firebaseUid: "seed-system-user",
       email: "seed-system@fixer.guru",
       displayName: "KVARTAL Seed System",
+      active: true,
+    },
+  });
+
+  const aurumOwner = await prisma.appUser.upsert({
+    where: { email: "abtiurin@gmail.com" },
+    update: { displayName: "Aurum Key Owner", active: true },
+    create: {
+      firebaseUid: "google:abtiurin@gmail.com",
+      email: "abtiurin@gmail.com",
+      displayName: "Aurum Key Owner",
+      active: true,
+    },
+  });
+
+  await prisma.organizationMembership.upsert({
+    where: { organizationId_userId: { organizationId: aurumKey.id, userId: aurumOwner.id } },
+    update: { roles: ["organization_owner"], active: true },
+    create: {
+      organizationId: aurumKey.id,
+      userId: aurumOwner.id,
+      roles: ["organization_owner"],
+      active: true,
+    },
+  });
+
+  await prisma.officeMembership.upsert({
+    where: { officeId_userId: { officeId: aurumOffice.id, userId: aurumOwner.id } },
+    update: { roles: ["office_owner", "office_admin", "broker"], active: true },
+    create: {
+      organizationId: aurumKey.id,
+      officeId: aurumOffice.id,
+      userId: aurumOwner.id,
+      roles: ["office_owner", "office_admin", "broker"],
       active: true,
     },
   });
@@ -566,6 +724,79 @@ async function main() {
     tagsEn: ["commercial", "moscow", "seller-side"],
     priceDisplayEn: "Price on request",
     mediaUrl: "/images/hero-moscow-dubai.png",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: aurumKey.id,
+    ownerOfficeId: aurumOffice.id,
+    informationOwnerOrganizationId: aurumKey.id,
+    informationOwnerOfficeId: aurumOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: newYorkMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "condo loft",
+    areaSqm: "150.50",
+    priceAmount: "2950000.00",
+    priceCurrency: "USD",
+    title: "Tribeca Loft Residence",
+    description: "High ceilings, full-service building, refined renovation, strong downtown liquidity.",
+    addressDisplay: "Tribeca, Manhattan",
+    tags: ["Tribeca", "Condo", "Loft"],
+    priceDisplay: "$2.95M",
+    titleEn: "Tribeca Loft Residence",
+    descriptionEn: "High ceilings, full-service building, refined renovation, strong downtown liquidity.",
+    addressDisplayEn: "Tribeca, Manhattan",
+    tagsEn: ["Tribeca", "Condo", "Loft"],
+    priceDisplayEn: "$2.95M",
+    mediaUrl: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: aurumKey.id,
+    ownerOfficeId: aurumOffice.id,
+    informationOwnerOrganizationId: aurumKey.id,
+    informationOwnerOfficeId: aurumOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: newYorkMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "designer rental",
+    priceAmount: "7800.00",
+    priceCurrency: "USD",
+    title: "Flatiron Designer Rental",
+    description: "Doorman building, fast commute profile, premium finishes, immediate availability.",
+    addressDisplay: "Flatiron District, Manhattan",
+    tags: ["Flatiron", "Rental", "High floor"],
+    priceDisplay: "$7,800/mo",
+    titleEn: "Flatiron Designer Rental",
+    descriptionEn: "Doorman building, fast commute profile, premium finishes, immediate availability.",
+    addressDisplayEn: "Flatiron District, Manhattan",
+    tagsEn: ["Flatiron", "Rental", "High floor"],
+    priceDisplayEn: "$7,800/mo",
+    mediaUrl: "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: aurumKey.id,
+    ownerOfficeId: aurumOffice.id,
+    informationOwnerOrganizationId: aurumKey.id,
+    informationOwnerOfficeId: aurumOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: newYorkMarket.id,
+    assetClass: "house",
+    assetSubtype: "townhouse",
+    priceAmount: "4650000.00",
+    priceCurrency: "USD",
+    title: "Brooklyn Heights Townhouse",
+    description: "Historic character, private outdoor space, family-led layout, rare block quality.",
+    addressDisplay: "Brooklyn Heights",
+    tags: ["Brooklyn Heights", "Townhouse", "Garden"],
+    priceDisplay: "$4.65M",
+    titleEn: "Brooklyn Heights Townhouse",
+    descriptionEn: "Historic character, private outdoor space, family-led layout, rare block quality.",
+    addressDisplayEn: "Brooklyn Heights",
+    tagsEn: ["Brooklyn Heights", "Townhouse", "Garden"],
+    priceDisplayEn: "$4.65M",
+    mediaUrl: "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -801,9 +1032,11 @@ async function main() {
         tbilisiMarket.slug,
         dubaiMarket.slug,
         yerevanMarket.slug,
+        newYorkMarket.slug,
       ],
-      organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug],
-      offices: [platformOffice.slug, kvartalOffice.slug, apart4uOffice.slug, dubaiOffice.slug, yerevanOffice.slug],
+      organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug, aurumKey.slug],
+      offices: [platformOffice.slug, kvartalOffice.slug, apart4uOffice.slug, dubaiOffice.slug, yerevanOffice.slug, aurumOffice.slug],
+      aurumOwnerSeeded: aurumOwner.email,
       platformOwnerSeeded: Boolean(platformOwnerFirebaseUid && platformOwnerEmail),
     }),
   );

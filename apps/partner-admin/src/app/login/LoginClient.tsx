@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
-export default function LoginClient({ error }: { error?: string }) {
+export default function LoginClient({ error, organizationSlug }: { error?: string; organizationSlug?: string }) {
   const router = useRouter();
   const configured = isFirebaseConfigured();
   const [busy, setBusy] = useState(false);
@@ -16,7 +16,7 @@ export default function LoginClient({ error }: { error?: string }) {
     const response = await fetch("/api/auth/firebase/session", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken }),
+      body: JSON.stringify({ idToken, organizationSlug }),
     });
 
     if (!response.ok) {

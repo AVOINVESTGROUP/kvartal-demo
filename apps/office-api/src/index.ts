@@ -156,6 +156,7 @@ const tenantOrganizationSlugs = {
   apart4u: "apart4u-tbilisi",
   dubai: "dubai-partner",
   yerevan: "yerevan-partner",
+  aurum: "aurum-key-nyc",
 } as const;
 
 const marketInsightMetric = "average_price_usd_sqm";

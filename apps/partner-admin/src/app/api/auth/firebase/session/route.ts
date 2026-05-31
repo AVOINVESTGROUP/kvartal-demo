@@ -3,6 +3,7 @@ import { getOrganizationAccess, setAdminSession, verifyFirebaseIdToken } from ".
 
 type SessionRequest = {
   idToken?: string;
+  organizationSlug?: string;
 };
 
 export async function POST(request: Request) {
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     return new NextResponse("Firebase ID token is invalid.", { status: 401 });
   }
 
-  const access = await getOrganizationAccess(user.email, user.name);
+  const access = await getOrganizationAccess(user.email, user.name, body.organizationSlug);
 
   if (!access.allowed) {
     return new NextResponse("Access is not granted for this organization.", { status: 403 });
