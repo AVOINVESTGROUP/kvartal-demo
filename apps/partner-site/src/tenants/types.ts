@@ -1,8 +1,17 @@
 export type PartnerTenantKey = "apart4u" | "dubai" | "yerevan";
 
 export type PartnerInventoryItem = {
+  id?: string;
   market: string;
+  city?: string;
+  country?: string;
   title: string;
+  description?: string;
+  addressDisplay?: string;
+  assetClass?: string;
+  priceDisplay?: string;
+  areaSqm?: string | null;
+  mediaUrl?: string | null;
   sellerSidePartner: string;
   buyerSidePartner: string;
 };
