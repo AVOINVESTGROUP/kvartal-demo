@@ -44,6 +44,7 @@ export function MediaUploadForm({ objectId }: { objectId: string }) {
       const title = String(formData.get("title") ?? "");
       const caption = String(formData.get("caption") ?? "");
       const isPublic = formData.get("public") === "on";
+      const makeCover = formData.get("makeCover") === "on";
       const uploadResponse = await fetch(`/api/v1/admin/objects/${encodeURIComponent(objectId)}/media/upload-url`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -52,6 +53,7 @@ export function MediaUploadForm({ objectId }: { objectId: string }) {
           mimeType: file.type || "application/octet-stream",
           kind,
           public: isPublic,
+          makeCover,
           title,
           caption,
         }),
@@ -92,6 +94,7 @@ export function MediaUploadForm({ objectId }: { objectId: string }) {
           originalFileName: file.name,
           kind,
           public: isPublic,
+          makeCover,
           title,
           caption,
         }),
@@ -134,6 +137,10 @@ export function MediaUploadForm({ objectId }: { objectId: string }) {
       <label className="flex min-h-11 items-end gap-2 text-[13px] font-bold text-kv-muted">
         <input name="public" type="checkbox" defaultChecked />
         Публичное медиа
+      </label>
+      <label className="flex min-h-11 items-end gap-2 text-[13px] font-bold text-kv-muted">
+        <input name="makeCover" type="checkbox" defaultChecked />
+        Сделать главной
       </label>
       <label className="text-[13px] font-bold text-kv-muted md:col-span-2 xl:col-span-3">
         Файл

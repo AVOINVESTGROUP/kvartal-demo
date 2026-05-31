@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "../lib/auth";
-import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
+import { deleteBackendJson, fetchBackendJson, writeBackendJson } from "../lib/server-api";
 import { MediaUploadForm } from "./MediaUploadForm";
 
 export const dynamic = "force-dynamic";
@@ -73,7 +73,15 @@ type AdminObjectsResponse = {
     market: { city: string; country: string; slug: string };
     sellerSide: { officeName: string; organizationName: string };
     informationRightsHolder: { officeName: string; organizationName: string };
-    media: Array<{ url: string; kind: string }>;
+    media: Array<{
+      id: string;
+      url: string;
+      kind: string;
+      public: boolean;
+      sortOrder: number;
+      title: string | null;
+      caption: string | null;
+    }>;
     mediaCount: number;
     publishedAt: string | null;
     updatedAt: string;
@@ -249,6 +257,31 @@ async function createMemberAction(formData: FormData) {
     officeSlug: formValue(formData, "officeSlug"),
     officeRole: formValue(formData, "officeRole"),
   });
+  revalidatePath("/");
+}
+
+async function setCoverMediaAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const mediaId = formValue(formData, "mediaId");
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/media/${encodeURIComponent(mediaId)}`, "PATCH", {
+    organizationSlug: session.organizationSlug,
+    action: "set_cover",
+    public: true,
+  });
+  revalidatePath("/");
+}
+
+async function deleteMediaAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const mediaId = formValue(formData, "mediaId");
+  await deleteBackendJson(
+    process.env.PARTNER_API_BASE_URL,
+    `/api/v1/admin/media/${encodeURIComponent(mediaId)}?organizationSlug=${encodeURIComponent(session.organizationSlug)}`,
+  );
   revalidatePath("/");
 }
 
@@ -688,6 +721,46 @@ export default async function PartnerAdminHome() {
                   <summary className="cursor-pointer px-4 py-3 text-sm font-black text-kv-navy">Редактировать карточку, публикацию и медиа</summary>
                   <div className="border-t border-kv-line p-4">
                     <MediaUploadForm objectId={object.id} />
+                    {object.media.length ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                        {object.media.map((media, index) => (
+                          <div key={media.id} className="rounded-md border border-kv-line bg-white p-3">
+                            <div className="h-[120px] overflow-hidden rounded-md border border-kv-line bg-kv-bg">
+                              {resolveMediaUrl(media.url) ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={resolveMediaUrl(media.url) ?? ""} alt={media.title ?? object.title} className="h-full w-full object-cover" />
+                              ) : (
+                                <div className="grid h-full place-items-center px-3 text-center text-[12px] font-bold text-kv-muted">Нет изображения</div>
+                              )}
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge tone={index === 0 || media.sortOrder === 0 ? "good" : "neutral"}>
+                                {index === 0 || media.sortOrder === 0 ? "главная" : "медиа"}
+                              </Badge>
+                              <Badge tone={media.public ? "good" : "warn"}>{media.public ? "публичная" : "приватная"}</Badge>
+                              <Badge>{media.kind}</Badge>
+                            </div>
+                            {media.caption || media.title ? (
+                              <div className="mt-2 text-[12px] font-bold text-kv-muted">{media.title ?? media.caption}</div>
+                            ) : null}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <form action={setCoverMediaAction}>
+                                <input type="hidden" name="mediaId" value={media.id} />
+                                <button className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">
+                                  Сделать главной
+                                </button>
+                              </form>
+                              <form action={deleteMediaAction}>
+                                <input type="hidden" name="mediaId" value={media.id} />
+                                <button className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-red">
+                                  Удалить
+                                </button>
+                              </form>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   <form action={updateObjectAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organizationSlug" value={organizationSlug} />

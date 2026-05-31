@@ -96,3 +96,27 @@ export async function writeBackendJson<T>(baseUrl: string | undefined, path: str
 
   return response.json() as Promise<T>;
 }
+
+export async function deleteBackendJson<T>(baseUrl: string | undefined, path: string): Promise<T | null> {
+  if (!baseUrl) {
+    return null;
+  }
+
+  const token = await getIdentityToken(baseUrl);
+  const adminWriteToken = await getSecretValue("kvartal-admin-write-token");
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "DELETE",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(adminWriteToken ? { "x-kvartal-admin-write-token": adminWriteToken } : {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const details = await response.text();
+    throw new Error(details || `Backend request failed with ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}

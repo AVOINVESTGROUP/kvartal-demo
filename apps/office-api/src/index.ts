@@ -209,6 +209,10 @@ type PublicObjectMediaRow = {
   url: string | null;
   storagePath: string | null;
   kind: string;
+  public: boolean;
+  sortOrder: number;
+  title: string | null;
+  caption: string | null;
 };
 
 type PublicObjectRow = {
@@ -331,8 +335,13 @@ function serializeObject(object: PublicObjectRow, language = "ru", context: "pub
       officeName: object.informationOwnerOffice.legalName,
     },
     media: object.media.map((media: PublicObjectMediaRow) => ({
+      id: media.id,
       url: mediaUrlForContext(media, context),
       kind: media.kind,
+      public: media.public,
+      sortOrder: media.sortOrder,
+      title: media.title,
+      caption: media.caption,
     })),
     publishedAt: object.publishedAt?.toISOString() ?? null,
   };
@@ -397,6 +406,107 @@ const server = createServer(async (request, response) => {
   }
 
   const adminMediaMatch = url.pathname.match(/^\/api\/v1\/admin\/media\/([^/]+)$/);
+
+  if (adminMediaMatch && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      action?: "set_cover";
+      public?: unknown;
+    };
+
+    const mediaId = decodeURIComponent(adminMediaMatch[1]);
+    const body = await readJsonBody<Body>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const media = await prisma.propertyMedia.findFirst({
+      where: { id: mediaId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+      include: { propertyObject: true },
+    });
+
+    if (!media) {
+      sendError(response, 404, "media_not_found", "Admin media was not found.");
+      return;
+    }
+
+    if (body.action !== "set_cover") {
+      sendError(response, 400, "unsupported_media_action", "Only set_cover is supported.");
+      return;
+    }
+
+    await prisma.$transaction([
+      prisma.propertyMedia.updateMany({
+        where: { propertyObjectId: media.propertyObjectId, id: { not: media.id } },
+        data: { sortOrder: 100 },
+      }),
+      prisma.propertyMedia.update({
+        where: { id: media.id },
+        data: {
+          sortOrder: 0,
+          public: body.public === undefined ? media.public : booleanFromBody(body.public),
+        },
+      }),
+    ]);
+
+    sendJson(response, 200, {
+      ok: true,
+      media: {
+        id: media.id,
+        propertyObjectId: media.propertyObjectId,
+        sortOrder: 0,
+        public: body.public === undefined ? media.public : booleanFromBody(body.public),
+      },
+    });
+    return;
+  }
+
+  if (adminMediaMatch && request.method === "DELETE") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const mediaId = decodeURIComponent(adminMediaMatch[1]);
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const media = await prisma.propertyMedia.findFirst({
+      where: { id: mediaId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+    });
+
+    if (!media) {
+      sendError(response, 404, "media_not_found", "Admin media was not found.");
+      return;
+    }
+
+    if (media.storagePath) {
+      await storageBucket.file(media.storagePath).delete({ ignoreNotFound: true });
+    }
+
+    await prisma.propertyMedia.delete({ where: { id: media.id } });
+
+    if (media.sortOrder === 0) {
+      const nextMedia = await prisma.propertyMedia.findFirst({
+        where: { propertyObjectId: media.propertyObjectId },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      });
+
+      if (nextMedia) {
+        await prisma.propertyMedia.update({
+          where: { id: nextMedia.id },
+          data: { sortOrder: 0 },
+        });
+      }
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      deletedMediaId: media.id,
+      propertyObjectId: media.propertyObjectId,
+    });
+    return;
+  }
 
   if (adminMediaMatch && request.method === "GET") {
     if (!hasAdminWriteAccess(request)) {
@@ -1207,6 +1317,7 @@ const server = createServer(async (request, response) => {
       title?: string;
       caption?: string;
       uploadedByEmail?: string;
+      makeCover?: unknown;
     };
 
     const objectId = decodeURIComponent(mediaUploadUrlMatch[1]);
@@ -1290,6 +1401,7 @@ const server = createServer(async (request, response) => {
       title?: string;
       caption?: string;
       uploadedByEmail?: string;
+      makeCover?: unknown;
     };
 
     const objectId = decodeURIComponent(mediaConfirmMatch[1]);
@@ -1360,26 +1472,42 @@ const server = createServer(async (request, response) => {
         })
       : null;
 
-    const media = await prisma.propertyMedia.create({
-      data: {
-        id: mediaId,
-        propertyObjectId: propertyObject.id,
-        ownerOrganizationId: propertyObject.ownerOrganizationId,
-        ownerOfficeId: propertyObject.ownerOfficeId,
-        storagePath,
-        url: null,
-        kind: kind as never,
-        public: booleanFromBody(body.public),
-        sortOrder: 10,
-        originalFileName: optionalString(body.originalFileName),
-        mimeType,
-        sizeBytes: BigInt(sizeBytes),
-        checksum: typeof metadata.md5Hash === "string" ? metadata.md5Hash : null,
-        title: optionalString(body.title),
-        caption: optionalString(body.caption),
-        uploadedByUserId: uploadedByUser?.id ?? null,
-      },
-    });
+    const makeCover = booleanFromBody(body.makeCover);
+    const mediaWrites = await prisma.$transaction([
+      ...(makeCover
+        ? [
+            prisma.propertyMedia.updateMany({
+              where: { propertyObjectId: propertyObject.id },
+              data: { sortOrder: 100 },
+            }),
+          ]
+        : []),
+      prisma.propertyMedia.create({
+        data: {
+          id: mediaId,
+          propertyObjectId: propertyObject.id,
+          ownerOrganizationId: propertyObject.ownerOrganizationId,
+          ownerOfficeId: propertyObject.ownerOfficeId,
+          storagePath,
+          url: null,
+          kind: kind as never,
+          public: booleanFromBody(body.public),
+          sortOrder: makeCover ? 0 : 10,
+          originalFileName: optionalString(body.originalFileName),
+          mimeType,
+          sizeBytes: BigInt(sizeBytes),
+          checksum: typeof metadata.md5Hash === "string" ? metadata.md5Hash : null,
+          title: optionalString(body.title),
+          caption: optionalString(body.caption),
+          uploadedByUserId: uploadedByUser?.id ?? null,
+        },
+      }),
+    ]);
+    const media = mediaWrites[mediaWrites.length - 1] as {
+      id: string;
+      kind: string;
+      public: boolean;
+    };
 
     sendJson(response, 201, {
       ok: true,
