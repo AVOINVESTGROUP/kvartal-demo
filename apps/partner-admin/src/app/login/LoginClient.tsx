@@ -1,8 +1,8 @@
 "use client";
 
-import { signInWithPopup } from "firebase/auth";
+import { getRedirectResult, signInWithPopup, signInWithRedirect, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
 export default function LoginClient({ error }: { error?: string }) {
@@ -11,25 +11,94 @@ export default function LoginClient({ error }: { error?: string }) {
   const [busy, setBusy] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
 
+  async function createServerSession(credential: UserCredential) {
+    const idToken = await credential.user.getIdToken();
+    const response = await fetch("/api/auth/firebase/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+  }
+
+  function shouldUseRedirectFirst() {
+    if (typeof navigator === "undefined") {
+      return false;
+    }
+
+    return /Android|iPhone|iPad|iPod|Mobile|FBAN|FBAV|Instagram|Line|WhatsApp|WA Business/i.test(navigator.userAgent);
+  }
+
+  function isPopupBlocked(caught: unknown) {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    return message.includes("auth/popup-blocked") || message.includes("auth/cancelled-popup-request");
+  }
+
+  useEffect(() => {
+    if (!configured) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function finishRedirectSignIn() {
+      setBusy(true);
+      setClientError(null);
+
+      try {
+        const credential = await getRedirectResult(getFirebaseAuth());
+
+        if (!credential) {
+          return;
+        }
+
+        await createServerSession(credential);
+
+        if (!cancelled) {
+          router.replace("/");
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
+        }
+      } finally {
+        if (!cancelled) {
+          setBusy(false);
+        }
+      }
+    }
+
+    void finishRedirectSignIn();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [configured, router]);
+
   async function signIn() {
     setBusy(true);
     setClientError(null);
 
     try {
-      const credential = await signInWithPopup(getFirebaseAuth(), googleProvider);
-      const idToken = await credential.user.getIdToken();
-      const response = await fetch("/api/auth/firebase/session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ idToken }),
-      });
+      const auth = getFirebaseAuth();
 
-      if (!response.ok) {
-        throw new Error(await response.text());
+      if (shouldUseRedirectFirst()) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
       }
 
+      const credential = await signInWithPopup(auth, googleProvider);
+      await createServerSession(credential);
       router.replace("/");
     } catch (caught) {
+      if (isPopupBlocked(caught)) {
+        await signInWithRedirect(getFirebaseAuth(), googleProvider);
+        return;
+      }
+
       setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
     } finally {
       setBusy(false);
@@ -42,12 +111,19 @@ export default function LoginClient({ error }: { error?: string }) {
         <div className="text-[12px] font-black uppercase tracking-[0.18em] text-kv-red">FIXER.GURU PARTNER ADMIN</div>
         <h1 className="mt-2 text-2xl font-black text-kv-navy">Вход в админку организации</h1>
         <p className="mt-3 text-[14px] leading-6 text-kv-muted">
-          Вход только через Google аккаунт. Доступ получают собственники и администраторы организации, назначенные через Fixer.guru.
+          Вход только через Google аккаунт. Доступ получают собственники и администраторы организации, назначенные через
+          Fixer.guru.
         </p>
-        {error ? <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">Вход не завершен. Попробуйте еще раз.</p> : null}
+        {error ? (
+          <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">
+            Вход не завершен. Попробуйте еще раз.
+          </p>
+        ) : null}
         {clientError ? <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">{clientError}</p> : null}
         {!configured ? (
-          <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm font-bold text-amber-700">Firebase Auth не настроен в окружении App Hosting.</p>
+          <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm font-bold text-amber-700">
+            Firebase Auth не настроен в окружении App Hosting.
+          </p>
         ) : null}
         <button
           type="button"
