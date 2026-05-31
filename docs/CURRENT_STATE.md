@@ -431,3 +431,24 @@
 - Property card public text is stored as localization data (`PropertyObjectLocalization`) with required `ru/en` and organization-specific third language support.
 - Website-level hiding of individual partner objects is stored as `SiteObjectVisibilityOverride`; it does not unpublish the canonical object globally.
 - Updated `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, and `docs/03-API-CONTRACTS.md` to make this the implementation direction.
+
+## Partner Admin App Hosting Rollout From Git (2026-05-31)
+
+- Verified the working tree was clean before deployment checks.
+- Verified latest Git commit on `main`: `a64ac3a7ad679f8b35a3aa10e171b0b87b362d98`.
+- Ran the Firebase-equivalent monorepo build gate before rollout:
+  - `pnpm exec turbo build --force`
+  - result: `10 successful, 10 total`.
+- Created Firebase App Hosting build for `partner-admin-dev` from Git branch `main`:
+  - build: `build-2026-05-31-001`
+  - source commit: `a64ac3a7ad679f8b35a3aa10e171b0b87b362d98`
+  - state: `READY`
+- Created Firebase App Hosting rollout for `partner-admin-dev`:
+  - rollout: `rollout-2026-05-31-001`
+  - state: `SUCCEEDED`
+- Verified live URLs:
+  - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` -> `200`
+  - login HTML contains `FIXER.GURU PARTNER ADMIN`, `Вход в админку организации`, and `Войти через Google`
+  - unauthenticated `/` redirects with `307`
+  - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app` -> `200`
+- Important lesson: `partner-admin-dev` did not automatically roll out the May 31 Git commit. Future agents must verify the target App Hosting backend rollout, not only the Git push or another backend's build status.

@@ -299,3 +299,62 @@ gcloud run jobs execute kvartal-db-migrate `
 ### Verification
 
 The job execution must finish successfully. For the site object visibility migration, execution `kvartal-db-migrate-x8wws` completed successfully.
+
+## 2026-05-31: Partner Admin Code Was in Git but Live Backend Stayed on Old Rollout
+
+### Symptoms
+
+- `apps/partner-admin` code was committed and pushed.
+- `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` still returned old behavior or `404`.
+- Firebase Console showed unrelated build failures on `kvartal-web-dev`, which caused confusion about whether the public KVARTAL site or partner admin was affected.
+
+### Root Cause
+
+`partner-admin-dev` is a separate Firebase App Hosting backend with `codebase.rootDirectory = "apps/partner-admin"`. It had not received a new rollout after the May 31 Git commits. The latest live rollout before correction was still based on commit `8a0a4e40`.
+
+Separately, `kvartal-web-dev` has `codebase.rootDirectory = "/"`, so its App Hosting build can run the root `turbo build` and fail because of unrelated package TypeScript errors. That does not mean the KVARTAL site code was changed, but it can block a web rollout.
+
+### Required Procedure
+
+Before creating or expecting a Firebase App Hosting rollout:
+
+```powershell
+git status --short
+git rev-parse HEAD
+pnpm exec turbo build --force
+git push
+```
+
+Then verify the exact backend that should change:
+
+```powershell
+$access = gcloud auth print-access-token
+Invoke-RestMethod -Headers @{Authorization="Bearer $access"} `
+  -Uri "https://firebaseapphosting.googleapis.com/v1beta/projects/kvartal-dev/locations/europe-west4/backends/partner-admin-dev/builds?pageSize=5"
+
+Invoke-RestMethod -Headers @{Authorization="Bearer $access"} `
+  -Uri "https://firebaseapphosting.googleapis.com/v1beta/projects/kvartal-dev/locations/europe-west4/backends/partner-admin-dev/rollouts?pageSize=5"
+```
+
+### Fix Used
+
+- Full monorepo build passed locally: `pnpm exec turbo build --force`.
+- Created App Hosting build from Git branch `main` for `partner-admin-dev`:
+  - `build-2026-05-31-001`
+  - source commit `a64ac3a7ad679f8b35a3aa10e171b0b87b362d98`
+- Created rollout:
+  - `rollout-2026-05-31-001`
+  - state `SUCCEEDED`
+
+### Verification
+
+```powershell
+(Invoke-WebRequest -Uri "https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login" -UseBasicParsing).StatusCode
+```
+
+Expected:
+
+- `/login` returns `200`.
+- login HTML contains `FIXER.GURU PARTNER ADMIN`.
+- unauthenticated `/` redirects to `/login`.
+- `kvartal-web-dev` still returns `200`.
