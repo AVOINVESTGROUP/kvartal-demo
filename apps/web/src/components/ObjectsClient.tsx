@@ -174,7 +174,14 @@ function marketBaselineValue(market?: MarketSnapshotMarket | null) {
 
   const key = `${market.city.toLowerCase()}:${market.country.toUpperCase()}`;
   const baseline: Record<string, string> = {
-    "moscow:RU": "2,000 $/кв.м",
+    "new york:US": "9,960 $/кв.м",
+    "los angeles:US": "6,860 $/кв.м",
+    "dubai:AE": "5,880 $/кв.м",
+    "moscow:RU": "2,900 $/кв.м",
+    "yerevan:AM": "2,320 $/кв.м",
+    "philadelphia:US": "2,260 $/кв.м",
+    "tbilisi:GE": "1,660 $/кв.м",
+    "bataysk:RU": "1,475 $/кв.м",
   };
 
   return baseline[key] ?? null;
@@ -202,8 +209,8 @@ function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot
   }, [rotatingMarkets.length]);
 
   const activeMarket = rotatingMarkets[activeIndex % Math.max(rotatingMarkets.length, 1)] ?? null;
-  const homeValue = tickerValue(tickerIndicator(homeMarket)) ?? marketBaselineValue(homeMarket) ?? labels.pending;
-  const activeValue = activeMarket ? tickerValue(tickerIndicator(activeMarket)) ?? labels.pending : labels.pending;
+  const homeValue = marketBaselineValue(homeMarket) ?? tickerValue(tickerIndicator(homeMarket)) ?? labels.pending;
+  const activeValue = activeMarket ? marketBaselineValue(activeMarket) ?? tickerValue(tickerIndicator(activeMarket)) ?? labels.pending : labels.pending;
 
   return (
     <aside className="w-full lg:max-w-[420px]" aria-label={labels.title}>
