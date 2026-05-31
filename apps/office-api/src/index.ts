@@ -1,14 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import { Storage } from "@google-cloud/storage";
 
 export const serviceName = "office-api";
 
 export const ownedRoutes = [
   "/api/v1/public/objects",
+  "/api/v1/public/media",
   "/api/v1/public/client-intents",
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
+  "/api/v1/admin/media",
   "/api/v1/admin/access-settings",
   "/api/v1/admin/partner-objects",
   "/api/v1/admin/partner-object-visibility",
@@ -21,6 +24,22 @@ export const ownedRoutes = [
 
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
+const storage = new Storage();
+const storageBucketName = process.env.STORAGE_BUCKET ?? "kvartal-dev-property-assets";
+const storageBucket = storage.bucket(storageBucketName);
+
+const maxUploadBytesByKind = {
+  image: 20 * 1024 * 1024,
+  video: 500 * 1024 * 1024,
+  floor_plan: 20 * 1024 * 1024,
+  map: 20 * 1024 * 1024,
+  render: 20 * 1024 * 1024,
+  virtual_tour: 500 * 1024 * 1024,
+  drone: 500 * 1024 * 1024,
+  other: 50 * 1024 * 1024,
+} as const;
+
+const allowedMediaKinds = new Set(Object.keys(maxUploadBytesByKind));
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -29,6 +48,44 @@ function sendJson(response: ServerResponse, status: number, payload: unknown) {
 
 function sendError(response: ServerResponse, status: number, code: string, message: string) {
   sendJson(response, status, { ok: false, error: { code, message } });
+}
+
+function sendRedirect(response: ServerResponse, location: string, cacheControl = "public, max-age=3600") {
+  response.writeHead(302, {
+    location,
+    "cache-control": cacheControl,
+  });
+  response.end();
+}
+
+function streamStorageFile(
+  response: ServerResponse,
+  storagePath: string,
+  metadata: { contentType?: string; size?: string | number; etag?: string; updated?: string },
+  cacheControl: string,
+) {
+  const headers: Record<string, string> = {
+    "cache-control": cacheControl,
+  };
+
+  if (metadata.contentType) {
+    headers["content-type"] = metadata.contentType;
+  }
+
+  if (metadata.size !== undefined) {
+    headers["content-length"] = String(metadata.size);
+  }
+
+  if (metadata.etag) {
+    headers.etag = metadata.etag;
+  }
+
+  if (metadata.updated) {
+    headers["last-modified"] = new Date(metadata.updated).toUTCString();
+  }
+
+  response.writeHead(200, headers);
+  storageBucket.file(storagePath).createReadStream().on("error", () => response.destroy()).pipe(response);
 }
 
 async function readJsonBody<T>(request: IncomingMessage): Promise<T> {
@@ -97,6 +154,47 @@ function organizationSlugForTenant(tenant: string) {
   return tenantOrganizationSlugs[tenant as keyof typeof tenantOrganizationSlugs] ?? tenant;
 }
 
+function normalizeMediaKind(value: unknown) {
+  const kind = optionalString(value) ?? "image";
+  return allowedMediaKinds.has(kind) ? kind : "other";
+}
+
+function extensionForFileName(fileName: string | undefined, mimeType: string) {
+  const fromName = fileName?.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase();
+
+  if (fromName) {
+    return fromName;
+  }
+
+  const byMimeType: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "application/pdf": "pdf",
+  };
+
+  return byMimeType[mimeType] ?? "bin";
+}
+
+function allowedMimeForKind(kind: string, mimeType: string) {
+  if (["image", "floor_plan", "map", "render"].includes(kind)) {
+    return mimeType.startsWith("image/");
+  }
+
+  if (["video", "virtual_tour", "drone"].includes(kind)) {
+    return mimeType.startsWith("video/");
+  }
+
+  return mimeType.startsWith("image/") || mimeType.startsWith("video/") || mimeType === "application/pdf";
+}
+
+function maxUploadBytesForKind(kind: string) {
+  return maxUploadBytesByKind[kind as keyof typeof maxUploadBytesByKind] ?? maxUploadBytesByKind.other;
+}
+
 type PublicObjectLocalizationRow = {
   language: string;
   title: string;
@@ -107,7 +205,9 @@ type PublicObjectLocalizationRow = {
 };
 
 type PublicObjectMediaRow = {
-  url: string;
+  id: string;
+  url: string | null;
+  storagePath: string | null;
   kind: string;
 };
 
@@ -184,7 +284,15 @@ type AdminOrganizationMembershipRow = {
   user: { id: string; email: string; displayName: string | null; active: boolean };
 };
 
-function serializeObject(object: PublicObjectRow, language = "ru") {
+function mediaUrlForContext(media: PublicObjectMediaRow, context: "public" | "admin") {
+  if (media.storagePath) {
+    return context === "admin" ? `/api/v1/admin/media/${encodeURIComponent(media.id)}` : `/api/v1/public/media/${encodeURIComponent(media.id)}`;
+  }
+
+  return media.url ?? "";
+}
+
+function serializeObject(object: PublicObjectRow, language = "ru", context: "public" | "admin" = "public") {
   const localization =
     object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
     object.localizations.find((item: PublicObjectLocalizationRow) => item.language === "ru") ??
@@ -223,7 +331,7 @@ function serializeObject(object: PublicObjectRow, language = "ru") {
       officeName: object.informationOwnerOffice.legalName,
     },
     media: object.media.map((media: PublicObjectMediaRow) => ({
-      url: media.url,
+      url: mediaUrlForContext(media, context),
       kind: media.kind,
     })),
     publishedAt: object.publishedAt?.toISOString() ?? null,
@@ -256,6 +364,69 @@ const server = createServer(async (request, response) => {
         error: error instanceof Error ? error.message : "Unknown readiness error",
       });
     }
+    return;
+  }
+
+  const publicMediaMatch = url.pathname.match(/^\/api\/v1\/public\/media\/([^/]+)$/);
+
+  if (publicMediaMatch && request.method === "GET") {
+    const mediaId = decodeURIComponent(publicMediaMatch[1]);
+    const media = await prisma.propertyMedia.findUnique({
+      where: { id: mediaId },
+      include: { propertyObject: true },
+    });
+
+    if (!media || !media.public || media.propertyObject.status !== "published" || media.propertyObject.visibility !== "public") {
+      sendError(response, 404, "media_not_found", "Public media was not found.");
+      return;
+    }
+
+    if (!media.storagePath && media.url) {
+      sendRedirect(response, media.url);
+      return;
+    }
+
+    if (!media.storagePath) {
+      sendError(response, 404, "media_not_found", "Public media has no storage path.");
+      return;
+    }
+
+    const [metadata] = await storageBucket.file(media.storagePath).getMetadata();
+    streamStorageFile(response, media.storagePath, metadata, "public, max-age=86400, stale-while-revalidate=604800");
+    return;
+  }
+
+  const adminMediaMatch = url.pathname.match(/^\/api\/v1\/admin\/media\/([^/]+)$/);
+
+  if (adminMediaMatch && request.method === "GET") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_media_forbidden", "Admin media token is missing or invalid.");
+      return;
+    }
+
+    const mediaId = decodeURIComponent(adminMediaMatch[1]);
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const media = await prisma.propertyMedia.findFirst({
+      where: { id: mediaId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+    });
+
+    if (!media) {
+      sendError(response, 404, "media_not_found", "Admin media was not found.");
+      return;
+    }
+
+    if (!media.storagePath && media.url) {
+      sendRedirect(response, media.url, "private, max-age=300");
+      return;
+    }
+
+    if (!media.storagePath) {
+      sendError(response, 404, "media_not_found", "Admin media has no storage path.");
+      return;
+    }
+
+    const [metadata] = await storageBucket.file(media.storagePath).getMetadata();
+    streamStorageFile(response, media.storagePath, metadata, "private, max-age=300");
     return;
   }
 
@@ -462,7 +633,7 @@ const server = createServer(async (request, response) => {
       organizationSlug,
       scopeRule: "ownerOrganization.slug = requested organization",
       objects: objects.map((object: AdminObjectRow) => ({
-        ...serializeObject(object, language),
+        ...serializeObject(object, language, "admin"),
         titleEn: object.localizations.find((item) => item.language === "en")?.title ?? null,
         descriptionEn: object.localizations.find((item) => item.language === "en")?.description ?? null,
         addressDisplayEn: object.localizations.find((item) => item.language === "en")?.addressDisplay ?? null,
@@ -667,7 +838,7 @@ const server = createServer(async (request, response) => {
       ok: true,
       organizationSlug,
       objects: objects.map((object: AdminObjectRow) => ({
-        ...serializeObject(object, language),
+        ...serializeObject(object, language, "admin"),
         status: object.status,
         visibility: object.visibility,
         canBeShownByOtherOffices: object.canBeShownByOtherOffices,
@@ -1015,7 +1186,210 @@ const server = createServer(async (request, response) => {
       },
     });
 
-    sendJson(response, 201, { ok: true, object: serializeObject(propertyObject as AdminObjectRow, "ru") });
+    sendJson(response, 201, { ok: true, object: serializeObject(propertyObject as AdminObjectRow, "ru", "admin") });
+    return;
+  }
+
+  const mediaUploadUrlMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)\/media\/upload-url$/);
+
+  if (mediaUploadUrlMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      originalFileName?: string;
+      mimeType?: string;
+      kind?: string;
+      public?: unknown;
+      title?: string;
+      caption?: string;
+      uploadedByEmail?: string;
+    };
+
+    const objectId = decodeURIComponent(mediaUploadUrlMatch[1]);
+    const body = await readJsonBody<Body>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const originalFileName = optionalString(body.originalFileName) ?? "upload";
+    const mimeType = optionalString(body.mimeType) ?? "application/octet-stream";
+    const kind = normalizeMediaKind(body.kind);
+
+    if (!allowedMimeForKind(kind, mimeType)) {
+      sendError(response, 400, "unsupported_media_type", `MIME type '${mimeType}' is not allowed for kind '${kind}'.`);
+      return;
+    }
+
+    const propertyObject = await prisma.propertyObject.findFirst({
+      where: { id: objectId, ownerOrganization: { slug: organizationSlug } },
+      include: { ownerOrganization: true, ownerOffice: true },
+    });
+
+    if (!propertyObject) {
+      sendError(response, 404, "object_not_found", `Object '${objectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+
+    const mediaId = randomUUID();
+    const extension = extensionForFileName(originalFileName, mimeType);
+    const publicSegment = booleanFromBody(body.public) ? "public" : "private";
+    const storagePath = [
+      "organizations",
+      propertyObject.ownerOrganizationId,
+      "offices",
+      propertyObject.ownerOfficeId,
+      "objects",
+      propertyObject.id,
+      publicSegment,
+      "media",
+      mediaId,
+      `original.${extension}`,
+    ].join("/");
+    const maxBytes = maxUploadBytesForKind(kind);
+    const [policy] = await storageBucket.file(storagePath).generateSignedPostPolicyV4({
+      expires: Date.now() + 15 * 60 * 1000,
+      conditions: [
+        ["eq", "$Content-Type", mimeType],
+        ["content-length-range", 0, maxBytes],
+      ],
+      fields: {
+        "Content-Type": mimeType,
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      upload: {
+        mediaId,
+        storagePath,
+        url: policy.url,
+        fields: policy.fields,
+        method: "POST",
+        maxBytes,
+      },
+    });
+    return;
+  }
+
+  const mediaConfirmMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)\/media\/confirm$/);
+
+  if (mediaConfirmMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      mediaId?: string;
+      storagePath?: string;
+      originalFileName?: string;
+      kind?: string;
+      public?: unknown;
+      title?: string;
+      caption?: string;
+      uploadedByEmail?: string;
+    };
+
+    const objectId = decodeURIComponent(mediaConfirmMatch[1]);
+    const body = await readJsonBody<Body>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const mediaId = optionalString(body.mediaId);
+    const storagePath = optionalString(body.storagePath);
+    const kind = normalizeMediaKind(body.kind);
+
+    if (!mediaId || !storagePath) {
+      sendError(response, 400, "media_upload_required", "mediaId and storagePath are required.");
+      return;
+    }
+
+    const propertyObject = await prisma.propertyObject.findFirst({
+      where: { id: objectId, ownerOrganization: { slug: organizationSlug } },
+      include: { ownerOrganization: true, ownerOffice: true },
+    });
+
+    if (!propertyObject) {
+      sendError(response, 404, "object_not_found", `Object '${objectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+
+    const expectedPrefix = [
+      "organizations",
+      propertyObject.ownerOrganizationId,
+      "offices",
+      propertyObject.ownerOfficeId,
+      "objects",
+      propertyObject.id,
+    ].join("/");
+
+    if (!storagePath.startsWith(`${expectedPrefix}/`)) {
+      sendError(response, 400, "invalid_storage_path", "The uploaded media path does not belong to this object.");
+      return;
+    }
+
+    const file = storageBucket.file(storagePath);
+    const [exists] = await file.exists();
+
+    if (!exists) {
+      sendError(response, 404, "uploaded_file_not_found", "Uploaded file was not found in Cloud Storage.");
+      return;
+    }
+
+    const [metadata] = await file.getMetadata();
+    const mimeType = metadata.contentType ?? "application/octet-stream";
+    const sizeBytes = Number(metadata.size ?? 0);
+    const maxBytes = maxUploadBytesForKind(kind);
+
+    if (!allowedMimeForKind(kind, mimeType) || sizeBytes > maxBytes) {
+      await file.delete({ ignoreNotFound: true });
+      sendError(response, 400, "invalid_uploaded_file", "Uploaded file type or size is not allowed.");
+      return;
+    }
+
+    const uploadedByEmail = optionalString(body.uploadedByEmail)?.toLowerCase();
+    const uploadedByUser = uploadedByEmail
+      ? await prisma.appUser.upsert({
+          where: { email: uploadedByEmail },
+          update: { active: true },
+          create: {
+            firebaseUid: `pending:${uploadedByEmail}`,
+            email: uploadedByEmail,
+            active: true,
+          },
+        })
+      : null;
+
+    const media = await prisma.propertyMedia.create({
+      data: {
+        id: mediaId,
+        propertyObjectId: propertyObject.id,
+        ownerOrganizationId: propertyObject.ownerOrganizationId,
+        ownerOfficeId: propertyObject.ownerOfficeId,
+        storagePath,
+        url: null,
+        kind: kind as never,
+        public: booleanFromBody(body.public),
+        sortOrder: 10,
+        originalFileName: optionalString(body.originalFileName),
+        mimeType,
+        sizeBytes: BigInt(sizeBytes),
+        checksum: typeof metadata.md5Hash === "string" ? metadata.md5Hash : null,
+        title: optionalString(body.title),
+        caption: optionalString(body.caption),
+        uploadedByUserId: uploadedByUser?.id ?? null,
+      },
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      media: {
+        id: media.id,
+        url: `/api/v1/admin/media/${encodeURIComponent(media.id)}`,
+        kind: media.kind,
+        public: media.public,
+      },
+    });
     return;
   }
 
@@ -1176,7 +1550,7 @@ const server = createServer(async (request, response) => {
       });
     }
 
-    sendJson(response, 200, { ok: true, object: serializeObject(updated as AdminObjectRow, "ru") });
+    sendJson(response, 200, { ok: true, object: serializeObject(updated as AdminObjectRow, "ru", "admin") });
     return;
   }
 

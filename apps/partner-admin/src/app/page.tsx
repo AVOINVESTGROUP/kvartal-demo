@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "../lib/auth";
 import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
+import { MediaUploadForm } from "./MediaUploadForm";
 
 export const dynamic = "force-dynamic";
 
@@ -681,6 +682,9 @@ export default async function PartnerAdminHome() {
 
                 <details className="rounded-md border border-kv-line bg-white lg:col-span-3">
                   <summary className="cursor-pointer px-4 py-3 text-sm font-black text-kv-navy">Редактировать карточку, публикацию и медиа</summary>
+                  <div className="border-t border-kv-line p-4">
+                    <MediaUploadForm objectId={object.id} />
+                  </div>
                   <form action={updateObjectAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organizationSlug" value={organizationSlug} />
                     <input type="hidden" name="objectId" value={object.id} />

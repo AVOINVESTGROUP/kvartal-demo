@@ -235,3 +235,16 @@ The architecture decision is confirmed:
 The project should not be rewritten into separate admin apps. It should be clarified and reinforced around one shared multi-tenant `partner-admin`, plus separate branded partner sites using shared modules.
 
 On 2026-05-31 the master architecture, data model, API contracts, and current state were updated to reflect this decision. The next implementation work should move the running admin code toward that shared tenant-scoped model.
+
+## 10. Object Dossier / Cloud Storage Media
+
+The approved working plan is `docs/19-OBJECT-DOSSIER-CLOUD-STORAGE-PLAN.md`.
+
+Implementation rules:
+
+- always check that plan before changing media storage, upload, object dossier, or admin media UI;
+- keep `media.url` populated in API responses for backward compatibility;
+- for GCS-backed media, compute `media.url` in the API serializer and do not store generated API paths in PostgreSQL;
+- use admin media proxy routes for draft/private media preview;
+- use public media proxy routes for public showcase media;
+- keep Cloud Storage private and serve media through controlled API/proxy endpoints.

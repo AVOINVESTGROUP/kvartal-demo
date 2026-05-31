@@ -10,6 +10,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "@kvartal/auth": "workspace:*",
     "@kvartal/db": "workspace:*",
     "@kvartal/domain": "workspace:*",

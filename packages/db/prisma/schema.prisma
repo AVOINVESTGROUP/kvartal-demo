@@ -223,6 +223,26 @@ enum LegalDocumentKind {
   other
 }
 
+enum PropertyMediaKind {
+  image
+  video
+  floor_plan
+  map
+  render
+  virtual_tour
+  drone
+  other
+}
+
+enum PropertyDocumentType {
+  floor_plan
+  presentation
+  technical_report
+  explication
+  certificate
+  other
+}
+
 enum LegalReviewStatus {
   not_reviewed
   pending_review
@@ -362,6 +382,8 @@ model AppUser {
   createdIntakeSubmissions  PropertyIntakeSubmission[]
   createdAIDrafts           PropertyAIDraft[]
   uploadedLegalDocuments    LegalDocument[]             @relation("LegalDocumentUploadedBy")
+  uploadedPropertyMedia     PropertyMedia[]             @relation("PropertyMediaUploadedBy")
+  uploadedPropertyDocuments PropertyDocument[]          @relation("PropertyDocumentUploadedBy")
   reviewedLegalDocuments    LegalDocumentReview[]
   auditLogs                 AuditLog[]
 }
@@ -609,17 +631,29 @@ model PropertyMedia {
   propertyObjectId String
   ownerOrganizationId String
   ownerOfficeId    String
-  url              String
+  url              String?
   storagePath      String?
-  kind             String
+  kind             PropertyMediaKind @default(image)
   public           Boolean        @default(false)
   sortOrder        Int            @default(0)
+  originalFileName String?
+  mimeType         String?
+  sizeBytes        BigInt?
+  checksum         String?
+  title            String?
+  caption          String?
+  width            Int?
+  height           Int?
+  durationSeconds  Int?
+  uploadedByUserId String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  uploadedByUser   AppUser?       @relation("PropertyMediaUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
   @@index([propertyObjectId])
   @@index([ownerOfficeId])
+  @@index([uploadedByUserId])
 }
 
 model PropertyDocument {
@@ -629,14 +663,21 @@ model PropertyDocument {
   ownerOfficeId    String
   title            String
   storagePath      String
-  documentType     String
+  documentType     PropertyDocumentType @default(other)
   public           Boolean        @default(false)
+  originalFileName String?
+  mimeType         String?
+  sizeBytes        BigInt?
+  checksum         String?
+  uploadedByUserId String?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   propertyObject   PropertyObject @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  uploadedByUser   AppUser?       @relation("PropertyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
 
   @@index([propertyObjectId])
   @@index([ownerOfficeId])
+  @@index([uploadedByUserId])
 }
 
 model LegalDocument {

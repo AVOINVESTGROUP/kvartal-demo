@@ -499,3 +499,47 @@
 - Verified live URLs:
   - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` -> `200`
   - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app` -> `200`
+
+## Object Dossier Media Storage Slice (2026-05-31)
+
+- Added approved implementation checklist:
+  - `docs/19-OBJECT-DOSSIER-CLOUD-STORAGE-PLAN.md`
+- Created Cloud Storage bucket:
+  - `gs://kvartal-dev-property-assets`
+  - location: `europe-west4`
+  - public access prevention enabled
+  - uniform bucket-level access enabled
+- Added bucket CORS config:
+  - `infra/gcp/property-assets-cors.json`
+  - allowed admin origins include `partner-admin-dev--kvartal-dev.europe-west4.hosted.app` and `kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app`
+- Granted `kvartal-office-api@kvartal-dev.iam.gserviceaccount.com` bucket object admin access for upload/read/delete.
+- Granted `roles/iam.serviceAccountTokenCreator` on the office API service account to itself so Cloud Run can generate V4 signed POST policies without key files.
+- Added Prisma migration:
+  - `packages/db/prisma/migrations/202605311_object_dossier_media_storage/migration.sql`
+- Applied migration through Cloud Run job:
+  - execution: `kvartal-db-migrate-bg6cz`
+  - result: completed successfully
+- Added media storage schema support:
+  - nullable `PropertyMedia.url`
+  - GCS `storagePath`
+  - media/document metadata fields
+  - `PropertyMediaKind`
+  - `PropertyDocumentType`
+- Added office API support:
+  - admin upload policy endpoint
+  - admin upload confirm endpoint
+  - public media endpoint
+  - admin media endpoint
+  - serializer keeps `media.url` populated for legacy and GCS media
+- Added Next.js proxy routes:
+  - `apps/partner-admin`: admin media preview plus upload/confirm proxy routes
+  - `apps/kvartal-admin`: admin media preview proxy route
+  - `apps/web`: public media proxy route
+  - `apps/partner-site`: public media proxy route
+- Added `partner-admin` upload UI for object media.
+- Verified:
+  - Prisma schema validation passed
+  - Prisma client generation passed
+  - `pnpm exec turbo build --force` passed for all 10 packages
+  - `kvartal-office-api /readyz` returned database ready after deploy
+  - `kvartal-office-api /api/v1/public/objects` still returns legacy `media.url` values

@@ -1,0 +1,17 @@
+[
+  {
+    "origin": [
+      "https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app",
+      "https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app"
+    ],
+    "method": ["POST", "GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "ETag",
+      "Last-Modified",
+      "x-goog-resumable"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

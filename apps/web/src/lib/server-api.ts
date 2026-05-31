@@ -1,4 +1,4 @@
-async function getIdentityToken(audience: string) {
+export async function getIdentityToken(audience: string) {
   try {
     const response = await fetch(
       `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${encodeURIComponent(audience)}`,
