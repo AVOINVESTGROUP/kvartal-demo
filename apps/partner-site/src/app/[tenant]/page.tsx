@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { PartnerSitePage } from "../../components/PartnerSitePage";
-import { fetchPartnerInventory } from "../../tenants/api";
+import { fetchPartnerInventoryByLanguage } from "../../tenants/api";
 import { getPartnerTenant, partnerTenantKeys } from "../../tenants";
 
 export const dynamic = "force-dynamic";
@@ -38,7 +38,7 @@ export default async function TenantPage({ params }: TenantPageProps) {
     notFound();
   }
 
-  const inventory = await fetchPartnerInventory(tenant.key);
+  const inventoryByLanguage = await fetchPartnerInventoryByLanguage(tenant.key);
 
-  return <PartnerSitePage tenant={tenant} inventoryOverride={inventory} />;
+  return <PartnerSitePage tenant={tenant} inventoryByLanguage={inventoryByLanguage} />;
 }

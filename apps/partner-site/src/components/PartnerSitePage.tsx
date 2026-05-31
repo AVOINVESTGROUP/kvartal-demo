@@ -1,16 +1,17 @@
-import type { PartnerTenantConfig } from "../tenants";
+import type { PartnerInventoryByLanguage, PartnerTenantConfig } from "../tenants";
 import { Apart4uSite } from "./Apart4uSite";
 
 type PartnerSitePageProps = {
   tenant: PartnerTenantConfig;
   inventoryOverride?: PartnerTenantConfig["inventory"];
+  inventoryByLanguage?: PartnerInventoryByLanguage;
 };
 
-export function PartnerSitePage({ tenant, inventoryOverride }: PartnerSitePageProps) {
-  const inventory = inventoryOverride ?? tenant.inventory;
+export function PartnerSitePage({ tenant, inventoryOverride, inventoryByLanguage }: PartnerSitePageProps) {
+  const inventory = inventoryOverride ?? inventoryByLanguage?.en ?? tenant.inventory;
 
   if (tenant.key === "apart4u") {
-    return <Apart4uSite tenant={tenant} inventory={inventoryOverride ?? []} />;
+    return <Apart4uSite tenant={tenant} inventoryByLanguage={inventoryByLanguage ?? { ru: inventoryOverride ?? [] }} />;
   }
 
   return (

@@ -1,11 +1,11 @@
 import { PartnerSitePage } from "../components/PartnerSitePage";
-import { fetchPartnerInventory } from "../tenants/api";
+import { fetchPartnerInventoryByLanguage } from "../tenants/api";
 import { partnerTenants } from "../tenants";
 
 export const dynamic = "force-dynamic";
 
 export default async function Apart4uSiteHome() {
-  const inventory = await fetchPartnerInventory("apart4u");
+  const inventoryByLanguage = await fetchPartnerInventoryByLanguage("apart4u");
 
-  return <PartnerSitePage tenant={partnerTenants.apart4u} inventoryOverride={inventory} />;
+  return <PartnerSitePage tenant={partnerTenants.apart4u} inventoryByLanguage={inventoryByLanguage} />;
 }

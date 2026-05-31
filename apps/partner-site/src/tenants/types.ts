@@ -1,4 +1,5 @@
 export type PartnerTenantKey = "apart4u" | "dubai" | "yerevan";
+export type PartnerSiteLanguage = "ru" | "en" | "ka";
 
 export type PartnerInventoryItem = {
   id?: string;
@@ -15,6 +16,8 @@ export type PartnerInventoryItem = {
   sellerSidePartner: string;
   buyerSidePartner: string;
 };
+
+export type PartnerInventoryByLanguage = Partial<Record<PartnerSiteLanguage, PartnerInventoryItem[]>>;
 
 export type PartnerTenantConfig = {
   key: PartnerTenantKey;

@@ -1,6 +1,6 @@
 import { apart4uTenant } from "./apart4u/config";
 import { dubaiTenant } from "./dubai/config";
-import type { PartnerInventoryItem, PartnerTenantConfig, PartnerTenantKey } from "./types";
+import type { PartnerInventoryByLanguage, PartnerInventoryItem, PartnerSiteLanguage, PartnerTenantConfig, PartnerTenantKey } from "./types";
 import { yerevanTenant } from "./yerevan/config";
 
 export const partnerTenants = {
@@ -15,4 +15,4 @@ export function getPartnerTenant(key: string): PartnerTenantConfig | undefined {
   return partnerTenants[key as PartnerTenantKey];
 }
 
-export type { PartnerInventoryItem, PartnerTenantConfig, PartnerTenantKey };
+export type { PartnerInventoryByLanguage, PartnerInventoryItem, PartnerSiteLanguage, PartnerTenantConfig, PartnerTenantKey };

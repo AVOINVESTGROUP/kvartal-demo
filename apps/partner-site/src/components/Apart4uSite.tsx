@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 
-import type { PartnerInventoryItem, PartnerTenantConfig } from "../tenants";
+import type { PartnerInventoryByLanguage, PartnerTenantConfig } from "../tenants";
 
 type Apart4uSiteProps = {
   tenant: PartnerTenantConfig;
-  inventory: PartnerInventoryItem[];
+  inventoryByLanguage: PartnerInventoryByLanguage;
 };
 
 type Language = "ru" | "en" | "ka";
@@ -203,14 +203,19 @@ function resolveMediaUrl(url?: string | null) {
   return url;
 }
 
-export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
-  const [language, setLanguage] = useState<Language>("ru");
+export function Apart4uSite({ tenant, inventoryByLanguage }: Apart4uSiteProps) {
+  const [language, setLanguage] = useState<Language>("en");
   const [typeFilter, setTypeFilter] = useState("all");
   const [marketFilter, setMarketFilter] = useState("all");
   const [countryFilter, setCountryFilter] = useState("all");
-  const [selectedObject, setSelectedObject] = useState<PartnerInventoryItem | null>(null);
+  const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null);
   const t = texts[language];
   const langIndex = languageIndex[language];
+  const inventory = inventoryByLanguage[language] ?? inventoryByLanguage.en ?? inventoryByLanguage.ru ?? [];
+  const selectedObject = useMemo(
+    () => inventory.find((item) => item.id === selectedObjectId) ?? null,
+    [inventory, selectedObjectId],
+  );
 
   const types = useMemo(
     () => Array.from(new Set(inventory.map((item) => item.assetClass).filter(Boolean))) as string[],
@@ -366,7 +371,7 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
                     </div>
                     <p className="apart-card-desc">{item.description ?? `${t.seller}: ${item.sellerSidePartner}`}</p>
                     <div className="apart-property-actions">
-                      <button className="apart-btn ghost" type="button" onClick={() => setSelectedObject(item)}>
+                      <button className="apart-btn ghost" type="button" onClick={() => setSelectedObjectId(item.id ?? null)}>
                         {t.details}
                       </button>
                       <a className="apart-btn primary" href="#contacts">
@@ -527,9 +532,9 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
       </footer>
 
       {selectedObject ? (
-        <div className="apart-modal open" aria-hidden="false" onClick={() => setSelectedObject(null)}>
+        <div className="apart-modal open" aria-hidden="false" onClick={() => setSelectedObjectId(null)}>
           <div className="apart-modal-content" onClick={(event) => event.stopPropagation()}>
-            <button className="apart-modal-close" type="button" onClick={() => setSelectedObject(null)}>
+            <button className="apart-modal-close" type="button" onClick={() => setSelectedObjectId(null)}>
               ×
             </button>
             {resolveMediaUrl(selectedObject.mediaUrl) ? <img src={resolveMediaUrl(selectedObject.mediaUrl) ?? ""} alt={selectedObject.title} /> : null}
@@ -541,7 +546,7 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
               <br />
               {t.buyer}: {selectedObject.buyerSidePartner}
             </p>
-            <a className="apart-btn primary" href="#contacts" onClick={() => setSelectedObject(null)}>
+            <a className="apart-btn primary" href="#contacts" onClick={() => setSelectedObjectId(null)}>
               {t.contact}
             </a>
           </div>

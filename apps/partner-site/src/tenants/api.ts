@@ -1,5 +1,5 @@
 import { fetchBackendJson } from "../lib/server-api";
-import type { PartnerInventoryItem, PartnerTenantKey } from "./types";
+import type { PartnerInventoryByLanguage, PartnerInventoryItem, PartnerSiteLanguage, PartnerTenantKey } from "./types";
 
 type PublicObjectsResponse = {
   objects: Array<{
@@ -26,10 +26,10 @@ type PublicObjectsResponse = {
   }>;
 };
 
-export async function fetchPartnerInventory(tenant: PartnerTenantKey): Promise<PartnerInventoryItem[] | undefined> {
+export async function fetchPartnerInventory(tenant: PartnerTenantKey, language: PartnerSiteLanguage = "ru"): Promise<PartnerInventoryItem[] | undefined> {
   const response = await fetchBackendJson<PublicObjectsResponse>(
     process.env.PUBLIC_API_BASE_URL,
-    `/api/v1/public/objects?tenant=${encodeURIComponent(tenant)}&limit=12`,
+    `/api/v1/public/objects?tenant=${encodeURIComponent(tenant)}&language=${encodeURIComponent(language)}&limit=12`,
   );
 
   if (!response?.objects.length) {
@@ -44,18 +44,29 @@ export async function fetchPartnerInventory(tenant: PartnerTenantKey): Promise<P
 
     return {
       id: object.id,
-    market: `${object.market.city}, ${object.market.country}`,
+      market: `${object.market.city}, ${object.market.country}`,
       city: object.market.city,
       country: object.market.country,
-    title: object.title,
+      title: object.title,
       description: object.description,
       addressDisplay: object.addressDisplay,
       assetClass: object.assetClass,
       priceDisplay: object.priceDisplay,
       areaSqm: object.areaSqm,
       mediaUrl: coverMedia?.url ?? null,
-    sellerSidePartner: object.sellerSide.organizationName,
-    buyerSidePartner: tenant === "apart4u" ? "Apart4u.co Tbilisi" : tenant === "dubai" ? "Dubai Partner" : "Yerevan Partner",
+      sellerSidePartner: object.sellerSide.organizationName,
+      buyerSidePartner: tenant === "apart4u" ? "Apart4u.co Tbilisi" : tenant === "dubai" ? "Dubai Partner" : "Yerevan Partner",
     };
   });
+}
+
+export async function fetchPartnerInventoryByLanguage(
+  tenant: PartnerTenantKey,
+  languages: PartnerSiteLanguage[] = ["en", "ru", "ka"],
+): Promise<PartnerInventoryByLanguage> {
+  const entries = await Promise.all(
+    languages.map(async (language) => [language, (await fetchPartnerInventory(tenant, language)) ?? []] as const),
+  );
+
+  return Object.fromEntries(entries) as PartnerInventoryByLanguage;
 }
