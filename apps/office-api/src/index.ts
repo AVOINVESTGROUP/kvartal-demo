@@ -8,7 +8,9 @@ export const serviceName = "office-api";
 export const ownedRoutes = [
   "/api/v1/public/objects",
   "/api/v1/public/media",
+  "/api/v1/public/market-insights",
   "/api/v1/public/client-intents",
+  "/api/v1/platform/market-insights/refresh",
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
   "/api/v1/admin/media",
@@ -149,6 +151,34 @@ const tenantOrganizationSlugs = {
   dubai: "dubai-partner",
   yerevan: "yerevan-partner",
 } as const;
+
+const marketInsightMetric = "average_price_usd_sqm";
+const marketInsightCategories = ["residential", "commercial"] as const;
+
+type MarketInsightCategory = (typeof marketInsightCategories)[number];
+
+function categoryLabel(category: MarketInsightCategory, language: string) {
+  const labels = {
+    residential: { ru: "Жилая", en: "Residential" },
+    commercial: { ru: "Коммерческая", en: "Commercial" },
+  } satisfies Record<MarketInsightCategory, Record<"ru" | "en", string>>;
+
+  return labels[category][language === "en" ? "en" : "ru"];
+}
+
+function insightPeriod(date = new Date()) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function stableMonthlyScore(input: string) {
+  let score = 0;
+
+  for (let index = 0; index < input.length; index += 1) {
+    score = (score * 31 + input.charCodeAt(index)) >>> 0;
+  }
+
+  return score;
+}
 
 function organizationSlugForTenant(tenant: string) {
   return tenantOrganizationSlugs[tenant as keyof typeof tenantOrganizationSlugs] ?? tenant;
@@ -347,6 +377,149 @@ function serializeObject(object: PublicObjectRow, language = "ru", context: "pub
   };
 }
 
+type PublicMarketRow = {
+  id: string;
+  slug: string;
+  city: string;
+  country: string;
+};
+
+async function getPublicInventoryMarkets(tenant: string) {
+  const tenantOrganizationSlug = organizationSlugForTenant(tenant);
+  const tenantSiteConfig = await prisma.siteConfig.findFirst({
+    where: { organization: { slug: tenantOrganizationSlug }, active: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  const hiddenOverrides = await prisma.$queryRaw<Array<{ propertyObjectId: string }>>`
+    SELECT svo."propertyObjectId"
+    FROM "SiteObjectVisibilityOverride" svo
+    JOIN "Organization" o ON o.id = svo."organizationId"
+    WHERE o.slug = ${tenantOrganizationSlug} AND svo.hidden = true
+  `;
+  const hiddenObjectIds = hiddenOverrides.map((item: { propertyObjectId: string }) => item.propertyObjectId);
+  const effectiveOwnerSlug = tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined;
+
+  const objects = await prisma.propertyObject.findMany({
+    where: {
+      status: "published",
+      visibility: "public",
+      canBeShownByOtherOffices: true,
+      ...(hiddenObjectIds.length ? { id: { notIn: hiddenObjectIds } } : {}),
+      ...(effectiveOwnerSlug ? { ownerOrganization: { slug: effectiveOwnerSlug } } : {}),
+    },
+    distinct: ["marketId"],
+    select: {
+      market: {
+        select: {
+          id: true,
+          slug: true,
+          city: true,
+          country: true,
+        },
+      },
+    },
+  });
+
+  return objects.map((item) => item.market as PublicMarketRow);
+}
+
+function serializeMarketIndicator(
+  market: PublicMarketRow,
+  category: MarketInsightCategory,
+  indicator:
+    | {
+        value: unknown;
+        unit: string;
+        currency: string | null;
+        confidence: string;
+        updatedAt: Date;
+      }
+    | undefined,
+  language: string,
+) {
+  return {
+    category,
+    label: categoryLabel(category, language),
+    value: indicator?.value === undefined ? null : Number(indicator.value),
+    currency: indicator?.currency ?? "USD",
+    unit: indicator?.unit ?? "sqm",
+    confidence: indicator?.confidence ?? "unsupported",
+    updatedAt: indicator?.updatedAt?.toISOString() ?? null,
+    city: market.city,
+    country: market.country,
+  };
+}
+
+function parseGeminiJson(text: string) {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  return JSON.parse(fenced ?? text);
+}
+
+async function generateMarketEstimateWithGemini(market: PublicMarketRow) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+
+  const prompt = [
+    "Return only valid JSON, no markdown.",
+    "Estimate current average real estate asking prices in USD per square meter.",
+    "Categories: residential and commercial.",
+    "Use broad market public knowledge only. If confidence is low, use null and unsupported.",
+    "Do not promise returns or investment outcomes.",
+    `Market: ${market.city}, ${market.country}.`,
+    'Shape: {"residential":{"value":number|null,"confidence":"high|medium|low|unsupported"},"commercial":{"value":number|null,"confidence":"high|medium|low|unsupported"},"sources":["short source label"]}',
+  ].join("\n");
+  const requestBody = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: "application/json",
+    },
+  });
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey ?? "")}`;
+
+  if (!apiKey) {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT ?? "kvartal-dev";
+    const location = process.env.VERTEX_AI_LOCATION ?? "europe-west4";
+    const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
+    const metadataTokenResponse = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
+      headers: { "Metadata-Flavor": "Google" },
+    });
+
+    if (!metadataTokenResponse.ok) {
+      throw new Error("Neither GEMINI_API_KEY nor Vertex AI metadata token is available.");
+    }
+
+    const tokenPayload = await metadataTokenResponse.json() as { access_token?: string };
+
+    if (!tokenPayload.access_token) {
+      throw new Error("Vertex AI metadata token response did not include access_token.");
+    }
+
+    headers.authorization = `Bearer ${tokenPayload.access_token}`;
+    endpoint = `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+  }
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: requestBody,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Gemini request failed with ${response.status}.`);
+  }
+
+  const payload = await response.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+
+  return parseGeminiJson(text) as Record<MarketInsightCategory, { value?: number | null; confidence?: string }> & {
+    sources?: string[];
+  };
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
@@ -373,6 +546,164 @@ const server = createServer(async (request, response) => {
         error: error instanceof Error ? error.message : "Unknown readiness error",
       });
     }
+    return;
+  }
+
+  if (url.pathname === "/api/v1/public/market-insights" && request.method === "GET") {
+    const tenant = url.searchParams.get("tenant") ?? "kvartal";
+    const language = url.searchParams.get("language") ?? "ru";
+    const period = url.searchParams.get("period") ?? insightPeriod();
+    const marketsFromInventory = await getPublicInventoryMarkets(tenant);
+    const moscowMarket = await prisma.market.findFirst({
+      where: { city: "Moscow", country: "RU", active: true },
+      select: { id: true, slug: true, city: true, country: true },
+    });
+    const marketsById = new Map<string, PublicMarketRow>();
+
+    if (moscowMarket) {
+      marketsById.set(moscowMarket.id, moscowMarket);
+    }
+
+    marketsFromInventory.forEach((market) => marketsById.set(market.id, market));
+
+    const markets = Array.from(marketsById.values());
+    const indicators = await prisma.marketIndicator.findMany({
+      where: {
+        published: true,
+        metric: marketInsightMetric,
+        period,
+        segment: { in: [...marketInsightCategories] },
+        marketId: { in: markets.map((market) => market.id) },
+      },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+    const indicatorByMarketAndCategory = new Map<string, (typeof indicators)[number]>();
+
+    indicators.forEach((indicator) => {
+      const key = `${indicator.marketId}:${indicator.segment}`;
+
+      if (!indicatorByMarketAndCategory.has(key)) {
+        indicatorByMarketAndCategory.set(key, indicator);
+      }
+    });
+
+    const homeMarket =
+      markets.find((market) => market.city === "Moscow" && market.country === "RU") ??
+      markets[0];
+    const updatedAt =
+      indicators.reduce<Date | null>((latest, indicator) => {
+        if (!latest || indicator.updatedAt > latest) {
+          return indicator.updatedAt;
+        }
+
+        return latest;
+      }, null)?.toISOString() ?? null;
+    const otherMarkets = markets
+      .filter((market) => market.id !== homeMarket?.id)
+      .sort((a, b) => stableMonthlyScore(`${period}:${a.slug}`) - stableMonthlyScore(`${period}:${b.slug}`))
+      .slice(0, 3);
+    const serializeMarket = (market: PublicMarketRow) => ({
+      id: market.id,
+      slug: market.slug,
+      city: market.city,
+      country: market.country,
+      indicators: Object.fromEntries(
+        marketInsightCategories.map((category) => [
+          category,
+          serializeMarketIndicator(market, category, indicatorByMarketAndCategory.get(`${market.id}:${category}`), language),
+        ]),
+      ),
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      service: serviceName,
+      tenant,
+      period,
+      updatedAt,
+      disclaimer:
+        language === "en"
+          ? "AI estimate, updated monthly. Broker verification required."
+          : "Оценка AI, обновляется ежемесячно. Требуется проверка брокером.",
+      homeMarket: homeMarket ? serializeMarket(homeMarket) : null,
+      otherMarkets: otherMarkets.map(serializeMarket),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/platform/market-insights/refresh" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const period = insightPeriod();
+    const markets = await prisma.market.findMany({
+      where: {
+        active: true,
+        propertyObjects: {
+          some: {
+            status: "published",
+            visibility: "public",
+            canBeShownByOtherOffices: true,
+          },
+        },
+      },
+      select: { id: true, slug: true, city: true, country: true },
+      orderBy: [{ country: "asc" }, { city: "asc" }],
+    });
+    const writes: Array<{ market: string; category?: MarketInsightCategory; published: boolean; value?: number | null; confidence?: string; error?: string }> = [];
+
+    for (const market of markets) {
+      let aiResult: Awaited<ReturnType<typeof generateMarketEstimateWithGemini>>;
+
+      try {
+        aiResult = await generateMarketEstimateWithGemini(market);
+      } catch (error) {
+        writes.push({
+          market: `${market.city}, ${market.country}`,
+          published: false,
+          error: error instanceof Error ? error.message : "Unknown AI refresh error",
+        });
+        continue;
+      }
+
+      const source = ["AI monthly market estimate", ...(Array.isArray(aiResult.sources) ? aiResult.sources.map((item) => String(item)).slice(0, 3) : [])].join("; ");
+
+      for (const category of marketInsightCategories) {
+        const estimate = aiResult[category];
+        const value = typeof estimate?.value === "number" && Number.isFinite(estimate.value) ? estimate.value : null;
+        const confidence = ["high", "medium", "low"].includes(String(estimate?.confidence)) ? String(estimate?.confidence) : "unsupported";
+        const published = value !== null && confidence !== "unsupported";
+
+        if (published) {
+          await prisma.marketIndicator.create({
+            data: {
+              marketId: market.id,
+              metric: marketInsightMetric,
+              segment: category,
+              value,
+              unit: "sqm",
+              currency: "USD",
+              period,
+              source,
+              confidence: confidence as never,
+              published: true,
+            },
+          });
+        }
+
+        writes.push({ market: `${market.city}, ${market.country}`, category, published, value, confidence });
+      }
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      service: serviceName,
+      period,
+      markets: markets.length,
+      writes,
+    });
     return;
   }
 

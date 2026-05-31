@@ -26,12 +26,136 @@ export type ObjectItem = {
   tagsEn?: string[];
 };
 
+export type MarketSnapshotIndicator = {
+  category: "residential" | "commercial";
+  label: string;
+  value: number | null;
+  currency: string;
+  unit: string;
+  confidence: string;
+  updatedAt: string | null;
+};
+
+export type MarketSnapshotMarket = {
+  id: string;
+  slug: string;
+  city: string;
+  country: string;
+  indicators: {
+    residential?: MarketSnapshotIndicator;
+    commercial?: MarketSnapshotIndicator;
+  };
+};
+
+export type MarketSnapshot = {
+  ok?: boolean;
+  period?: string;
+  updatedAt?: string | null;
+  disclaimer?: string;
+  homeMarket?: MarketSnapshotMarket | null;
+  otherMarkets?: MarketSnapshotMarket[];
+};
+
 type ObjectsClientProps = {
   objects: ObjectItem[];
   language: SiteLanguage;
+  marketSnapshot: MarketSnapshot | null;
 };
 
-export function ObjectsClient({ objects, language }: ObjectsClientProps) {
+function formatMarketValue(indicator?: MarketSnapshotIndicator) {
+  if (!indicator || indicator.value === null) {
+    return "—";
+  }
+
+  return `$${Math.round(indicator.value).toLocaleString("en-US")} / m²`;
+}
+
+function formatUpdatedAt(value: string | null | undefined, language: SiteLanguage) {
+  if (!value) {
+    return language === "en" ? "Monthly AI estimate" : "Ежемесячная AI-оценка";
+  }
+
+  return new Intl.DateTimeFormat(language === "en" ? "en-US" : "ru-RU", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function MarketSnapshotWidget({ snapshot, language }: { snapshot: MarketSnapshot | null; language: SiteLanguage }) {
+  const t = {
+    ru: {
+      kicker: "AI Market Snapshot",
+      updated: "Обновлено",
+      home: "Домашний рынок",
+      other: "Другие рынки",
+      residential: "Жилая",
+      commercial: "Коммерч.",
+      disclaimer: "Оценка AI, обновляется ежемесячно. Требуется проверка брокером.",
+    },
+    en: {
+      kicker: "AI Market Snapshot",
+      updated: "Updated",
+      home: "Home market",
+      other: "Other markets",
+      residential: "Residential",
+      commercial: "Commercial",
+      disclaimer: "AI estimate, updated monthly. Broker verification required.",
+    },
+  }[language];
+  const homeMarket = snapshot?.homeMarket;
+  const otherMarkets = snapshot?.otherMarkets ?? [];
+
+  return (
+    <aside className="w-full rounded-kv-main border border-kv-line bg-white p-5 shadow-sm md:max-w-[380px]">
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <div>
+          <div className="text-[12px] font-black uppercase tracking-widest text-kv-red">{t.kicker}</div>
+          <div className="mt-1 text-[13px] text-kv-muted">
+            {t.updated}: {formatUpdatedAt(snapshot?.updatedAt, language)}
+          </div>
+        </div>
+        <span className="rounded-full bg-kv-bg px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider text-kv-navy">
+          USD / m²
+        </span>
+      </div>
+
+      <div className="rounded-kv-form border border-kv-line bg-kv-bg p-4">
+        <div className="text-[12px] font-extrabold uppercase tracking-widest text-kv-muted">{t.home}</div>
+        <div className="mt-1 text-lg font-black text-kv-navy">
+          {homeMarket ? `${homeMarket.city}, ${homeMarket.country}` : "Moscow, RU"}
+        </div>
+        <div className="mt-3 grid gap-2 text-sm">
+          <div className="flex justify-between gap-3">
+            <span className="text-kv-muted">{t.residential}</span>
+            <strong className="text-kv-navy">{formatMarketValue(homeMarket?.indicators.residential)}</strong>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-kv-muted">{t.commercial}</span>
+            <strong className="text-kv-navy">{formatMarketValue(homeMarket?.indicators.commercial)}</strong>
+          </div>
+        </div>
+      </div>
+
+      {otherMarkets.length ? (
+        <div className="mt-4">
+          <div className="mb-2 text-[12px] font-extrabold uppercase tracking-widest text-kv-muted">{t.other}</div>
+          <div className="space-y-2">
+            {otherMarkets.map((market) => (
+              <div key={market.id} className="grid grid-cols-[1fr,auto] gap-3 border-b border-kv-line pb-2 text-sm last:border-b-0 last:pb-0">
+                <span className="font-bold text-kv-ink">{market.city}</span>
+                <span className="text-kv-muted">{formatMarketValue(market.indicators.residential ?? market.indicators.commercial)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <p className="mt-4 text-[12px] leading-relaxed text-kv-muted">{snapshot?.disclaimer ?? t.disclaimer}</p>
+    </aside>
+  );
+}
+
+export function ObjectsClient({ objects, language, marketSnapshot }: ObjectsClientProps) {
   const [type, setType] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
@@ -119,7 +243,7 @@ export function ObjectsClient({ objects, language }: ObjectsClientProps) {
   return (
     <section id="objects" aria-labelledby="objects-title" className="bg-white py-14">
       <div className="mx-auto max-w-kv-container px-5">
-        <div className="mb-7 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+        <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <span className="mb-2.5 block text-[13px] font-black uppercase tracking-widest text-kv-red">{t.kicker}</span>
             <h2 id="objects-title" className="max-w-3xl text-3xl font-black leading-[1.08] tracking-tight text-kv-navy md:text-5xl">
@@ -127,6 +251,7 @@ export function ObjectsClient({ objects, language }: ObjectsClientProps) {
             </h2>
             <p className="mt-4 max-w-2xl leading-relaxed text-kv-muted">{t.subtitle}</p>
           </div>
+          <MarketSnapshotWidget snapshot={marketSnapshot} language={language} />
         </div>
 
         <form id="object-filter" aria-label="Object filter" className="mb-5 rounded-kv-main border border-kv-line bg-white p-5 shadow-sm" onSubmit={handleSubmit}>

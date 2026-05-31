@@ -1,5 +1,5 @@
 import { fetchBackendJson } from "@/lib/server-api";
-import { ObjectsClient, type ObjectItem } from "./ObjectsClient";
+import { ObjectsClient, type MarketSnapshot, type ObjectItem } from "./ObjectsClient";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +27,8 @@ type PublicObjectsResponse = {
     }>;
   }>;
 };
+
+type MarketInsightsResponse = MarketSnapshot;
 
 function formatArea(object: PublicObjectsResponse["objects"][number]) {
   const area = object.areaSqm ?? object.landAreaSqm ?? object.buildingAreaSqm;
@@ -109,8 +111,17 @@ export async function getObjectItems() {
   return objects;
 }
 
-export async function Objects() {
-  const objects = await getObjectItems();
+export async function getMarketSnapshot() {
+  const response = await fetchBackendJson<MarketInsightsResponse>(
+    process.env.PUBLIC_API_BASE_URL,
+    "/api/v1/public/market-insights?tenant=kvartal&language=ru",
+  );
 
-  return <ObjectsClient objects={objects} language="ru" />;
+  return response ?? null;
+}
+
+export async function Objects() {
+  const [objects, marketSnapshot] = await Promise.all([getObjectItems(), getMarketSnapshot()]);
+
+  return <ObjectsClient objects={objects} language="ru" marketSnapshot={marketSnapshot} />;
 }

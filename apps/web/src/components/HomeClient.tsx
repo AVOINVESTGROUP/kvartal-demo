@@ -5,15 +5,16 @@ import { Features } from "@/components/Features";
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
-import { ObjectsClient, type ObjectItem } from "@/components/ObjectsClient";
+import { ObjectsClient, type MarketSnapshot, type ObjectItem } from "@/components/ObjectsClient";
 import { SiteSections } from "@/components/SiteSections";
 import type { SiteLanguage } from "./site-language";
 
 type HomeClientProps = {
   objects: ObjectItem[];
+  marketSnapshot: MarketSnapshot | null;
 };
 
-export function HomeClient({ objects }: HomeClientProps) {
+export function HomeClient({ objects, marketSnapshot }: HomeClientProps) {
   const [language, setLanguage] = useState<SiteLanguage>("ru");
 
   return (
@@ -37,7 +38,7 @@ export function HomeClient({ objects }: HomeClientProps) {
       <Header language={language} onLanguageChange={setLanguage} />
       <Hero language={language} />
       <Features language={language} />
-      <ObjectsClient objects={objects} language={language} />
+      <ObjectsClient objects={objects} language={language} marketSnapshot={marketSnapshot} />
       <SiteSections language={language} />
       <Footer language={language} />
     </main>

@@ -10,7 +10,6 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
       consult: "Запросить консультацию",
       stat1: "объектов в общей витрине",
       stat2: "объектов KVARTAL Moscow",
-      stat3: "двуязычная публичная витрина",
       formTitle: "Подобрать объект",
       formText: "Оставьте задачу, и мы свяжемся с вами по телефону +7 (977) 291-95-73.",
       name: "Ваше имя",
@@ -26,7 +25,6 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
       consult: "Request consultation",
       stat1: "objects in public inventory",
       stat2: "KVARTAL Moscow objects",
-      stat3: "bilingual public inventory",
       formTitle: "Select a property",
       formText: "Leave your task and we will contact you by phone: +7 (977) 291-95-73.",
       name: "Your name",
@@ -62,7 +60,7 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
             </a>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
               <span className="block text-2xl font-black text-white">9</span>
               <span className="mt-1 block text-[13px] text-white/68">{t.stat1}</span>
@@ -70,10 +68,6 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
             <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
               <span className="block text-2xl font-black text-white">5</span>
               <span className="mt-1 block text-[13px] text-white/68">{t.stat2}</span>
-            </div>
-            <div className="rounded-kv-form border border-white/12 bg-white/6 p-3.5">
-              <span className="block text-2xl font-black text-white">RU / EN</span>
-              <span className="mt-1 block text-[13px] text-white/68">{t.stat3}</span>
             </div>
           </div>
 
