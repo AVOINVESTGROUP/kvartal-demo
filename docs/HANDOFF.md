@@ -248,3 +248,12 @@ Implementation rules:
 - use admin media proxy routes for draft/private media preview;
 - use public media proxy routes for public showcase media;
 - keep Cloud Storage private and serve media through controlled API/proxy endpoints.
+
+Latest media state on 2026-05-31:
+
+- `partner-admin-dev` rollout `rollout-2026-05-31-004` is live from commit `5ddecec`;
+- object media gallery controls are implemented in `apps/partner-admin`;
+- media cover selection is implemented through `PATCH /api/v1/admin/media/{mediaId}` with `action=set_cover`;
+- media deletion is implemented through `DELETE /api/v1/admin/media/{mediaId}`;
+- the card/showcase cover is the media row with `sortOrder = 0`;
+- the Apart4u test object now has uploaded GCS media `a680b643-ed7f-4088-90e4-cfdf754b067e` as its first/cover media.

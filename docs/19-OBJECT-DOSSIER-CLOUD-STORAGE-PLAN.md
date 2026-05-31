@@ -77,6 +77,11 @@ Admin upload endpoints:
 - `POST /api/v1/admin/objects/{id}/media/upload-url`
 - `POST /api/v1/admin/objects/{id}/media/confirm`
 
+Admin media management endpoints:
+
+- `PATCH /api/v1/admin/media/{mediaId}` with `action=set_cover`;
+- `DELETE /api/v1/admin/media/{mediaId}`.
+
 Media delivery endpoints:
 
 - `GET /api/v1/public/media/{mediaId}`
@@ -101,6 +106,13 @@ Object serializers:
 - legacy media returns existing `url`;
 - consumers must not receive `media.url = null`.
 
+Cover image rule:
+
+- the media item with `sortOrder = 0` is the card/showcase cover;
+- when a newly uploaded item is marked `makeCover`, existing media for the object move behind it;
+- if the cover is deleted, the API promotes the next available media item to `sortOrder = 0`;
+- legacy URL media remains supported but should not block a newly selected GCS cover.
+
 ## Upload Flow
 
 1. Admin UI asks backend for V4 signed upload URL.
@@ -111,6 +123,8 @@ Object serializers:
 6. Backend reads GCS metadata, size, content type, and `md5Hash`.
 7. Backend rejects invalid files, deletes failed uploads, and does not create active DB media.
 8. Backend creates `PropertyMedia` with `storagePath` and metadata.
+9. Admin UI refreshes the object list and shows the uploaded media in the object card/gallery.
+10. Admin can set any image as the cover or delete obsolete media.
 
 File limits:
 
@@ -178,9 +192,10 @@ All code changes go through Git. Firebase/App Hosting rollouts are created from 
 - New GCS media with `url = null` in DB renders through computed `media.url`.
 - Draft/private media is visible in admin endpoint.
 - Draft/private media is blocked from public endpoint.
+- Admin can select the cover image for a card/showcase.
+- Admin can delete image/video/document media from the object gallery.
 - Browser upload works from partner-admin domain without CORS error.
 - Signed URL generation works in Cloud Run without service account key.
 - Oversized or invalid files are rejected and cleaned up.
 - API/admin/site builds pass.
 - Migration runs before deploy.
-

@@ -560,3 +560,26 @@
   - `https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app/login`
   - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u`
   - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app`
+
+## Partner Admin Media Gallery Fix (2026-05-31)
+
+- Added object media gallery controls to the shared `partner-admin`:
+  - uploaded media appears in the object card/gallery;
+  - admins can mark one media item as the cover image for the card/showcase;
+  - admins can delete image/video/document media from an object.
+- API behavior:
+  - cover media is represented by `sortOrder = 0`;
+  - `PATCH /api/v1/admin/media/{mediaId}` supports `action=set_cover`;
+  - `DELETE /api/v1/admin/media/{mediaId}` removes the DB media row and deletes the GCS object when applicable;
+  - if a deleted media item was the cover, the API promotes the next available media item.
+- Deployed `kvartal-office-api` revision:
+  - `kvartal-office-api-00016-c7s`
+- Committed and pushed:
+  - `5ddecec feat: manage property media gallery`
+- Rolled out `partner-admin-dev` from Git:
+  - build: `build-2026-05-31-004`
+  - rollout: `rollout-2026-05-31-004`
+  - rollout state: `SUCCEEDED`
+- Verified:
+  - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` -> `200`
+  - Apart4u first media item is now GCS-backed admin media with `sortOrder = 0`.
