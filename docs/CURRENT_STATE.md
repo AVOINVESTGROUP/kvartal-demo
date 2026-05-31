@@ -469,3 +469,33 @@
     - `kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app`
 - Verified by reading Firebase Auth config back from `identitytoolkit.googleapis.com`.
 - Verified `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` returns `200`.
+
+## Partner Admin Tenant Resolution Fix (2026-05-31)
+
+- Verified live platform access for `abtiurin@gmail.com`:
+  - organization membership: `kvartal-moscow`
+  - role: `organization_owner`
+  - no platform role required for partner admin access.
+- Root cause of wrong tenant behavior:
+  - `apps/partner-admin` used `PARTNER_ORGANIZATION_SLUG=apart4u-tbilisi` as the active tenant even after Google login.
+  - the main admin page loaded data from the env tenant instead of the authenticated user's session tenant.
+  - server actions trusted hidden form `organizationSlug` values instead of enforcing the session organization.
+- Fixed in `apps/partner-admin`:
+  - login session now resolves organization from PostgreSQL membership returned by `platform-api`;
+  - if a user has one organization membership, that organization is used;
+  - if a user has several memberships, the configured env organization is only a temporary preference until an organization switcher exists;
+  - page data loads from `session.organizationSlug`;
+  - create/update/publish/member/visibility actions use `session.organizationSlug`, not form-provided organization scope.
+- Verified build before rollout:
+  - `pnpm exec turbo build --force`
+  - result: `10 successful, 10 total`.
+- Committed and pushed:
+  - `c58aeb6 fix: resolve partner admin tenant from user membership`
+- Rolled out `partner-admin-dev` from Git:
+  - build: `build-2026-05-31-002`
+  - source commit: `c58aeb6bebfd4249081a3ffae1e36312f736f82d`
+  - rollout: `rollout-2026-05-31-002`
+  - rollout state: `SUCCEEDED`
+- Verified live URLs:
+  - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` -> `200`
+  - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app` -> `200`

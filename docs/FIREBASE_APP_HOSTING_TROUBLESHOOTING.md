@@ -423,3 +423,43 @@ Expected list includes:
 ```text
 partner-admin-dev--kvartal-dev.europe-west4.hosted.app
 ```
+
+## 2026-05-31: Partner Admin Opened the Env Tenant Instead of the Logged-In User Organization
+
+### Symptoms
+
+- A KVARTAL-authorized user could sign in to the shared partner admin.
+- The admin still risked opening the env-configured tenant `apart4u-tbilisi` instead of `kvartal-moscow`.
+
+### Root Cause
+
+`apps/partner-admin` used `PARTNER_ORGANIZATION_SLUG` as the active organization after login. That was wrong for a shared multi-tenant admin. The authenticated Google account must determine the organization through PostgreSQL membership returned by `platform-api`.
+
+The main admin page also loaded data from the env organization instead of the session organization. Server actions accepted hidden `organizationSlug` values from forms.
+
+### Fix Used
+
+- `getOrganizationAccess` now resolves the organization from the user's membership list.
+- For a user with exactly one membership, that membership wins over env fallback.
+- The admin page now loads data using `session.organizationSlug`.
+- Server actions now submit `session.organizationSlug` to the backend instead of trusting hidden form fields.
+
+### Verification
+
+Check access for a known KVARTAL owner:
+
+```powershell
+$token = gcloud auth print-identity-token
+Invoke-RestMethod `
+  -Headers @{Authorization="Bearer $token"} `
+  -Uri "https://kvartal-platform-api-544286782827.europe-west4.run.app/api/v1/platform/access?email=abtiurin%40gmail.com&displayName=Abtiurin"
+```
+
+Expected membership:
+
+```text
+organizationSlug = kvartal-moscow
+roles = organization_owner
+```
+
+The user must log out and log in again after the fix so the `partner_admin_session` cookie is recreated with the correct `organizationSlug`.
