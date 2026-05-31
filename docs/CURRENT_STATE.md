@@ -422,3 +422,12 @@
 - Added `docs/archived/superseded/README.md` with archive reasons and an encoding verification rule.
 - Updated active document references to use the master architecture, current partner-network architecture, and implementation plan.
 - Added a documentation process rule: do not claim a file has broken encoding based only on terminal output; verify the file itself first.
+
+## Multi-Tenant Partner Admin Clarification (2026-05-31)
+
+- Confirmed the target architecture: one shared `apps/partner-admin` for all partner organizations, not separate duplicated admin applications.
+- `apps/kvartal-admin` remains a working KVARTAL baseline/migration implementation, but it must not become the long-term pattern for every organization.
+- Partner admin tenant context must be resolved through Firebase Google Auth plus PostgreSQL users, memberships, roles, organization context, office context, and object-level permissions.
+- Property card public text is stored as localization data (`PropertyObjectLocalization`) with required `ru/en` and organization-specific third language support.
+- Website-level hiding of individual partner objects is stored as `SiteObjectVisibilityOverride`; it does not unpublish the canonical object globally.
+- Updated `docs/00-MASTER-ARCHITECTURE.md`, `docs/02-DATA-MODEL.md`, and `docs/03-API-CONTRACTS.md` to make this the implementation direction.

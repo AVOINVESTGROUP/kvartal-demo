@@ -128,6 +128,42 @@ It must manage:
 
 Current note: `apps/kvartal-admin` is a working organization-admin implementation for KVARTAL Moscow. It should be used as the functional baseline for the shared `partner-admin`.
 
+#### Shared Multi-Tenant Partner Admin
+
+The partner admin must be one shared multi-tenant application, not a separate admin app per partner organization.
+
+When a user signs in with Google, the backend resolves:
+
+- Firebase Auth identity;
+- platform user record;
+- active organization membership;
+- active office membership where needed;
+- role family and permissions;
+- allowed objects, leads, documents, and deal rooms;
+- website-level partner object visibility overrides.
+
+The same `partner-admin` codebase serves KVARTAL, Apart4u, Dubai, Yerevan, and future partner organizations. What changes is the authenticated tenant context and permission scope, not the application code.
+
+This is the required update model:
+
+```text
+One partner-admin codebase
+  -> many organizations
+  -> scoped data by organization/office/user role
+  -> synchronized feature updates for all organizations
+```
+
+This is the forbidden update model:
+
+```text
+Separate KVARTAL admin
+Separate Apart4u admin
+Separate Dubai admin
+Separate Yerevan admin
+```
+
+Dedicated organization admin apps may exist only as temporary migration/baseline implementations. They must not become the long-term architecture.
+
 ### Partner Public Site
 
 `apps/partner-site` is the multi-tenant public site engine.
@@ -221,6 +257,36 @@ Examples:
 Partner admin must support editing public content for all supported organization languages. The admin interface itself may initially remain Russian.
 
 Public partner sites build their language switcher from the tenant/site config and use configured fallback rules when object localization is missing.
+
+Property card text is multilingual data, not separate frontend code. The canonical model is:
+
+```text
+PropertyObject
+  stable non-language fields
+
+PropertyObjectLocalization
+  propertyObjectId
+  language
+  title
+  description
+  addressDisplay
+  tags
+  priceDisplay
+```
+
+The object editor in `partner-admin` should use language tabs:
+
+```text
+[RU] [EN] [ORG THIRD LANGUAGE]
+```
+
+Fallback rule for public sites:
+
+```text
+requested language -> organization third language -> en -> ru
+```
+
+The admin interface language and object content languages are separate concerns. Keeping the admin UI Russian does not prevent each organization from managing public cards in three languages.
 
 ## 9. Data and Backend Architecture
 
@@ -380,11 +446,12 @@ Implementation output:
 Near-term priorities:
 
 1. Keep documentation aligned around this master architecture.
-2. Consolidate organization admin behavior so KVARTAL and Apart4u use the same partner-admin code path.
-3. Implement Apart4u public site from `C:\Dev\Apart4U\apart.html` and `Apart4Upic.jpeg`.
-4. Add three-language public site support: `ru`, `en`, and organization third language.
-5. Add three-language object content editing in partner admin.
-6. Continue AI property intake and deal room implementation only after data ownership and partner-site/admin factory boundaries stay correct.
+2. Consolidate organization admin behavior so KVARTAL and Apart4u use the same multi-tenant `partner-admin` code path.
+3. Keep object localization in `PropertyObjectLocalization` and expose language tabs in partner admin.
+4. Keep website-level object hiding in `SiteObjectVisibilityOverride`.
+5. Implement Apart4u public site from `C:\Dev\Apart4U\apart.html` and `Apart4Upic.jpeg` using shared site modules.
+6. Add three-language public site support: `ru`, `en`, and organization third language.
+7. Continue AI property intake and deal room implementation only after data ownership and partner-site/admin factory boundaries stay correct.
 
 ## 17. Non-Negotiable Rules
 
@@ -398,6 +465,8 @@ Near-term priorities:
 - Public showcase data is a safe subset only.
 - Private legal, lead, AI conflict, and economic data is not public by default.
 - Admin access uses Google/Firebase Auth plus PostgreSQL roles.
+- Partner admin is one shared multi-tenant application, not one app per partner organization.
+- Property card translations are data records, not duplicated frontend implementations.
 - PostgreSQL/Cloud SQL is the transactional SSOT.
 - Firebase App Hosting is primary frontend hosting.
 - Cloud Run APIs own backend writes.

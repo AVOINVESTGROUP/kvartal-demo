@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This document describes API and data access contracts for the KVARTAL multi-office platform.
+This document describes API and data access contracts for the Fixer.guru-owned partner-network platform.
 
 Stage 3 uses two dedicated Cloud Run backend API boundaries over PostgreSQL. Contracts define the stable product boundary for the platform control plane and office/public operations.
 
@@ -18,9 +18,11 @@ Stage 3 uses two dedicated Cloud Run backend API boundaries over PostgreSQL. Con
 - Authorization: PostgreSQL-backed platform role, organization membership, office membership, object ownership, deal-room participation.
 - Validation: schema-level validation before writes.
 - Audit: privileged mutations should create audit log entries.
-- SSOT: KVARTAL owns objects, leads, deal rooms, and office data.
+- SSOT: PostgreSQL owns platform objects, leads, deal rooms, memberships, and site visibility state.
+- Data rights: contributing organizations remain information rights holders for their private object/document data.
 - CRM integration is one-way outbound only if added later.
 - Runtime: dedicated Cloud Run services, not Next.js route handlers.
+- Partner admin: one shared multi-tenant admin application; tenant context is resolved by backend auth context.
 
 ## 2.1 Backend Service Boundaries
 
@@ -49,7 +51,9 @@ platform_viewer for read-only views where explicitly allowed
 
 ### `office-api`
 
-Office operations and local public workflows.
+Current service name for partner organization operations and local public workflows.
+
+Target terminology is `partner-api` for organization admin workflows and `public-api` for public site reads/intake when the boundary is split. Until then, `office-api` must still enforce organization and office tenancy.
 
 Owns:
 
@@ -141,9 +145,19 @@ Rules:
 ```text
 status == "published"
 visibility == "public"
+canBeShownByOtherOffices == true for cross-organization display
+not hidden by SiteObjectVisibilityOverride for the requesting site organization
+```
+
+Localization rule:
+
+```text
+language query -> site default language -> organization third language -> en -> ru
 ```
 
 Response:
+
+Returned object text should be resolved to the requested language/fallback language before it is sent to public sites. Public clients should not have to merge localization records themselves.
 
 ```json
 {
@@ -259,9 +273,11 @@ List office subscription states.
 
 Stage 3 may return placeholders until billing is implemented.
 
-## 6. Office Admin Endpoints
+## 6. Partner Admin Endpoints
 
-Office Admin is for connected firms.
+Partner Admin is for connected partner organizations.
+
+`apps/partner-admin` must be one shared multi-tenant app. The backend returns tenant context after Firebase Auth verification and PostgreSQL membership lookup.
 
 ### GET `/api/v1/admin/context`
 
@@ -275,7 +291,9 @@ Response:
   "organizations": [
     {
       "organizationId": "org_moscow",
-      "roles": ["organization_owner"]
+      "roles": ["organization_owner"],
+      "supportedLanguages": ["ru", "en"],
+      "thirdLanguage": null
     }
   ],
   "offices": [
@@ -287,7 +305,8 @@ Response:
   ],
   "activeOrganizationId": "org_moscow",
   "activeOfficeId": "office_moscow",
-  "platformRoles": []
+  "platformRoles": [],
+  "adminInterfaceLanguage": "ru"
 }
 ```
 
@@ -301,12 +320,15 @@ Query:
 officeId: string
 status?: draft | published | archived
 visibility?: private | office_network | public
+includePartnerObjects?: boolean
 ```
 
 Regular office users can list:
 
 - objects owned by their office;
 - network/public objects visible to their office.
+
+Partner objects returned for site visibility management must include whether they are hidden for the active organization website.
 
 ### POST `/api/v1/admin/objects`
 
@@ -382,6 +404,42 @@ Publish object.
 ### POST `/api/v1/admin/objects/{id}/archive`
 
 Archive object.
+
+### GET `/api/v1/admin/site-object-visibility-overrides`
+
+List object-level website visibility overrides for the active organization.
+
+Query:
+
+```text
+propertyObjectId?: string
+hidden?: boolean
+```
+
+Rules:
+
+- organization owner/admin may read overrides for the active organization;
+- platform admin may inspect with audit policy;
+- overrides affect only the active organization's public site display.
+
+### PUT `/api/v1/admin/site-object-visibility-overrides/{propertyObjectId}`
+
+Hide or show one partner object on the active organization's public site.
+
+Request:
+
+```json
+{
+  "hidden": true
+}
+```
+
+Rules:
+
+- only active organization owner/admin can mutate its own site override;
+- object owner organization cannot use this endpoint to unpublish globally;
+- hiding an object here does not change `PropertyObject.status`, `PropertyObject.visibility`, or information ownership;
+- every mutation should write an audit log.
 
 ### Legal document endpoints
 
@@ -565,7 +623,7 @@ HTTP mapping:
 Stage 3 may implement these contracts as:
 
 - `apps/platform-api` deployed to Cloud Run;
-- `apps/office-api` deployed to Cloud Run;
+- current `apps/office-api` deployed to Cloud Run, with target terminology moving toward `partner-api` / `public-api`;
 - shared Prisma/domain/auth packages used only on trusted backend sides.
 
 Do not implement Stage 3 backend contracts as Next.js route handlers. Public and admin components should call the relevant Cloud Run API through a frontend repository/client layer.

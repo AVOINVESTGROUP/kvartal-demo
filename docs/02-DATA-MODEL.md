@@ -8,12 +8,12 @@
 
 ## 1. Purpose
 
-This document defines the core data model for KVARTAL as a developer-owned multi-office real estate platform.
+This document defines the core data model for the Fixer.guru-owned partner-network real estate platform.
 
 The model must support:
 
-- multiple connected offices;
 - multiple independent organizations/legal entities;
+- one or more offices/branches inside each organization;
 - organization-specific administrative structures;
 - separate local websites;
 - one shared property SSOT;
@@ -56,6 +56,9 @@ CRM may receive leads or deal updates later, but CRM must not become the source 
 - Investment claims require source, date, and confidence.
 - AI may draft property records from unstructured data, but confirmed SSOT writes require human review and backend validation.
 - AI/open-source checks may support актуальность and plausibility verification, but they do not replace legal due diligence.
+- Partner admin is a shared multi-tenant application; tenant access is resolved from user memberships and roles.
+- Public property text must be stored as localization records, not as duplicated objects or duplicated frontend code.
+- A partner organization may hide individual partner objects from its own public site without changing the canonical object publication state.
 
 ## 4. Common Types
 
@@ -102,6 +105,7 @@ type Organization = {
   operatingCountryCodes: string[];
   defaultLanguage: LanguageCode;
   supportedLanguages: LanguageCode[];
+  thirdLanguage?: LanguageCode;
   defaultCurrency: CurrencyCode;
   supportedCurrencies: CurrencyCode[];
   status: "draft" | "active" | "suspended" | "archived";
@@ -112,6 +116,13 @@ type Organization = {
 ```
 
 Initial organizations may map 1:1 to the first offices, but the schema must not assume that permanently.
+
+Language rule:
+
+```text
+supportedLanguages must include ru and en.
+thirdLanguage is the organization-specific public language where configured.
+```
 
 ## 6. Office
 
@@ -253,9 +264,27 @@ type SiteConfig = {
   supportedCurrencies: CurrencyCode[];
   primaryMarketIds: string[];
   brandName: LocalizedText;
+  showPartnerObjects: boolean;
   contactEmail?: string;
   contactPhone?: string;
   active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+### Site Object Visibility Override
+
+Represents a website-owning organization's decision to hide one eligible partner object from its own public site.
+
+This does not unpublish the object globally and does not edit the owner organization's primary object data.
+
+```ts
+type SiteObjectVisibilityOverride = {
+  id: string;
+  organizationId: string;
+  propertyObjectId: string;
+  hidden: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -309,9 +338,6 @@ type PropertyObject = {
   status: "draft" | "published" | "archived";
   visibility: "private" | "office_network" | "public";
 
-  title: LocalizedText;
-  description?: LocalizedText;
-  addressDisplay: LocalizedText;
   addressPrivate?: string;
 
   assetClass: AssetClass;
@@ -329,9 +355,9 @@ type PropertyObject = {
   cadastralNumber?: string;
   price: Price;
 
-  tags: LocalizedText[];
   imageUrls: string[];
   documentRefs?: string[];
+  localizations: PropertyObjectLocalization[];
 
   representation: {
     side: "owner" | "seller" | "landlord" | "originator";
@@ -349,6 +375,35 @@ type PropertyObject = {
   updatedAt: string;
   publishedAt?: string;
 };
+```
+
+Public text fields for property cards live in localization records:
+
+```ts
+type PropertyObjectLocalization = {
+  id: string;
+  propertyObjectId: string;
+  language: LanguageCode;
+  title: string;
+  description?: string;
+  addressDisplay: string;
+  tags: string[];
+  priceDisplay?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+```
+
+Partner admin should edit property public text through language tabs:
+
+```text
+[RU] [EN] [ORG THIRD LANGUAGE]
+```
+
+Fallback rule for public sites:
+
+```text
+requested language -> organization third language -> en -> ru
 ```
 
 ### Property Extension Model
@@ -824,6 +879,7 @@ app_users
 organization_memberships
 office_memberships
 site_configs
+site_object_visibility_overrides
 property_objects
 property_object_localizations
 property_object_components

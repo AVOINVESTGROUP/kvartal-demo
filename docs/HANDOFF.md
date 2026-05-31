@@ -228,11 +228,10 @@ Do:
 - use the master architecture as the first document to read;
 - record recurring issues in the troubleshooting and mistakes logs.
 
-## 9. Current Pause Point
+## 9. Current Continuation Point
 
-The user is pausing to think about whether the admin/site architecture is correct.
+The architecture decision is confirmed:
 
-The current conclusion is:
+The project should not be rewritten into separate admin apps. It should be clarified and reinforced around one shared multi-tenant `partner-admin`, plus separate branded partner sites using shared modules.
 
-The architecture should not be rewritten into separate admin apps. It should be clarified and reinforced around one shared multi-tenant `partner-admin`, plus separate branded partner sites using shared modules.
-
+On 2026-05-31 the master architecture, data model, API contracts, and current state were updated to reflect this decision. The next implementation work should move the running admin code toward that shared tenant-scoped model.
