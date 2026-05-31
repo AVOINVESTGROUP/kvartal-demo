@@ -60,6 +60,14 @@ type AccessOfficeMembership = {
   office: { slug: string; legalName: string };
 };
 
+type AccessMemberRow = {
+  email: string;
+  displayName: string | null;
+  active: boolean;
+  platformRoleAssignments: AccessPlatformRoleAssignment[];
+  organizationMemberships: AccessOrganizationMembership[];
+};
+
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
@@ -336,7 +344,7 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 200, {
       ok: true,
-      members: users.map((user) => ({
+      members: (users as AccessMemberRow[]).map((user) => ({
         email: user.email,
         displayName: user.displayName,
         active: user.active,
