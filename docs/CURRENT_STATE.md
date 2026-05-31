@@ -452,3 +452,20 @@
   - unauthenticated `/` redirects with `307`
   - `https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app` -> `200`
 - Important lesson: `partner-admin-dev` did not automatically roll out the May 31 Git commit. Future agents must verify the target App Hosting backend rollout, not only the Git push or another backend's build status.
+
+## Firebase Auth Authorized Domain Fix (2026-05-31)
+
+- Symptom on `partner-admin-dev` login page:
+  - `Firebase: Error (auth/unauthorized-domain).`
+- Root cause:
+  - `partner-admin-dev--kvartal-dev.europe-west4.hosted.app` was missing from Firebase Authentication Authorized domains.
+- Fixed in Firebase Auth config for project `kvartal-dev` through Identity Toolkit admin API:
+  - added `partner-admin-dev--kvartal-dev.europe-west4.hosted.app`
+  - preserved existing authorized domains:
+    - `localhost`
+    - `kvartal-dev.firebaseapp.com`
+    - `kvartal-dev.web.app`
+    - `fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app`
+    - `kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app`
+- Verified by reading Firebase Auth config back from `identitytoolkit.googleapis.com`.
+- Verified `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` returns `200`.

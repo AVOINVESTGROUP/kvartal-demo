@@ -358,3 +358,68 @@ Expected:
 - login HTML contains `FIXER.GURU PARTNER ADMIN`.
 - unauthenticated `/` redirects to `/login`.
 - `kvartal-web-dev` still returns `200`.
+
+## 2026-05-31: Partner Admin Google Login `auth/unauthorized-domain`
+
+### Symptoms
+
+- `partner-admin-dev` login page loaded.
+- Clicking Google login failed with:
+
+```text
+Firebase: Error (auth/unauthorized-domain).
+```
+
+### Root Cause
+
+The App Hosting domain was not listed in Firebase Authentication Authorized domains:
+
+```text
+partner-admin-dev--kvartal-dev.europe-west4.hosted.app
+```
+
+### Fix Used
+
+Read and patch Firebase Auth project config through the Identity Toolkit admin API. The API requires the quota project header:
+
+```powershell
+$access = gcloud auth print-access-token
+$headers = @{
+  Authorization = "Bearer $access"
+  "x-goog-user-project" = "kvartal-dev"
+  "Content-Type" = "application/json"
+}
+
+$config = Invoke-RestMethod `
+  -Headers $headers `
+  -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/kvartal-dev/config"
+
+$domains = @($config.authorizedDomains)
+$newDomain = "partner-admin-dev--kvartal-dev.europe-west4.hosted.app"
+if ($domains -notcontains $newDomain) { $domains += $newDomain }
+
+$body = @{ authorizedDomains = $domains } | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Method Patch `
+  -Headers $headers `
+  -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/kvartal-dev/config?updateMask=authorizedDomains" `
+  -Body $body
+```
+
+### Verification
+
+Read the config back and confirm the domain is present:
+
+```powershell
+$config = Invoke-RestMethod `
+  -Headers @{Authorization="Bearer $access"; "x-goog-user-project"="kvartal-dev"} `
+  -Uri "https://identitytoolkit.googleapis.com/admin/v2/projects/kvartal-dev/config"
+
+$config.authorizedDomains | Sort-Object
+```
+
+Expected list includes:
+
+```text
+partner-admin-dev--kvartal-dev.europe-west4.hosted.app
+```

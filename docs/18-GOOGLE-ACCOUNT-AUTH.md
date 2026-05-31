@@ -42,6 +42,8 @@ In project `kvartal-dev`, not `capital-index-2026`:
 3. Authentication -> Settings -> Authorized domains.
 4. Add:
    - `fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app`
+   - `partner-admin-dev--kvartal-dev.europe-west4.hosted.app`
+   - `kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app`
    - `kvartal-dev.firebaseapp.com`
 
 If Firebase Auth is in test mode, add test users:
@@ -72,3 +74,13 @@ The server session still needs a cookie signing secret:
 4. Platform API checks the Gmail in PostgreSQL.
 5. If the Gmail is in `FIXER_PLATFORM_OWNER_EMAILS`, the API bootstraps `platform_owner`.
 6. Owner adds partner organization owners and Fixer.guru team members by Gmail.
+
+## 2026-05-31 Partner Admin Domain Fix
+
+`partner-admin-dev--kvartal-dev.europe-west4.hosted.app` was added to Firebase Auth Authorized domains after the partner admin login page returned:
+
+```text
+Firebase: Error (auth/unauthorized-domain).
+```
+
+The config was updated through the official Identity Toolkit admin API with `updateMask=authorizedDomains` and verified by reading the project config back from `kvartal-dev`.
