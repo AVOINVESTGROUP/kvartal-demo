@@ -659,7 +659,9 @@ const server = createServer(async (request, response) => {
       FROM "SiteObjectVisibilityOverride"
       WHERE "organizationId" = ${organization.id}
     `;
-    const hiddenByObjectId = new Map(visibilityOverrides.map((override) => [override.propertyObjectId, override.hidden]));
+    const hiddenByObjectId = new Map(
+      visibilityOverrides.map((override: { propertyObjectId: string; hidden: boolean }) => [override.propertyObjectId, override.hidden]),
+    );
 
     sendJson(response, 200, {
       ok: true,
