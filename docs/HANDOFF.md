@@ -257,3 +257,28 @@ Latest media state on 2026-05-31:
 - media deletion is implemented through `DELETE /api/v1/admin/media/{mediaId}`;
 - the card/showcase cover is the media row with `sortOrder = 0`;
 - the Apart4u test object now has uploaded GCS media `a680b643-ed7f-4088-90e4-cfdf754b067e` as its first/cover media.
+
+## 11. Apart4u Site Continuation
+
+The Apart4u partner site was reworked on 2026-05-31 inside the shared `apps/partner-site` factory.
+
+Current state:
+
+- approved visual reference: `https://avoinvestgroup.github.io/apart4u/`;
+- implementation module: `apps/partner-site/src/components/Apart4uSite.tsx`;
+- shared tenant route: `apps/partner-site/src/app/[tenant]/page.tsx`;
+- default site route: `apps/partner-site/src/app/page.tsx`;
+- tenant config: `apps/partner-site/src/tenants/apart4u/config.ts`;
+- hero asset: `apps/partner-site/public/apart4u/Apart4Upic.jpeg`;
+- live dev URL: `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u`;
+- latest rollout: `rollout-2026-05-31-apart4u-001`;
+- latest implementation commit: `bfff2a9 feat: apply apart4u partner site design`.
+
+Rules for next partner sites:
+
+- do not copy a standalone HTML site into production;
+- keep one `apps/partner-site` factory;
+- add a tenant config and tenant-specific front module only where brand/design differs;
+- keep public object cards connected to Cloud Run public inventory;
+- use `media.sortOrder = 0` as the cover image;
+- keep `ru/en` plus one organization language, e.g. Apart4u uses Georgian shown as `GE` and stored internally as `ka`.

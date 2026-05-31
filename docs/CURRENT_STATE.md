@@ -583,3 +583,31 @@
 - Verified:
   - `https://partner-admin-dev--kvartal-dev.europe-west4.hosted.app/login` -> `200`
   - Apart4u first media item is now GCS-backed admin media with `sortOrder = 0`.
+
+## Apart4u Partner Site Design Rollout (2026-05-31)
+
+- Reworked `apps/partner-site` Apart4u tenant front page using the approved GitHub Pages reference:
+  - `https://avoinvestgroup.github.io/apart4u/`
+- Preserved the partner-site factory model:
+  - no separate standalone HTML site;
+  - Apart4u is implemented as a tenant-specific module inside `apps/partner-site`;
+  - public objects still load from the Cloud Run/PostgreSQL shared public inventory.
+- Added live Apart4u site features:
+  - dark/gold Apart4u hero using `Apart4Upic.jpeg`;
+  - RU / EN / GE language switcher (`ka` internally for Georgian);
+  - sections for objects, investments, services, about, process, testimonials, contacts;
+  - public object cards with cover media from API `media.sortOrder = 0`;
+  - filters for object type, market, and country;
+  - object detail modal.
+- Verified locally:
+  - `pnpm --filter partner-site build` passed;
+  - `pnpm --filter partner-site lint` passed with only `next/no-img-element` warnings.
+- Committed and pushed:
+  - `bfff2a9 feat: apply apart4u partner site design`
+- Rolled out `partner-site-dev` from Git:
+  - build: `build-2026-05-31-apart4u-001`
+  - rollout: `rollout-2026-05-31-apart4u-001`
+  - rollout state: `SUCCEEDED`
+- Verified live URLs:
+  - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/` -> `200`
+  - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u` -> `200`
