@@ -234,7 +234,9 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
     <main className="apart-site">
       <header className="apart-header">
         <a className="apart-brand" href="#hero" aria-label="Apart4U home">
-          <span className="apart-brand-mark">A4U</span>
+          <span className="apart-brand-mark">
+            <img src="/apart4u/favicon.png" alt="" />
+          </span>
           <span>
             Apart<span>4U</span>
           </span>
@@ -262,13 +264,15 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
       </header>
 
       <section className="apart-hero apart-section" id="hero">
-        <img className="apart-hero-bg" src={tenant.heroImage ?? "/apart4u/Apart4Upic.jpeg"} alt="Apart4U Tbilisi" />
+        <img className="apart-hero-bg" src={tenant.heroImage ?? "/apart4u/hero-tbilisi.png"} alt="Apart4U Tbilisi" />
         <div className="apart-hero-overlay" />
         <div className="apart-hero-panel" />
         <div className="apart-hero-content">
           <p className="apart-eyebrow">APARTMENTS&nbsp;&nbsp; INVESTMENTS&nbsp;&nbsp; REAL SOLUTIONS</p>
           <div className="apart-gold-line" />
-          <div className="apart-logo-large">Apart4U</div>
+          <div className="apart-logo-large">
+            <img src="/apart4u/logo-wide.png" alt="Apart4U Real Estate Agency" />
+          </div>
           <h1>
             Apart<span>4U</span>
           </h1>
@@ -511,7 +515,9 @@ export function Apart4uSite({ tenant, inventory }: Apart4uSiteProps) {
 
       <footer className="apart-footer">
         <div className="apart-brand">
-          <span className="apart-brand-mark">A4U</span>
+          <span className="apart-brand-mark">
+            <img src="/apart4u/favicon.png" alt="" />
+          </span>
           <span>
             Apart<span>4U</span>
           </span>

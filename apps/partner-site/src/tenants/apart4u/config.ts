@@ -9,7 +9,7 @@ export const apart4uTenant: PartnerTenantConfig = {
   domainLabel: "apart4u.co",
   accentLabel: "Apartments / Investments / Real Solutions",
   tagline: "Buyer-side real estate representation in Tbilisi with access to the Fixer.guru partner network.",
-  heroImage: "/apart4u/Apart4Upic.jpeg",
+  heroImage: "/apart4u/hero-tbilisi.png",
   strengths: ["Premium properties", "Buyer-side representation", "Shared public inventory"],
   inventory: [
     {
