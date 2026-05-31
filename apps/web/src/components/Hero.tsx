@@ -43,7 +43,7 @@ export const Hero = ({ language }: { language: SiteLanguage }) => {
             {t.kicker}
           </div>
 
-          <h1 className="max-w-[700px] text-[28px] font-black leading-[1.06] tracking-0 min-[420px]:text-[34px] sm:text-[54px] sm:leading-[0.98] lg:text-[64px] xl:text-[72px]">
+          <h1 className="max-w-[700px] text-[24px] font-black leading-[1.08] tracking-0 min-[420px]:text-[28px] sm:text-[36px] sm:leading-[1.02] lg:text-[43px] xl:text-[48px]">
             {t.title}
           </h1>
 
