@@ -128,6 +128,10 @@ function resolveMediaUrl(url: string | undefined) {
     return null;
   }
 
+  if (url.startsWith("/api/")) {
+    return url;
+  }
+
   if (url.startsWith("http://") || url.startsWith("https://")) {
     return url;
   }
