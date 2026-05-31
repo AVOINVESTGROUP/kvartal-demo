@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import type { SiteLanguage } from "./site-language";
 
@@ -155,6 +155,66 @@ function MarketSnapshotWidget({ snapshot, language }: { snapshot: MarketSnapshot
   );
 }
 
+function tickerValue(indicator?: MarketSnapshotIndicator) {
+  if (!indicator || indicator.value === null) {
+    return null;
+  }
+
+  return `${Math.round(indicator.value).toLocaleString("en-US")} $/кв.м`;
+}
+
+function tickerIndicator(market?: MarketSnapshotMarket | null) {
+  return market?.indicators.residential ?? market?.indicators.commercial;
+}
+
+function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot | null; language: SiteLanguage }) {
+  const labels =
+    language === "en"
+      ? { title: "AI market estimate", pending: "data pending", updated: "updated monthly" }
+      : { title: "AI оценка рынка", pending: "данные уточняются", updated: "обновляется ежемесячно" };
+  const homeMarket = snapshot?.homeMarket ?? null;
+  const rotatingMarkets = snapshot?.otherMarkets ?? [];
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    if (rotatingMarkets.length < 2) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setActiveIndex((index) => (index + 1) % rotatingMarkets.length);
+    }, 3600);
+
+    return () => window.clearInterval(timer);
+  }, [rotatingMarkets.length]);
+
+  const activeMarket = rotatingMarkets[activeIndex % Math.max(rotatingMarkets.length, 1)] ?? null;
+  const homeValue = tickerValue(tickerIndicator(homeMarket)) ?? labels.pending;
+  const activeValue = activeMarket ? tickerValue(tickerIndicator(activeMarket)) ?? labels.pending : labels.pending;
+
+  return (
+    <aside className="w-full lg:max-w-[420px]" aria-label={labels.title}>
+      <div className="mb-2 flex max-w-[360px] items-center justify-between gap-3 text-[11px] font-black uppercase tracking-widest text-kv-red">
+        <span>{labels.title}</span>
+        <span className="text-kv-muted">{formatUpdatedAt(snapshot?.updatedAt, language)}</span>
+      </div>
+      <div className="inline-grid w-full max-w-[360px] grid-cols-[minmax(92px,0.55fr),1fr] overflow-hidden rounded-kv-form border border-kv-navy/24 bg-white text-sm shadow-sm">
+        <div className="border-b border-r border-kv-navy/24 px-3 py-2 font-bold text-kv-navy">
+          {homeMarket?.city ?? "Moscow"}
+        </div>
+        <div className="border-b border-kv-navy/24 px-3 py-2 font-semibold text-kv-ink">{homeValue}</div>
+        <div key={`${activeMarket?.id ?? "empty"}-city`} className="border-r border-kv-navy/24 px-3 py-2 font-bold text-kv-navy">
+          {activeMarket?.city ?? "-"}
+        </div>
+        <div key={`${activeMarket?.id ?? "empty"}-value`} className="px-3 py-2 font-semibold text-kv-ink">{activeValue}</div>
+      </div>
+      <div className="mt-2 max-w-[360px] text-[11px] leading-snug text-kv-muted">
+        {labels.updated}. Broker verification required.
+      </div>
+    </aside>
+  );
+}
+
 export function ObjectsClient({ objects, language, marketSnapshot }: ObjectsClientProps) {
   const [type, setType] = useState("");
   const [country, setCountry] = useState("");
@@ -251,7 +311,7 @@ export function ObjectsClient({ objects, language, marketSnapshot }: ObjectsClie
             </h2>
             <p className="mt-4 max-w-2xl leading-relaxed text-kv-muted">{t.subtitle}</p>
           </div>
-          <MarketSnapshotWidget snapshot={marketSnapshot} language={language} />
+          <MarketSnapshotTicker snapshot={marketSnapshot} language={language} />
         </div>
 
         <form id="object-filter" aria-label="Object filter" className="mb-5 rounded-kv-main border border-kv-line bg-white p-5 shadow-sm" onSubmit={handleSubmit}>
