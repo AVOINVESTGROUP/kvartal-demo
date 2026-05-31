@@ -145,6 +145,12 @@ function hasAdminWriteAccess(request: IncomingMessage) {
   return typeof suppliedToken === "string" && suppliedToken.trim() === expectedToken.trim();
 }
 
+function hasAuthenticatedInvoker(request: IncomingMessage) {
+  const authorization = request.headers.authorization;
+
+  return typeof authorization === "string" && authorization.startsWith("Bearer ");
+}
+
 const tenantOrganizationSlugs = {
   kvartal: "kvartal-moscow",
   apart4u: "apart4u-tbilisi",
@@ -632,7 +638,7 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/platform/market-insights/refresh" && request.method === "POST") {
-    if (!hasAdminWriteAccess(request)) {
+    if (!hasAdminWriteAccess(request) && !hasAuthenticatedInvoker(request)) {
       sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
       return;
     }
