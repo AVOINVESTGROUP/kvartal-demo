@@ -390,6 +390,16 @@ type PublicMarketRow = {
   country: string;
 };
 
+type MarketIndicatorRow = {
+  marketId: string;
+  segment: string;
+  value: unknown;
+  unit: string;
+  currency: string | null;
+  confidence: string;
+  updatedAt: Date;
+};
+
 async function getPublicInventoryMarkets(tenant: string) {
   const tenantOrganizationSlug = organizationSlugForTenant(tenant);
   const tenantSiteConfig = await prisma.siteConfig.findFirst({
@@ -405,7 +415,7 @@ async function getPublicInventoryMarkets(tenant: string) {
   const hiddenObjectIds = hiddenOverrides.map((item: { propertyObjectId: string }) => item.propertyObjectId);
   const effectiveOwnerSlug = tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined;
 
-  const objects = await prisma.propertyObject.findMany({
+  const objects = (await prisma.propertyObject.findMany({
     where: {
       status: "published",
       visibility: "public",
@@ -424,9 +434,9 @@ async function getPublicInventoryMarkets(tenant: string) {
         },
       },
     },
-  });
+  })) as Array<{ market: PublicMarketRow }>;
 
-  return objects.map((item) => item.market as PublicMarketRow);
+  return objects.map((item: { market: PublicMarketRow }) => item.market);
 }
 
 function serializeMarketIndicator(
@@ -572,8 +582,8 @@ const server = createServer(async (request, response) => {
 
     marketsFromInventory.forEach((market) => marketsById.set(market.id, market));
 
-    const markets = Array.from(marketsById.values());
-    const indicators = await prisma.marketIndicator.findMany({
+    const markets = Array.from(marketsById.values()) as PublicMarketRow[];
+    const indicators = (await prisma.marketIndicator.findMany({
       where: {
         published: true,
         metric: marketInsightMetric,
@@ -582,10 +592,10 @@ const server = createServer(async (request, response) => {
         marketId: { in: markets.map((market) => market.id) },
       },
       orderBy: [{ updatedAt: "desc" }],
-    });
-    const indicatorByMarketAndCategory = new Map<string, (typeof indicators)[number]>();
+    })) as MarketIndicatorRow[];
+    const indicatorByMarketAndCategory = new Map<string, MarketIndicatorRow>();
 
-    indicators.forEach((indicator) => {
+    indicators.forEach((indicator: MarketIndicatorRow) => {
       const key = `${indicator.marketId}:${indicator.segment}`;
 
       if (!indicatorByMarketAndCategory.has(key)) {
@@ -597,7 +607,7 @@ const server = createServer(async (request, response) => {
       markets.find((market) => market.city === "Moscow" && market.country === "RU") ??
       markets[0];
     const updatedAt =
-      indicators.reduce<Date | null>((latest, indicator) => {
+      indicators.reduce<Date | null>((latest: Date | null, indicator: MarketIndicatorRow) => {
         if (!latest || indicator.updatedAt > latest) {
           return indicator.updatedAt;
         }
@@ -644,7 +654,7 @@ const server = createServer(async (request, response) => {
     }
 
     const period = insightPeriod();
-    const markets = await prisma.market.findMany({
+    const markets = (await prisma.market.findMany({
       where: {
         active: true,
         propertyObjects: {
@@ -657,7 +667,7 @@ const server = createServer(async (request, response) => {
       },
       select: { id: true, slug: true, city: true, country: true },
       orderBy: [{ country: "asc" }, { city: "asc" }],
-    });
+    })) as PublicMarketRow[];
     const writes: Array<{ market: string; category?: MarketInsightCategory; published: boolean; value?: number | null; confidence?: string; error?: string }> = [];
 
     for (const market of markets) {
@@ -674,7 +684,7 @@ const server = createServer(async (request, response) => {
         continue;
       }
 
-      const source = ["AI monthly market estimate", ...(Array.isArray(aiResult.sources) ? aiResult.sources.map((item) => String(item)).slice(0, 3) : [])].join("; ");
+      const source = ["AI monthly market estimate", ...(Array.isArray(aiResult.sources) ? aiResult.sources.map((item: unknown) => String(item)).slice(0, 3) : [])].join("; ");
 
       for (const category of marketInsightCategories) {
         const estimate = aiResult[category];
