@@ -172,11 +172,12 @@ body {
 }
 
 .apart-hero {
-  display: flex;
-  min-height: 100vh;
-  align-items: center;
+  display: grid;
+  min-height: 100svh;
+  align-items: end;
   overflow: hidden;
-  padding-top: 120px;
+  padding-top: 140px;
+  padding-bottom: 80px;
 }
 
 .apart-hero-bg {
@@ -210,6 +211,7 @@ body {
   position: relative;
   z-index: 1;
   max-width: 640px;
+  align-self: center;
 }
 
 .apart-eyebrow {
@@ -295,13 +297,11 @@ body {
 }
 
 .apart-hero-benefits {
-  position: absolute;
+  position: relative;
   z-index: 2;
-  left: 5vw;
-  right: 5vw;
-  bottom: 34px;
   display: grid;
   max-width: 760px;
+  margin-top: 34px;
   grid-template-columns: repeat(3, 1fr);
   border-top: 1px solid rgba(217, 164, 65, 0.2);
   background: rgba(2, 8, 18, 0.42);
@@ -739,7 +739,9 @@ body {
   }
 
   .apart-hero {
-    min-height: 900px;
+    min-height: auto;
+    padding-top: 180px;
+    padding-bottom: 70px;
   }
 
   .apart-hero-panel {
@@ -785,9 +787,9 @@ body {
   }
 
   .apart-hero {
-    min-height: 980px;
     align-items: flex-start;
-    padding-top: 190px;
+    padding-top: 220px;
+    padding-bottom: 60px;
   }
 
   .apart-hero-panel {
@@ -811,9 +813,7 @@ body {
 
   .apart-hero-benefits {
     grid-template-columns: 1fr;
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
+    margin-top: 24px;
   }
 
   .apart-hero-benefits article {
