@@ -1151,27 +1151,30 @@ const server = createServer(async (request, response) => {
       // fallback: no filters, show all public objects
     }
 
-    // Search public pool only — hard constraint
-    const publicWhere = {
-      status: "published" as const,
-      visibility: "public" as const,
-      canBeShownByOtherOffices: true,
-      ...(filters.assetClass ? { assetClass: filters.assetClass } : {}),
-      ...(filters.country ? { market: { country: filters.country } } : {}),
-      ...(filters.city ? { market: { city: { contains: filters.city, mode: "insensitive" as const } } } : {}),
-      ...(filters.minArea ? { areaSqm: { gte: String(filters.minArea) } } : {}),
-    };
+    const aiSearchInclude = {
+      market: true,
+      ownerOrganization: true,
+      ownerOffice: true,
+      informationOwnerOrganization: true,
+      informationOwnerOffice: true,
+      localizations: true,
+      media: { where: { public: true }, orderBy: { sortOrder: "asc" as const }, take: 1 },
+    } as const;
 
+    // Search public pool only — hard constraint
     const objects = await prisma.propertyObject.findMany({
-      where: publicWhere,
+      where: {
+        status: "published",
+        visibility: "public",
+        canBeShownByOtherOffices: true,
+        ...(filters.assetClass ? { assetClass: { equals: filters.assetClass as never } } : {}),
+        ...(filters.country ? { market: { country: filters.country } } : {}),
+        ...(filters.city ? { market: { city: { contains: filters.city, mode: "insensitive" as const } } } : {}),
+        ...(filters.minArea ? { areaSqm: { gte: String(filters.minArea) } } : {}),
+      },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
       take: 12,
-      include: {
-        market: true,
-        ownerOrganization: true,
-        localizations: true,
-        media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
-      },
+      include: aiSearchInclude,
     });
 
     // Cross-market alternatives if few results
@@ -1182,18 +1185,13 @@ const server = createServer(async (request, response) => {
           status: "published",
           visibility: "public",
           canBeShownByOtherOffices: true,
-          ...(filters.assetClass ? { assetClass: filters.assetClass } : {}),
+          ...(filters.assetClass ? { assetClass: { equals: filters.assetClass as never } } : {}),
           ...(filters.country ? { market: { country: { not: filters.country } } } : {}),
           id: { notIn: objects.map((o) => o.id) },
         },
         orderBy: [{ publishedAt: "desc" }],
         take: 6,
-        include: {
-          market: true,
-          ownerOrganization: true,
-          localizations: true,
-          media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
-        },
+        include: aiSearchInclude,
       });
     }
 
