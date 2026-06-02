@@ -572,7 +572,7 @@ export default async function KvartalAdminHome() {
             <div className="mt-3 space-y-3 text-[13px] leading-5 text-kv-muted">
               <p>KVARTAL видит свои объекты и объекты общей витрины.</p>
               <p>Другие организации не получают приватные данные KVARTAL без разрешения правообладателя информации.</p>
-              <p>Публикация в общей витрине требует: `published`, `public`, `canBeShownByOtherOffices`.</p>
+              <p>Публикация в общей витрине включается через статус объекта и разрешение правообладателя информации.</p>
             </div>
           </div>
           <div className="rounded-md border border-kv-line bg-white">
