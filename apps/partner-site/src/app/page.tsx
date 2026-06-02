@@ -6,9 +6,13 @@ import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
+function resolveRequestHost(requestHeaders: Awaited<ReturnType<typeof headers>>) {
+  return requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+}
+
 export async function generateMetadata() {
   const requestHeaders = await headers();
-  const tenant = getPartnerTenantByHost(requestHeaders.get("host")) ?? partnerTenants.apart4u;
+  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders)) ?? partnerTenants.apart4u;
 
   return {
     title: `${tenant.name} | Partner Network`,
@@ -26,7 +30,7 @@ export async function generateMetadata() {
 
 export default async function PartnerSiteHome() {
   const requestHeaders = await headers();
-  const tenant = getPartnerTenantByHost(requestHeaders.get("host")) ?? partnerTenants.apart4u;
+  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders)) ?? partnerTenants.apart4u;
   const inventoryByLanguage = await fetchPartnerInventoryByLanguage(tenant.key);
 
   return <PartnerSitePage tenant={tenant} inventoryByLanguage={inventoryByLanguage} />;
