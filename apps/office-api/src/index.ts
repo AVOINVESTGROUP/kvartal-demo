@@ -9,6 +9,8 @@ export const ownedRoutes = [
   "/api/v1/public/objects",
   "/api/v1/public/media",
   "/api/v1/public/market-insights",
+  "/api/v1/public/session-context",
+  "/api/v1/public/ai-search",
   "/api/v1/public/client-intents",
   "/api/v1/platform/market-insights/refresh",
   "/api/v1/admin/context",
@@ -537,6 +539,62 @@ async function generateMarketEstimateWithGemini(market: PublicMarketRow) {
   };
 }
 
+async function callGemini(prompt: string): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  let endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey ?? "")}`;
+
+  if (!apiKey) {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT ?? process.env.GCLOUD_PROJECT ?? "kvartal-dev";
+    const location = process.env.VERTEX_AI_LOCATION ?? "europe-west4";
+    const host = `${location}-aiplatform.googleapis.com`;
+    const tokenRes = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
+      headers: { "Metadata-Flavor": "Google" },
+    });
+
+    if (!tokenRes.ok) throw new Error("Neither GEMINI_API_KEY nor Vertex AI metadata token available.");
+    const tokenPayload = await tokenRes.json() as { access_token?: string };
+    if (!tokenPayload.access_token) throw new Error("Vertex AI token missing access_token.");
+    headers.authorization = `Bearer ${tokenPayload.access_token}`;
+    endpoint = `https://${host}/v1/projects/${encodeURIComponent(projectId)}/locations/${encodeURIComponent(location)}/publishers/google/models/${encodeURIComponent(model)}:generateContent`;
+  }
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Gemini request failed: ${res.status}`);
+  const payload = await res.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+  return payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+}
+
+// Exchange rates cache: { rates: Record<string,number>, fetchedAt: number }
+let exchangeRatesCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
+
+async function getExchangeRates(): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (exchangeRatesCache && now - exchangeRatesCache.fetchedAt < 24 * 60 * 60 * 1000) {
+    return exchangeRatesCache.rates;
+  }
+
+  try {
+    const res = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+    if (!res.ok) throw new Error("Exchange rate fetch failed");
+    const data = await res.json() as { rates?: Record<string, number> };
+    const rates = data.rates ?? {};
+    exchangeRatesCache = { rates, fetchedAt: now };
+    return rates;
+  } catch {
+    return exchangeRatesCache?.rates ?? {};
+  }
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
@@ -943,6 +1001,233 @@ const server = createServer(async (request, response) => {
         ? "status=published AND visibility=public AND canBeShownByOtherOffices=true AND ownerOrganization=tenant"
         : "status=published AND visibility=public AND canBeShownByOtherOffices=true",
       objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/public/session-context" && request.method === "GET") {
+    // Detect user's market context from request headers — no cookies, GDPR-compliant
+    const cfCountry = request.headers["cf-ipcountry"] as string | undefined;
+    const cfCity = request.headers["cf-ipcity"] as string | undefined;
+    const acceptLanguage = (request.headers["accept-language"] as string | undefined) ?? "";
+    const userAgent = (request.headers["user-agent"] as string | undefined) ?? "";
+    const referer = (request.headers["referer"] as string | undefined) ?? "";
+
+    const detectedCountry = cfCountry ?? "RU";
+    const detectedCity = cfCity ?? null;
+    const language = acceptLanguage.split(",")[0]?.split("-")[0]?.toLowerCase() ?? "ru";
+    const isMobile = /mobile|android|iphone|ipad/i.test(userAgent);
+    const isHighEnd = /iphone 1[3-9]|iphone 1[0-9] pro|macbook|ipad pro/i.test(userAgent);
+
+    // Find all active markets + their latest residential price indicator
+    const period = insightPeriod();
+    const [markets, indicators] = await Promise.all([
+      prisma.market.findMany({ where: { active: true }, select: { id: true, slug: true, city: true, country: true } }),
+      prisma.marketIndicator.findMany({
+        where: { published: true, metric: marketInsightMetric, segment: "residential", period },
+        orderBy: { updatedAt: "desc" },
+      }),
+    ]);
+
+    const priceByMarketId = new Map<string, number>();
+    for (const ind of indicators as MarketIndicatorRow[]) {
+      if (!priceByMarketId.has(ind.marketId) && ind.value !== null && typeof ind.value === "number") {
+        priceByMarketId.set(ind.marketId, ind.value);
+      }
+    }
+
+    const homeMarket = (markets as PublicMarketRow[]).find((m) => m.country === detectedCountry)
+      ?? (markets as PublicMarketRow[])[0];
+
+    // Get exchange rates (cached 24h)
+    const rates = await getExchangeRates();
+    const preferredCurrency = detectedCountry === "RU" ? "RUB"
+      : detectedCountry === "AE" ? "AED"
+      : detectedCountry === "GE" ? "GEL"
+      : detectedCountry === "AM" ? "AMD"
+      : detectedCountry === "US" ? "USD"
+      : "USD";
+    const usdToPreferred = rates[preferredCurrency] ?? 1;
+
+    // Build session profile
+    const refererHint = referer.includes("google") ? "search"
+      : referer.includes("instagram") || referer.includes("facebook") ? "social"
+      : referer ? "referral" : "direct";
+    const segment = detectedCountry === "RU" ? "russian_investor"
+      : detectedCountry === "US" ? "us_investor"
+      : "international_investor";
+    const intent = refererHint === "search" ? "active_search" : refererHint === "social" ? "discovery" : "direct";
+
+    // Cross-market comparison: for each market with price data, compute sqm ratio vs home
+    const homeResidentialUsd = homeMarket ? priceByMarketId.get(homeMarket.id) ?? null : null;
+    const crossMarketComparisons = homeResidentialUsd
+      ? (markets as PublicMarketRow[])
+          .filter((m) => m.id !== homeMarket?.id && priceByMarketId.has(m.id))
+          .map((m) => {
+            const otherUsd = priceByMarketId.get(m.id)!;
+            const ratio = Math.round((homeResidentialUsd / otherUsd) * 100) / 100;
+            const pctDiff = Math.round((ratio - 1) * 100);
+            return { market: { slug: m.slug, city: m.city, country: m.country }, sqmRatio: ratio, pctMoreSqm: pctDiff };
+          })
+          .filter((c) => c.pctMoreSqm > 0)
+          .sort((a, b) => b.pctMoreSqm - a.pctMoreSqm)
+          .slice(0, 4)
+      : [];
+
+    sendJson(response, 200, {
+      ok: true,
+      detectedCountry,
+      detectedCity,
+      language,
+      device: isMobile ? "mobile" : "desktop",
+      purchasingPower: isHighEnd ? "high" : "medium",
+      refererHint,
+      segment,
+      intent,
+      preferredCurrency,
+      usdToPreferred,
+      homeMarket: homeMarket ? {
+        slug: homeMarket.slug,
+        city: homeMarket.city,
+        country: homeMarket.country,
+        residentialPriceUsd: homeResidentialUsd,
+      } : null,
+      crossMarketComparisons,
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/public/ai-search" && request.method === "POST") {
+    const body = await readJsonBody<{
+      query?: string;
+      tenant?: string;
+      language?: string;
+      sessionContext?: {
+        detectedCountry?: string;
+        homeMarket?: { city?: string; country?: string; residentialPriceUsd?: number | null };
+        preferredCurrency?: string;
+        usdToPreferred?: number;
+        crossMarketComparisons?: Array<{ market: { slug: string; city: string; country: string }; sqmRatio: number }>;
+      };
+    }>(request);
+
+    const query = (body.query ?? "").trim();
+    const language = body.language ?? "ru";
+    const sessionContext = body.sessionContext ?? {};
+
+    if (!query) {
+      sendError(response, 400, "query_required", "query is required");
+      return;
+    }
+
+    // Fetch available markets + public object counts for Gemini context
+    const markets = await prisma.market.findMany();
+    const marketSummary = markets.map((m) => `${m.city} (${m.country})`).join(", ");
+
+    // Ask Gemini to parse the query into structured filters
+    const parsePrompt = [
+      "Return only valid JSON, no markdown.",
+      "Parse this real estate search query into structured filters.",
+      `Available markets: ${marketSummary}`,
+      `Available assetClass values: land, apartment, house, office, industrial_site, development_project, investment_project`,
+      `User query: "${query}"`,
+      'Shape: {"assetClass":string|null,"country":string|null,"city":string|null,"minArea":number|null,"maxArea":number|null,"minPrice":number|null,"maxPrice":number|null,"currency":string|null,"semanticQuery":string,"confidence":number}',
+    ].join("\n");
+
+    let filters: {
+      assetClass?: string | null;
+      country?: string | null;
+      city?: string | null;
+      minArea?: number | null;
+      maxArea?: number | null;
+      semanticQuery?: string;
+      confidence?: number;
+    } = {};
+
+    try {
+      const parsed = parseGeminiJson(await callGemini(parsePrompt));
+      if (parsed && typeof parsed === "object") filters = parsed as typeof filters;
+    } catch {
+      // fallback: no filters, show all public objects
+    }
+
+    // Search public pool only — hard constraint
+    const publicWhere = {
+      status: "published" as const,
+      visibility: "public" as const,
+      canBeShownByOtherOffices: true,
+      ...(filters.assetClass ? { assetClass: filters.assetClass } : {}),
+      ...(filters.country ? { market: { country: filters.country } } : {}),
+      ...(filters.city ? { market: { city: { contains: filters.city, mode: "insensitive" as const } } } : {}),
+      ...(filters.minArea ? { areaSqm: { gte: String(filters.minArea) } } : {}),
+    };
+
+    const objects = await prisma.propertyObject.findMany({
+      where: publicWhere,
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+      take: 12,
+      include: {
+        market: true,
+        ownerOrganization: true,
+        localizations: true,
+        media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+      },
+    });
+
+    // Cross-market alternatives if few results
+    let crossMarketAlternatives: typeof objects = [];
+    if (objects.length < 3 && (filters.assetClass || filters.country)) {
+      crossMarketAlternatives = await prisma.propertyObject.findMany({
+        where: {
+          status: "published",
+          visibility: "public",
+          canBeShownByOtherOffices: true,
+          ...(filters.assetClass ? { assetClass: filters.assetClass } : {}),
+          ...(filters.country ? { market: { country: { not: filters.country } } } : {}),
+          id: { notIn: objects.map((o) => o.id) },
+        },
+        orderBy: [{ publishedAt: "desc" }],
+        take: 6,
+        include: {
+          market: true,
+          ownerOrganization: true,
+          localizations: true,
+          media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+        },
+      });
+    }
+
+    // Generate insight text
+    let insight = "";
+    try {
+      const homeCity = sessionContext.homeMarket?.city ?? "вашем городе";
+      const homePriceUsd = sessionContext.homeMarket?.residentialPriceUsd ?? null;
+      const crossComp = sessionContext.crossMarketComparisons?.[0];
+      const insightPrompt = [
+        "Return only valid JSON, no markdown.",
+        `User searched: "${query}"`,
+        `Found ${objects.length} objects in main results, ${crossMarketAlternatives.length} cross-market alternatives.`,
+        homePriceUsd ? `User's home market (${homeCity}): $${Math.round(homePriceUsd)}/sqm residential.` : "",
+        crossComp ? `Best cross-market ratio: ${crossComp.market.city} offers ${crossComp.sqmRatio}x more sqm for same price.` : "",
+        `Language: ${language}`,
+        "Write a 1-2 sentence insight that is specific, personal, and mentions concrete numbers if available.",
+        'Shape: {"insight": string}',
+      ].filter(Boolean).join("\n");
+      const insightResult = parseGeminiJson(await callGemini(insightPrompt)) as { insight?: string } | null;
+      insight = insightResult?.insight ?? "";
+    } catch {
+      insight = language === "ru"
+        ? `Найдено ${objects.length} объектов по вашему запросу.`
+        : `Found ${objects.length} objects matching your query.`;
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      query,
+      filters,
+      insight,
+      objects: objects.map((o) => serializeObject(o, language)),
+      crossMarketAlternatives: crossMarketAlternatives.map((o) => serializeObject(o, language)),
     });
     return;
   }

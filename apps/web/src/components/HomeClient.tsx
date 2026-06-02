@@ -12,9 +12,10 @@ import type { SiteLanguage } from "./site-language";
 type HomeClientProps = {
   objects: ObjectItem[];
   marketSnapshot: MarketSnapshot | null;
+  apiBaseUrl: string;
 };
 
-export function HomeClient({ objects, marketSnapshot }: HomeClientProps) {
+export function HomeClient({ objects, marketSnapshot, apiBaseUrl }: HomeClientProps) {
   const [language, setLanguage] = useState<SiteLanguage>("ru");
 
   return (
@@ -38,7 +39,7 @@ export function HomeClient({ objects, marketSnapshot }: HomeClientProps) {
       <Header language={language} onLanguageChange={setLanguage} />
       <Hero language={language} />
       <Features language={language} />
-      <ObjectsClient objects={objects} language={language} marketSnapshot={marketSnapshot} />
+      <ObjectsClient objects={objects} language={language} marketSnapshot={marketSnapshot} apiBaseUrl={apiBaseUrl} />
       <SiteSections language={language} />
       <Footer language={language} />
     </main>

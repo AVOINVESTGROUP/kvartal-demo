@@ -75,36 +75,40 @@ const fallbackObjects: ObjectItem[] = [
 
 export async function getObjectItems() {
   const [ruResponse, enResponse] = await Promise.all([
-    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=ru&limit=24"),
-    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=en&limit=24"),
+    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=ru&limit=50"),
+    fetchBackendJson<PublicObjectsResponse>(process.env.PUBLIC_API_BASE_URL, "/api/v1/public/objects?tenant=kvartal&language=en&limit=50"),
   ]);
 
   const enById = new Map(enResponse?.objects.map((object) => [object.id, object]));
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
   const objects =
     ruResponse?.objects.map((object) => {
       const enObject = enById.get(object.id);
+      const publishedAt = (object as unknown as { publishedAt?: string }).publishedAt;
+      const isNew = publishedAt ? new Date(publishedAt).getTime() > sevenDaysAgo : false;
 
       return {
-      id: object.id,
-      title: object.title,
-      titleEn: enObject?.title ?? object.title,
-      type: object.assetClass,
-      typeLabel: assetClassLabel(object.assetClass, "ru"),
-      typeLabelEn: assetClassLabel(object.assetClass, "en"),
-      country: object.market.country,
-      city: object.market.city,
-      market: `${object.market.city}, ${object.market.country}`,
-      area: toNumber(object.areaSqm ?? object.landAreaSqm ?? object.buildingAreaSqm),
-      areaDisplay: formatArea(object),
-      address: object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
-      addressEn: enObject?.addressDisplay ?? object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
-      owner: object.sellerSide.organizationName,
-      description: object.description ?? "Published object from the shared public inventory.",
-      descriptionEn: enObject?.description ?? object.description ?? "Published object from the shared public inventory.",
-      imageUrl: object.media[0]?.url,
-      tags: object.tags.length ? object.tags : [object.assetClass, object.market.city],
-      tagsEn: enObject?.tags?.length ? enObject.tags : object.tags,
+        id: object.id,
+        title: object.title,
+        titleEn: enObject?.title ?? object.title,
+        type: object.assetClass,
+        typeLabel: assetClassLabel(object.assetClass, "ru"),
+        typeLabelEn: assetClassLabel(object.assetClass, "en"),
+        country: object.market.country,
+        city: object.market.city,
+        market: `${object.market.city}, ${object.market.country}`,
+        area: toNumber(object.areaSqm ?? object.landAreaSqm ?? object.buildingAreaSqm),
+        areaDisplay: formatArea(object),
+        address: object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
+        addressEn: enObject?.addressDisplay ?? object.addressDisplay ?? `${object.market.city}, ${object.market.country}`,
+        owner: object.sellerSide.organizationName,
+        description: object.description ?? "Published object from the shared public inventory.",
+        descriptionEn: enObject?.description ?? object.description ?? "Published object from the shared public inventory.",
+        imageUrl: object.media[0]?.url,
+        tags: object.tags.length ? object.tags : [object.assetClass, object.market.city],
+        tagsEn: enObject?.tags?.length ? enObject.tags : object.tags,
+        isNew,
       };
     }) ?? fallbackObjects;
 
@@ -122,6 +126,7 @@ export async function getMarketSnapshot() {
 
 export async function Objects() {
   const [objects, marketSnapshot] = await Promise.all([getObjectItems(), getMarketSnapshot()]);
+  const apiBaseUrl = process.env.PUBLIC_API_BASE_URL ?? "";
 
-  return <ObjectsClient objects={objects} language="ru" marketSnapshot={marketSnapshot} />;
+  return <ObjectsClient objects={objects} language="ru" marketSnapshot={marketSnapshot} apiBaseUrl={apiBaseUrl} />;
 }
