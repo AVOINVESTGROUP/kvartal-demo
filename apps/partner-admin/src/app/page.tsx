@@ -85,6 +85,9 @@ type AdminObjectsResponse = {
     mediaCount: number;
     publishedAt: string | null;
     updatedAt: string;
+    driveIntakeFolderUrl: string | null;
+    driveIntakeConfidence: number | null;
+    driveIntakePending: boolean;
   }>;
 };
 
@@ -203,6 +206,19 @@ async function createObjectAction(formData: FormData) {
 
   const session = await requireAdminSession();
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData, session.organizationSlug));
+  revalidatePath("/");
+}
+
+async function fillFromDriveAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const driveFolderUrl = formValue(formData, "driveFolderUrl");
+  if (!driveFolderUrl) return;
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/intake/process-drive-folder", "POST", {
+    organizationSlug: session.organizationSlug,
+    driveFolderUrl,
+  });
   revalidatePath("/");
 }
 
@@ -368,11 +384,39 @@ export default async function PartnerAdminHome() {
       <section className="mx-auto max-w-[1440px] px-6 pb-6">
         <details className="rounded-md border border-kv-line bg-white">
           <summary className="cursor-pointer px-5 py-4 text-lg font-black text-kv-navy">Добавить новый объект</summary>
+
+          {/* Drive intake block */}
+          <div className="border-t border-kv-line bg-kv-bg p-5">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="text-lg">📁</span>
+              <div>
+                <div className="text-[13px] font-black text-kv-navy">Заполнить карточку из Google Drive</div>
+                <div className="text-[12px] text-kv-muted">Загрузите фото, PDF и документы в папку Drive — AI заполнит карточку автоматически</div>
+              </div>
+            </div>
+            <form action={fillFromDriveAction} className="flex gap-2">
+              <input type="hidden" name="organizationSlug" value={organizationSlug} />
+              <input
+                name="driveFolderUrl"
+                type="url"
+                placeholder="https://drive.google.com/drive/folders/..."
+                className="h-10 flex-1 rounded-md border border-kv-line bg-white px-3 text-[13px] text-kv-ink"
+                required
+              />
+              <button type="submit" className="rounded-full bg-kv-navy px-5 py-2.5 text-[13px] font-black text-white whitespace-nowrap">
+                ✦ Заполнить карточку
+              </button>
+            </form>
+            <div className="mt-2 text-[11px] text-kv-muted">
+              Убедитесь что папка открыта для доступа по ссылке или расшарена на сервисный аккаунт.
+            </div>
+          </div>
+
           <form action={createObjectAction} className="border-t border-kv-line p-5">
           <input type="hidden" name="organizationSlug" value={organizationSlug} />
           <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <h2 className="text-xl font-black text-kv-navy">Добавить объект</h2>
+              <h2 className="text-xl font-black text-kv-navy">Добавить объект вручную</h2>
               <p className="mt-1 text-[13px] text-kv-muted">Карточка создаётся в PostgreSQL. Публикация в общей витрине включается только отдельным статусом и разрешением.</p>
             </div>
             <button type="submit" className="rounded-full bg-kv-red px-5 py-3 text-sm font-black text-white">Создать объект</button>
@@ -661,8 +705,73 @@ export default async function PartnerAdminHome() {
             </div>
           </div>
 
+          {/* AI Draft objects from Drive intake */}
+          {objects.filter((o) => o.driveIntakePending).map((object) => (
+            <div key={object.id} className="border-b border-kv-line bg-amber-50 p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-500 px-3 py-1 text-[11px] font-black text-white">✦ AI черновик</span>
+                {object.driveIntakeConfidence !== null && (
+                  <span className="rounded-full border border-amber-200 bg-amber-100 px-3 py-1 text-[11px] font-black text-amber-700">
+                    Уверенность: {Math.round((object.driveIntakeConfidence ?? 0) * 100)}%
+                  </span>
+                )}
+                {object.driveIntakeFolderUrl && (
+                  <a href={object.driveIntakeFolderUrl} target="_blank" rel="noreferrer" className="text-[11px] text-kv-muted underline">
+                    📁 Папка Drive
+                  </a>
+                )}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[160px_1fr_250px]">
+                <div className="h-[112px] overflow-hidden rounded-md border border-kv-line bg-kv-bg">
+                  {resolveMediaUrl(object.media[0]?.url) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resolveMediaUrl(object.media[0]?.url) ?? ""} alt={object.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="grid h-full place-items-center px-3 text-center text-[12px] font-bold text-kv-muted">Фото загружается...</div>
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-lg font-black leading-tight text-kv-navy">{object.title}</h3>
+                  <p className="mt-1 text-[13px] text-kv-muted">{object.description ?? "Описание заполнено AI"}</p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[12px] text-kv-muted">
+                    <span>{object.market?.city}, {object.market?.country}</span>
+                    <span>·</span>
+                    <span>{object.assetClass}</span>
+                    {object.mediaCount > 0 && <><span>·</span><span>{object.mediaCount} фото</span></>}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <details className="rounded-md border border-amber-200 bg-white">
+                    <summary className="cursor-pointer px-3 py-2 text-[12px] font-black text-kv-navy">Редактировать и опубликовать</summary>
+                    <form action={updateObjectAction} className="space-y-2 border-t border-kv-line p-3">
+                      <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                      <input type="hidden" name="objectId" value={object.id} />
+                      <input name="title" defaultValue={object.title} className="h-9 w-full rounded border border-kv-line px-2 text-[12px] text-kv-ink" />
+                      <select name="status" className="h-9 w-full rounded border border-kv-line bg-white px-2 text-[12px] text-kv-ink" defaultValue="published">
+                        <option value="draft">Черновик</option>
+                        <option value="published">Опубликовать</option>
+                      </select>
+                      <select name="visibility" className="h-9 w-full rounded border border-kv-line bg-white px-2 text-[12px] text-kv-ink" defaultValue="public">
+                        <option value="private">Приватно</option>
+                        <option value="public">Публично</option>
+                      </select>
+                      <label className="flex items-center gap-2 text-[12px] text-kv-muted">
+                        <input name="canBeShownByOtherOffices" type="checkbox" defaultChecked />
+                        В общей витрине
+                      </label>
+                      <div className="flex gap-2">
+                        <button name="action" value="publish" className="flex-1 rounded-full bg-emerald-600 py-2 text-[12px] font-black text-white">Опубликовать</button>
+                        <button name="action" value="archive" className="rounded-full border border-kv-line px-3 py-2 text-[12px] font-black text-kv-muted">Удалить</button>
+                      </div>
+                    </form>
+                  </details>
+                </div>
+              </div>
+            </div>
+          ))}
+
           <div className="divide-y divide-kv-line">
-            {objects.map((object) => (
+            {objects.filter((o) => !o.driveIntakePending).map((object) => (
               <article key={object.id} className="grid gap-4 p-4 lg:grid-cols-[160px_1fr_250px]">
                 <div className="h-[112px] overflow-hidden rounded-md border border-kv-line bg-kv-bg">
                   {resolveMediaUrl(object.media[0]?.url) ? (
@@ -887,7 +996,7 @@ export default async function PartnerAdminHome() {
                 </details>
               </article>
             ))}
-            {!objects.length ? <div className="p-5 text-kv-muted">Объекты не загружены.</div> : null}
+            {!objects.filter((o) => !o.driveIntakePending).length ? <div className="p-5 text-kv-muted">Объекты не загружены.</div> : null}
           </div>
         </section>
       </section>

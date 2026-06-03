@@ -13,6 +13,7 @@ export const ownedRoutes = [
   "/api/v1/public/ai-search",
   "/api/v1/public/client-intents",
   "/api/v1/platform/market-insights/refresh",
+  "/api/v1/admin/intake/process-drive-folder",
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
   "/api/v1/admin/media",
@@ -539,7 +540,7 @@ async function generateMarketEstimateWithGemini(market: PublicMarketRow) {
   };
 }
 
-async function callGemini(prompt: string): Promise<string> {
+async function callGemini(prompt: string, fileParts?: Array<{ fileData: { mimeType: string; fileUri: string } }>): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -564,7 +565,7 @@ async function callGemini(prompt: string): Promise<string> {
     method: "POST",
     headers,
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [...(fileParts ?? []), { text: prompt }] }],
       generationConfig: { temperature: 0.2, responseMimeType: "application/json" },
     }),
   });
@@ -1748,6 +1749,272 @@ const server = createServer(async (request, response) => {
         roles: membership.roles,
         active: membership.active && user.active,
       },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/intake/process-drive-folder" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; driveFolderUrl?: string }>(request);
+    const organizationSlug = body.organizationSlug ?? "kvartal-moscow";
+    const driveFolderUrl = body.driveFolderUrl ?? "";
+
+    // Extract folder ID from Drive URL
+    const folderIdMatch = driveFolderUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (!folderIdMatch) {
+      sendError(response, 400, "invalid_drive_url", "Could not extract folder ID from Drive URL.");
+      return;
+    }
+    const folderId = folderIdMatch[1];
+
+    // Get Google access token for Drive API
+    let driveToken: string | null = null;
+    try {
+      const tokenRes = await fetch(
+        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        { headers: { "Metadata-Flavor": "Google" } },
+      );
+      if (tokenRes.ok) {
+        const tokenPayload = await tokenRes.json() as { access_token?: string };
+        driveToken = tokenPayload.access_token ?? null;
+      }
+    } catch { /* running locally */ }
+
+    if (!driveToken && !process.env.GEMINI_API_KEY) {
+      sendError(response, 503, "drive_auth_unavailable", "Drive API token not available. Running locally?");
+      return;
+    }
+
+    // List files in Drive folder
+    type DriveFile = { id: string; name: string; mimeType: string; size?: string };
+    let driveFiles: DriveFile[] = [];
+    if (driveToken) {
+      const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=%27${folderId}%27+in+parents+and+trashed%3Dfalse&fields=files(id,name,mimeType,size)&pageSize=20`,
+        { headers: { Authorization: `Bearer ${driveToken}` } },
+      );
+      if (!listRes.ok) {
+        sendError(response, 502, "drive_list_failed", `Drive files list failed: ${listRes.status}`);
+        return;
+      }
+      const listData = await listRes.json() as { files?: DriveFile[] };
+      driveFiles = listData.files ?? [];
+    }
+
+    const imageFiles = driveFiles.filter((f) => f.mimeType.startsWith("image/"));
+    const docFiles = driveFiles.filter((f) =>
+      f.mimeType === "application/pdf" ||
+      f.mimeType.includes("spreadsheet") ||
+      f.mimeType.includes("word") ||
+      f.mimeType.includes("document") ||
+      f.mimeType === "text/plain"
+    );
+
+    // Upload files to Gemini Files API and extract property data
+    const geminiApiKey = process.env.GEMINI_API_KEY ?? "";
+    const geminiFileParts: Array<{ fileData: { mimeType: string; fileUri: string } }> = [];
+
+    if (driveToken && geminiApiKey) {
+      const filesToProcess = [...docFiles, ...imageFiles].slice(0, 10);
+      for (const file of filesToProcess) {
+        try {
+          // Download from Drive
+          const dlRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+            { headers: { Authorization: `Bearer ${driveToken}` } },
+          );
+          if (!dlRes.ok) continue;
+          const fileBuffer = await dlRes.arrayBuffer();
+
+          // Upload to Gemini Files API
+          const mimeType = file.mimeType.startsWith("image/") ? file.mimeType : "application/pdf";
+          const uploadRes = await fetch(
+            `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart&key=${geminiApiKey}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": `multipart/related; boundary=boundary` },
+              body: Buffer.concat([
+                Buffer.from(`--boundary\r\nContent-Type: application/json\r\n\r\n{"file":{"displayName":"${file.name}"}}\r\n--boundary\r\nContent-Type: ${mimeType}\r\n\r\n`),
+                Buffer.from(fileBuffer),
+                Buffer.from(`\r\n--boundary--`),
+              ]),
+            },
+          );
+          if (uploadRes.ok) {
+            const uploadData = await uploadRes.json() as { file?: { uri?: string; mimeType?: string } };
+            if (uploadData.file?.uri) {
+              geminiFileParts.push({ fileData: { mimeType, fileUri: uploadData.file.uri } });
+            }
+          }
+        } catch { /* skip file on error */ }
+      }
+    }
+
+    // Extract property data with Gemini
+    const extractionPrompt = `You are a real estate data extraction specialist.
+Analyze all provided files (photos, documents, PDFs, spreadsheets) and extract property listing data.
+Return ONLY valid JSON matching this exact schema. Use null for unknown fields.
+Language: detect from documents. Provide Russian title/description if Russian docs, English if English.
+
+Schema:
+{
+  "title": "short property title in Russian",
+  "titleEn": "short property title in English or null",
+  "description": "full description in Russian (2-4 sentences)",
+  "descriptionEn": "full description in English or null",
+  "addressDisplay": "city, district/street (Russian)",
+  "addressDisplayEn": "city, district/street (English) or null",
+  "assetClass": "one of: land, apartment, house, office, retail, warehouse, industrial_site, hotel, development_project, investment_project, other",
+  "assetSubtype": "specific subtype string or null",
+  "areaSqm": number or null,
+  "landAreaSqm": number or null,
+  "buildingAreaSqm": number or null,
+  "roomsCount": number or null,
+  "bedroomsCount": number or null,
+  "floorNumber": number or null,
+  "floorsTotal": number or null,
+  "cadastralNumber": "string or null",
+  "priceAmount": number or null,
+  "priceCurrency": "RUB, USD, EUR, AED, GEL, or AMD or null",
+  "priceDisplay": "price as text e.g. '15 млн ₽' or null",
+  "priceDisplayEn": "price as text in English or null",
+  "tags": ["tag1", "tag2"],
+  "tagsEn": ["tag1", "tag2"],
+  "coverPhotoIndex": 0,
+  "confidence": 0.85
+}`;
+
+    let extracted: Record<string, unknown> = {};
+    if (geminiFileParts.length > 0) {
+      try {
+        const geminiResult = await callGemini(
+          extractionPrompt,
+          geminiFileParts,
+        );
+        const parsed = parseGeminiJson(geminiResult);
+        if (parsed && typeof parsed === "object") extracted = parsed as Record<string, unknown>;
+      } catch { /* use empty extracted */ }
+    }
+
+    // Find organization and office
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: { offices: { take: 1 } },
+    });
+    if (!organization || !organization.offices[0]) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
+      return;
+    }
+    const office = organization.offices[0];
+    const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
+
+    // Create draft object
+    const title = String(extracted.title ?? "Новый объект (AI черновик)");
+    const addressDisplay = String(extracted.addressDisplay ?? "Адрес уточняется");
+
+    const newObject = await prisma.propertyObject.create({
+      data: {
+        ownerOrganizationId: organization.id,
+        ownerOfficeId: office.id,
+        informationOwnerOrganizationId: organization.id,
+        informationOwnerOfficeId: office.id,
+        createdByUserId: (await prisma.appUser.findFirst())!.id,
+        marketId: market!.id,
+        assetClass: (extracted.assetClass as string ?? "other") as never,
+        assetSubtype: extracted.assetSubtype as string ?? null,
+        status: "draft",
+        visibility: "private",
+        areaSqm: extracted.areaSqm ? String(extracted.areaSqm) as never : null,
+        landAreaSqm: extracted.landAreaSqm ? String(extracted.landAreaSqm) as never : null,
+        buildingAreaSqm: extracted.buildingAreaSqm ? String(extracted.buildingAreaSqm) as never : null,
+        roomsCount: extracted.roomsCount as number ?? null,
+        bedroomsCount: extracted.bedroomsCount as number ?? null,
+        floorNumber: extracted.floorNumber as number ?? null,
+        floorsTotal: extracted.floorsTotal as number ?? null,
+        cadastralNumber: extracted.cadastralNumber as string ?? null,
+        priceAmount: extracted.priceAmount ? String(extracted.priceAmount) as never : null,
+        priceCurrency: (extracted.priceCurrency as string ?? null) as never,
+        priceMode: extracted.priceAmount ? "fixed" : "on_request",
+        driveIntakeFolderUrl: driveFolderUrl,
+        driveIntakeProcessedAt: new Date(),
+        driveIntakeConfidence: extracted.confidence as number ?? null,
+        driveIntakePending: true,
+        localizations: {
+          create: [
+            {
+              language: "ru",
+              title,
+              description: extracted.description as string ?? null,
+              addressDisplay,
+              tags: (extracted.tags as string[]) ?? [],
+              priceDisplay: extracted.priceDisplay as string ?? null,
+            },
+            ...(extracted.titleEn ? [{
+              language: "en" as const,
+              title: extracted.titleEn as string,
+              description: extracted.descriptionEn as string ?? null,
+              addressDisplay: extracted.addressDisplayEn as string ?? addressDisplay,
+              tags: (extracted.tagsEn as string[]) ?? [],
+              priceDisplay: extracted.priceDisplayEn as string ?? null,
+            }] : []),
+          ],
+        },
+      },
+    });
+
+    // Upload images from Drive to GCS and register as media
+    let mediaCount = 0;
+    const coverIndex = Number(extracted.coverPhotoIndex ?? 0);
+
+    if (driveToken) {
+      for (let i = 0; i < imageFiles.length; i++) {
+        const imgFile = imageFiles[i]!;
+        try {
+          const dlRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${imgFile.id}?alt=media`,
+            { headers: { Authorization: `Bearer ${driveToken}` } },
+          );
+          if (!dlRes.ok) continue;
+          const imgBuffer = Buffer.from(await dlRes.arrayBuffer());
+          const ext = imgFile.mimeType === "image/png" ? "png" : imgFile.mimeType === "image/webp" ? "webp" : "jpg";
+          const mediaId = randomUUID();
+          const isCover = i === coverIndex;
+          const storagePath = `organizations/${organization.id}/offices/${office.id}/objects/${newObject.id}/public/media/${mediaId}/original.${ext}`;
+
+          await storageBucket.file(storagePath).save(imgBuffer, {
+            metadata: { contentType: imgFile.mimeType },
+          });
+
+          await prisma.propertyMedia.create({
+            data: {
+              propertyObjectId: newObject.id,
+              ownerOrganizationId: organization.id,
+              ownerOfficeId: office.id,
+              storagePath,
+              kind: "image",
+              public: true,
+              sortOrder: isCover ? 0 : (i + 1) * 10,
+              originalFileName: imgFile.name,
+              mimeType: imgFile.mimeType,
+              sizeBytes: imgBuffer.length,
+            },
+          });
+          mediaCount++;
+        } catch { /* skip image on error */ }
+      }
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      objectId: newObject.id,
+      confidence: extracted.confidence ?? null,
+      fieldsExtracted: Object.keys(extracted).filter((k) => extracted[k] !== null).length,
+      mediaCount,
+      driveFilesFound: driveFiles.length,
     });
     return;
   }

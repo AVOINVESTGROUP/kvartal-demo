@@ -1,0 +1,5 @@
+ALTER TABLE "PropertyObject"
+  ADD COLUMN IF NOT EXISTS "driveIntakeFolderUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "driveIntakeProcessedAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "driveIntakeConfidence" DOUBLE PRECISION,
+  ADD COLUMN IF NOT EXISTS "driveIntakePending" BOOLEAN NOT NULL DEFAULT false;

@@ -515,6 +515,10 @@ model PropertyObject {
   exclusivity                         Exclusivity                  @default(unknown)
   canBeShownByOtherOffices            Boolean                      @default(false)
   requiresOwnerOfficeApprovalForLead  Boolean                      @default(true)
+  driveIntakeFolderUrl                String?
+  driveIntakeProcessedAt              DateTime?
+  driveIntakeConfidence               Float?
+  driveIntakePending                  Boolean                      @default(false)
   createdAt                           DateTime                     @default(now())
   updatedAt                           DateTime                     @updatedAt
   publishedAt                         DateTime?
