@@ -1122,7 +1122,7 @@ const server = createServer(async (request, response) => {
 
     // Fetch available markets + public object counts for Gemini context
     const markets = await prisma.market.findMany();
-    const marketSummary = markets.map((m) => `${m.city} (${m.country})`).join(", ");
+    const marketSummary = markets.map((m: { city: string; country: string }) => `${m.city} (${m.country})`).join(", ");
 
     // Ask Gemini to parse the query into structured filters
     const parsePrompt = [
@@ -1187,7 +1187,7 @@ const server = createServer(async (request, response) => {
           canBeShownByOtherOffices: true,
           ...(filters.assetClass ? { assetClass: { equals: filters.assetClass as never } } : {}),
           ...(filters.country ? { market: { country: { not: filters.country } } } : {}),
-          id: { notIn: objects.map((o) => o.id) },
+          id: { notIn: objects.map((o: { id: string }) => o.id) },
         },
         orderBy: [{ publishedAt: "desc" }],
         take: 6,
@@ -1224,8 +1224,8 @@ const server = createServer(async (request, response) => {
       query,
       filters,
       insight,
-      objects: objects.map((o) => serializeObject(o, language)),
-      crossMarketAlternatives: crossMarketAlternatives.map((o) => serializeObject(o, language)),
+      objects: objects.map((o: PublicObjectRow) => serializeObject(o, language)),
+      crossMarketAlternatives: crossMarketAlternatives.map((o: PublicObjectRow) => serializeObject(o, language)),
     });
     return;
   }
