@@ -102,6 +102,19 @@ const COUNTRY_FLAGS: Record<string, string> = {
   DE: "🇩🇪", FR: "🇫🇷", ES: "🇪🇸", IT: "🇮🇹", TR: "🇹🇷",
 };
 
+const COUNTRY_NAMES: Record<string, { ru: string; en: string }> = {
+  RU: { ru: "Россия", en: "Russia" },
+  AE: { ru: "ОАЭ", en: "UAE" },
+  GE: { ru: "Грузия", en: "Georgia" },
+  AM: { ru: "Армения", en: "Armenia" },
+  US: { ru: "США", en: "USA" },
+  DE: { ru: "Германия", en: "Germany" },
+  FR: { ru: "Франция", en: "France" },
+  ES: { ru: "Испания", en: "Spain" },
+  IT: { ru: "Италия", en: "Italy" },
+  TR: { ru: "Турция", en: "Turkey" },
+};
+
 function flag(country: string) {
   return COUNTRY_FLAGS[country] ?? "🌐";
 }
@@ -536,11 +549,16 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
               return (
                 <div key={country} className="mb-8">
                   <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{flag(country)}</span>
-                      <span className="text-[12px] font-black uppercase tracking-widest text-kv-muted">
-                        {country} · {countryObjects.length} {language === "en" ? "objects" : "объектов"}
-                      </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{flag(country)}</span>
+                      <div>
+                        <div className="text-xl font-black tracking-tight text-kv-navy">
+                          {COUNTRY_NAMES[country]?.[language === "en" ? "en" : "ru"] ?? country}
+                        </div>
+                        <div className="text-[12px] text-kv-muted">
+                          {countryObjects.length} {language === "en" ? "objects" : "объектов"}
+                        </div>
+                      </div>
                     </div>
                     {hidden > 0 && (
                       <button
