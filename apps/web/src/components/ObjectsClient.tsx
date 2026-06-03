@@ -315,9 +315,18 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
     return sorted;
   })();
 
-  // New objects (last 7 days) — flagged by isNew
-  const newObjects = objects.filter((o) => o.isNew).slice(0, 3);
-  const featuredObjects = newObjects.length >= 3 ? newObjects : objects.slice(0, 3);
+  // Featured: one random object per country
+  const featuredObjects = (() => {
+    const byCountry = new Map<string, ObjectItem[]>();
+    for (const obj of objects) {
+      const list = byCountry.get(obj.country) ?? [];
+      list.push(obj);
+      byCountry.set(obj.country, list);
+    }
+    return Array.from(byCountry.values()).map((list) =>
+      list[Math.floor(Math.random() * list.length)]
+    ).filter((o): o is ObjectItem => o !== undefined).slice(0, 3);
+  })();
 
   async function handleSearch(q: string) {
     if (!q.trim()) return;
