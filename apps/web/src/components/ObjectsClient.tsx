@@ -236,7 +236,17 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
   const [sessionCtx, setSessionCtx] = useState<SessionContext | null>(null);
   const [searchResult, setSearchResult] = useState<AiSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expandedCountries, setExpandedCountries] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function toggleCountry(country: string) {
+    setExpandedCountries((prev) => {
+      const next = new Set(prev);
+      if (next.has(country)) next.delete(country);
+      else next.add(country);
+      return next;
+    });
+  }
 
   const usdToPreferred = sessionCtx?.usdToPreferred ?? 1;
   const preferredCurrency = sessionCtx?.preferredCurrency ?? "USD";
@@ -509,29 +519,46 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
               </div>
             )}
 
-            {/* Objects by country */}
-            {countryGroups.map(([country, countryObjects]) => (
-              <div key={country} className="mb-10">
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="text-xl">{flag(country)}</span>
-                  <div className="text-[12px] font-black uppercase tracking-widest text-kv-muted">
-                    {country} · {countryObjects.length} {language === "en" ? "objects" : "объектов"}
+            {/* Objects by country — first row visible, rest collapsed */}
+            {countryGroups.map(([country, countryObjects]) => {
+              const isExpanded = expandedCountries.has(country);
+              const visible = isExpanded ? countryObjects : countryObjects.slice(0, 3);
+              const hidden = countryObjects.length - 3;
+              return (
+                <div key={country} className="mb-8">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{flag(country)}</span>
+                      <span className="text-[12px] font-black uppercase tracking-widest text-kv-muted">
+                        {country} · {countryObjects.length} {language === "en" ? "objects" : "объектов"}
+                      </span>
+                    </div>
+                    {hidden > 0 && (
+                      <button
+                        onClick={() => toggleCountry(country)}
+                        className="text-[12px] font-extrabold text-kv-navy underline-offset-2 hover:underline"
+                      >
+                        {isExpanded
+                          ? (language === "en" ? "Collapse" : "Свернуть")
+                          : (language === "en" ? `+${hidden} more` : `Ещё ${hidden}`)}
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                    {visible.map((item) => (
+                      <PropertyCard
+                        key={item.id}
+                        item={item}
+                        language={language}
+                        homeMarketPriceUsd={homeMarketPriceUsd}
+                        usdToPreferred={usdToPreferred}
+                        preferredCurrency={preferredCurrency}
+                      />
+                    ))}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-                  {countryObjects.map((item) => (
-                    <PropertyCard
-                      key={item.id}
-                      item={item}
-                      language={language}
-                      homeMarketPriceUsd={homeMarketPriceUsd}
-                      usdToPreferred={usdToPreferred}
-                      preferredCurrency={preferredCurrency}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
 
