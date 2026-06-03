@@ -254,10 +254,10 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
   const crossComps = sessionCtx?.crossMarketComparisons ?? [];
   const bestCrossComp = crossComps[0] ?? null;
 
-  // Fetch session context on mount (client-side signals)
+  // Fetch session context on mount via Next.js proxy (avoids Cloud Run auth)
   useEffect(() => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    fetch(`${apiBaseUrl}/api/v1/public/session-context`, {
+    fetch("/api/v1/public/session-context", {
       headers: {
         "x-client-timezone": tz,
         "x-client-language": navigator.language,
@@ -266,7 +266,7 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
       .then((r) => r.json())
       .then((data: SessionContext) => setSessionCtx(data))
       .catch(() => null);
-  }, [apiBaseUrl]);
+  }, []);
 
   // Suggested queries based on session profile
   const suggestedQueries = (() => {
@@ -333,7 +333,7 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
     setLoading(true);
     setSearchResult(null);
     try {
-      const res = await fetch(`${apiBaseUrl}/api/v1/public/ai-search`, {
+      const res = await fetch("/api/v1/public/ai-search", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ query: q, tenant: "kvartal", language, sessionContext: sessionCtx }),
