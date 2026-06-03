@@ -192,7 +192,6 @@ function PropertyCard({
             )}
           </div>
         )}
-        <div className="mb-3 text-[12px] text-kv-muted">{item.owner}</div>
         <div className="grid grid-cols-2 gap-2">
           <a href="#request" className="rounded-full bg-kv-navy py-2.5 text-center text-[12px] font-extrabold text-white transition-colors hover:bg-kv-navy-light">
             {language === "en" ? "Request" : "Запросить"}
