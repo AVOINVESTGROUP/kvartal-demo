@@ -1,4 +1,4 @@
-UPDATE "property_media" pm
+UPDATE "PropertyMedia" pm
 SET
   "url" = CASE po."title"
     WHEN 'Коммерческий объект в Москве' THEN 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=82'
@@ -9,7 +9,7 @@ SET
     ELSE pm."url"
   END,
   "updatedAt" = CURRENT_TIMESTAMP
-FROM "property_objects" po
+FROM "PropertyObject" po
 WHERE pm."propertyObjectId" = po."id"
   AND pm."url" = '/images/hero-moscow-dubai.png'
   AND pm."kind" = 'image'
