@@ -723,7 +723,7 @@ async function main() {
     addressDisplayEn: "Moscow, commercial district",
     tagsEn: ["commercial", "moscow", "seller-side"],
     priceDisplayEn: "Price on request",
-    mediaUrl: "/images/hero-moscow-dubai.png",
+    mediaUrl: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -917,7 +917,7 @@ async function main() {
     addressDisplayEn: "Moscow region, Istra district, Kholshcheviki station settlement",
     tagsEn: ["Land", "Istra", "Kholshcheviki"],
     priceDisplayEn: "On request",
-    mediaUrl: "/images/hero-moscow-dubai.png",
+    mediaUrl: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -940,7 +940,7 @@ async function main() {
     addressDisplayEn: "Tbilisi, central area",
     tagsEn: ["Apartment", "Tbilisi", "Apart4u"],
     priceDisplayEn: "On request",
-    mediaUrl: "/images/hero-moscow-dubai.png",
+    mediaUrl: "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -963,7 +963,7 @@ async function main() {
     addressDisplayEn: "Dubai, investment zone",
     tagsEn: ["Dubai", "Development", "Investment"],
     priceDisplayEn: "On request",
-    mediaUrl: "/images/hero-moscow-dubai.png",
+    mediaUrl: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -986,7 +986,7 @@ async function main() {
     addressDisplayEn: "Yerevan, development area",
     tagsEn: ["Yerevan", "Land", "Development"],
     priceDisplayEn: "On request",
-    mediaUrl: "/images/hero-moscow-dubai.png",
+    mediaUrl: "https://images.unsplash.com/photo-1527668752968-14dc70a27c95?auto=format&fit=crop&w=1000&q=82",
   });
 
   await prisma.propertyObject.deleteMany({
