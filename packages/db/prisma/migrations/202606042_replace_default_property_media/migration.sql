@@ -1,6 +1,6 @@
 UPDATE "PropertyMedia" pm
 SET
-  "url" = CASE po."title"
+  "url" = CASE pol."title"
     WHEN 'Коммерческий объект в Москве' THEN 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=82'
     WHEN 'Участок, Истринский район, Холщевики' THEN 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1000&q=82'
     WHEN 'Премиальная квартира в Тбилиси' THEN 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=82'
@@ -10,10 +10,13 @@ SET
   END,
   "updatedAt" = CURRENT_TIMESTAMP
 FROM "PropertyObject" po
+JOIN "PropertyObjectLocalization" pol
+  ON pol."propertyObjectId" = po."id"
+  AND pol."language" = 'ru'
 WHERE pm."propertyObjectId" = po."id"
   AND pm."url" = '/images/hero-moscow-dubai.png'
   AND pm."kind" = 'image'
-  AND po."title" IN (
+  AND pol."title" IN (
     'Коммерческий объект в Москве',
     'Участок, Истринский район, Холщевики',
     'Премиальная квартира в Тбилиси',
