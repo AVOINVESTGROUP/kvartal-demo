@@ -14,10 +14,12 @@
     "@kvartal/auth": "workspace:*",
     "@kvartal/db": "workspace:*",
     "@kvartal/domain": "workspace:*",
-    "@prisma/client": "^5.22.0"
+    "@prisma/client": "^5.22.0",
+    "pdfkit": "^0.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.10",
+    "@types/pdfkit": "^0.17.6",
     "tsx": "^4.19.2",
     "typescript": "^5.0.0"
   }

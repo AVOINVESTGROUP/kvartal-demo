@@ -362,6 +362,9 @@ export default async function PartnerAdminHome() {
             <a href="/logout" className="inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">
               Выйти
             </a>
+            <a href="/partner-interactions" className="inline-flex rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">
+              Взаимодействия партнёров
+            </a>
           </div>
         </div>
       </header>

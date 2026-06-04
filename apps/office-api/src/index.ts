@@ -1,7 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
+import PDFDocument from "pdfkit";
 
 export const serviceName = "office-api";
 
@@ -18,6 +19,11 @@ export const ownedRoutes = [
   "/api/v1/admin/objects",
   "/api/v1/admin/media",
   "/api/v1/admin/access-settings",
+  "/api/v1/admin/partners",
+  "/api/v1/admin/interactions",
+  "/api/v1/admin/organization/notification-settings",
+  "/api/v1/admin/interaction-templates",
+  "/api/v1/admin/blocked-partners",
   "/api/v1/admin/partner-objects",
   "/api/v1/admin/partner-object-visibility",
   "/api/v1/admin/members",
@@ -32,6 +38,36 @@ const prisma = new PrismaClient();
 const storage = new Storage();
 const storageBucketName = process.env.STORAGE_BUCKET ?? "kvartal-dev-property-assets";
 const storageBucket = storage.bucket(storageBucketName);
+const interactionTypingTtlMs = 3000;
+const supportedInteractionLanguages = new Set(["ru", "en", "ka", "hy", "ar"]);
+
+type InteractionTranslationResult = {
+  translatedText: string | null;
+  translatedLanguage: "ru" | "en" | "ka" | "hy" | "ar" | null;
+  translationStatus: "pending" | "translated" | "failed" | "not_required" | "edited";
+  provider: string | null;
+};
+
+type InteractionPdfRow = {
+  id: string;
+  type: string;
+  priority: string;
+  status: string;
+  conversationLanguage: string;
+  subject: string | null;
+  initialMessage: string | null;
+  dealRoomId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  initiatingOrganization: { legalName: string; slug: string };
+  initiatingOffice: { legalName: string; slug: string };
+  targetOrganization: { legalName: string; slug: string };
+  targetOffice: { legalName: string; slug: string };
+  propertyObject: PublicObjectRow;
+  messages: Array<Parameters<typeof serializeInteractionMessage>[0]>;
+  attachments: Array<Parameters<typeof serializeInteractionAttachment>[0]>;
+  events: Array<{ id: string; eventType: string; payload: unknown; createdAt: Date }>;
+};
 
 const maxUploadBytesByKind = {
   image: 20 * 1024 * 1024,
@@ -45,6 +81,70 @@ const maxUploadBytesByKind = {
 } as const;
 
 const allowedMediaKinds = new Set(Object.keys(maxUploadBytesByKind));
+const maxInteractionAttachmentBytes = 25 * 1024 * 1024;
+const maxInteractionAttachmentCount = 5;
+const maxInteractionAttachmentTotalBytes = 100 * 1024 * 1024;
+const allowedInteractionAttachmentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+]);
+const allowedInteractionAttachmentExtensionsByMimeType = new Map([
+  ["application/pdf", new Set([".pdf"])],
+  ["application/msword", new Set([".doc"])],
+  ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", new Set([".docx"])],
+  ["application/vnd.ms-excel", new Set([".xls"])],
+  ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", new Set([".xlsx"])],
+  ["image/jpeg", new Set([".jpg", ".jpeg"])],
+  ["image/png", new Set([".png"])],
+  ["image/gif", new Set([".gif"])],
+]);
+
+function hasAllowedInteractionAttachmentExtension(fileName: string, mimeType: string) {
+  const extension = fileName.toLowerCase().match(/\.[^.]+$/)?.[0];
+  const allowedExtensions = allowedInteractionAttachmentExtensionsByMimeType.get(mimeType);
+
+  return Boolean(extension && allowedExtensions?.has(extension));
+}
+
+function matchesMagic(buffer: Buffer, signature: number[]) {
+  return signature.every((byte, index) => buffer[index] === byte);
+}
+
+function hasAllowedInteractionAttachmentSignature(buffer: Buffer, mimeType: string) {
+  if (mimeType === "application/pdf") return matchesMagic(buffer, [0x25, 0x50, 0x44, 0x46]);
+  if (mimeType === "image/jpeg") return matchesMagic(buffer, [0xff, 0xd8, 0xff]);
+  if (mimeType === "image/png") return matchesMagic(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (mimeType === "image/gif") return buffer.subarray(0, 6).toString("ascii") === "GIF87a" || buffer.subarray(0, 6).toString("ascii") === "GIF89a";
+  if (mimeType === "application/msword" || mimeType === "application/vnd.ms-excel") return matchesMagic(buffer, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  if (
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ) {
+    return matchesMagic(buffer, [0x50, 0x4b, 0x03, 0x04]) || matchesMagic(buffer, [0x50, 0x4b, 0x05, 0x06]) || matchesMagic(buffer, [0x50, 0x4b, 0x07, 0x08]);
+  }
+
+  return false;
+}
+
+async function readStorageFilePrefix(storagePath: string, byteLength = 16) {
+  const chunks: Buffer[] = [];
+
+  await new Promise<void>((resolve, reject) => {
+    storageBucket.file(storagePath)
+      .createReadStream({ start: 0, end: byteLength - 1 })
+      .on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
+      .on("end", resolve)
+      .on("error", reject);
+  });
+
+  return Buffer.concat(chunks);
+}
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -385,6 +485,702 @@ function serializeObject(object: PublicObjectRow, language = "ru", context: "pub
     })),
     publishedAt: object.publishedAt?.toISOString() ?? null,
   };
+}
+
+type InteractionSideContext = {
+  organization: { id: string; slug: string; legalName: string; defaultLanguage: string; defaultCurrency: string };
+  office: { id: string; slug: string; legalName: string; defaultLanguage: string };
+};
+
+async function getInteractionSideContext(organizationSlug: string, officeSlug?: string): Promise<InteractionSideContext | null> {
+  const organization = await prisma.organization.findUnique({
+    where: { slug: organizationSlug },
+    include: {
+      offices: {
+        where: officeSlug ? { slug: officeSlug } : undefined,
+        orderBy: { legalName: "asc" },
+        take: 1,
+      },
+    },
+  });
+
+  const office = organization?.offices[0];
+
+  if (!organization || !office) {
+    return null;
+  }
+
+  return {
+    organization: {
+      id: organization.id,
+      slug: organization.slug,
+      legalName: organization.legalName,
+      defaultLanguage: organization.defaultLanguage,
+      defaultCurrency: organization.defaultCurrency,
+    },
+    office: {
+      id: office.id,
+      slug: office.slug,
+      legalName: office.legalName,
+      defaultLanguage: office.defaultLanguage,
+    },
+  };
+}
+
+async function upsertInteractionActor(email: string | undefined, displayName?: string) {
+  const normalizedEmail = email?.trim().toLowerCase() || "partner-interactions@fixer.guru";
+
+  return prisma.appUser.upsert({
+    where: { email: normalizedEmail },
+    update: { displayName: displayName || undefined, active: true },
+    create: {
+      firebaseUid: normalizedEmail === "partner-interactions@fixer.guru" ? "partner-interactions-system-user" : `pending:${normalizedEmail}`,
+      email: normalizedEmail,
+      displayName,
+      active: true,
+    },
+  });
+}
+
+function canAccessInteraction(
+  interaction: { initiatingOrganizationId: string; targetOrganizationId: string; initiatingOfficeId: string; targetOfficeId: string },
+  context: InteractionSideContext,
+) {
+  return (
+    interaction.initiatingOrganizationId === context.organization.id ||
+    interaction.targetOrganizationId === context.organization.id ||
+    interaction.initiatingOfficeId === context.office.id ||
+    interaction.targetOfficeId === context.office.id
+  );
+}
+
+type InteractionNotificationInput = {
+  interactionId: string;
+  messageId?: string | null;
+  recipientOrganizationId: string;
+  recipientOfficeId: string;
+  eventType: string;
+  title: string;
+  body: string;
+  priority?: string;
+};
+
+async function sendTelegramNotification(chatId: string, text: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!token) {
+    throw new Error("TELEGRAM_BOT_TOKEN is not configured.");
+  }
+
+  const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+    }),
+  });
+  const payload = await response.json() as { ok?: boolean; result?: { message_id?: number }; description?: string };
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.description ?? `Telegram sendMessage failed with ${response.status}.`);
+  }
+
+  return payload.result?.message_id ? String(payload.result.message_id) : null;
+}
+
+async function sendWhatsappNotification(to: string, text: string, templateName?: string | null) {
+  const token = process.env.WHATSAPP_CLOUD_API_TOKEN;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const graphVersion = process.env.WHATSAPP_GRAPH_VERSION ?? "v24.0";
+
+  if (!token || !phoneNumberId) {
+    throw new Error("WHATSAPP_CLOUD_API_TOKEN or WHATSAPP_PHONE_NUMBER_ID is not configured.");
+  }
+
+  const body = templateName
+    ? {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? "en_US" },
+          components: [
+            {
+              type: "body",
+              parameters: [{ type: "text", text: text.slice(0, 1024) }],
+            },
+          ],
+        },
+      }
+    : {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "text",
+        text: { preview_url: false, body: text },
+      };
+
+  const response = await fetch(`https://graph.facebook.com/${graphVersion}/${encodeURIComponent(phoneNumberId)}/messages`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json() as { messages?: Array<{ id?: string }>; error?: { message?: string } };
+
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error?.message ?? `WhatsApp Cloud API send failed with ${response.status}.`);
+  }
+
+  return payload.messages?.[0]?.id ?? null;
+}
+
+async function deliverInteractionNotification(notification: {
+  id: string;
+  channel: string;
+  title: string;
+  body: string;
+  attemptCount: number;
+  recipientOrganizationId: string;
+}) {
+  const settings = await prisma.interactionNotificationSetting.findUnique({
+    where: { organizationId: notification.recipientOrganizationId },
+  });
+  const text = `${notification.title}\n\n${notification.body}`;
+
+  try {
+    let providerMessageId: string | null = null;
+
+    if (notification.channel === "in_admin") {
+      await prisma.interactionNotification.update({
+        where: { id: notification.id },
+        data: { status: "sent", sentAt: new Date(), attemptCount: { increment: 1 } },
+      });
+      return;
+    }
+
+    if (notification.channel === "telegram") {
+      if (!settings?.telegramEnabled || !settings.telegramChatId) {
+        await prisma.interactionNotification.update({
+          where: { id: notification.id },
+          data: { status: "suppressed", providerError: "Telegram notifications are disabled or chat id is missing.", attemptCount: { increment: 1 } },
+        });
+        return;
+      }
+
+      providerMessageId = await sendTelegramNotification(settings.telegramChatId, text);
+    }
+
+    if (notification.channel === "whatsapp") {
+      if (!settings?.whatsappEnabled || !settings.whatsappPhoneE164) {
+        await prisma.interactionNotification.update({
+          where: { id: notification.id },
+          data: { status: "suppressed", providerError: "WhatsApp notifications are disabled or phone is missing.", attemptCount: { increment: 1 } },
+        });
+        return;
+      }
+
+      providerMessageId = await sendWhatsappNotification(settings.whatsappPhoneE164, text, settings.whatsappTemplateName);
+    }
+
+    await prisma.interactionNotification.update({
+      where: { id: notification.id },
+      data: {
+        status: "sent",
+        sentAt: new Date(),
+        providerMessageId,
+        providerError: null,
+        attemptCount: { increment: 1 },
+      },
+    });
+  } catch (error) {
+    await prisma.interactionNotification.update({
+      where: { id: notification.id },
+      data: {
+        status: "failed",
+        providerError: error instanceof Error ? error.message : "notification_failed",
+        attemptCount: { increment: 1 },
+        nextAttemptAt: new Date(Date.now() + Math.min(60, 2 ** Math.min(notification.attemptCount, 6)) * 60 * 1000),
+      },
+    });
+  }
+}
+
+async function createInteractionNotifications(input: InteractionNotificationInput) {
+  const settings = await prisma.interactionNotificationSetting.findUnique({
+    where: { organizationId: input.recipientOrganizationId },
+  });
+  const channels: Array<"in_admin" | "telegram" | "whatsapp"> = [];
+
+  if (settings?.inAdminEnabled ?? true) channels.push("in_admin");
+
+  const externalAllowed = input.priority === "urgent" || input.priority === "critical" || (settings?.urgentExternalEnabled ?? true);
+  if (externalAllowed && settings?.telegramEnabled) channels.push("telegram");
+  if (externalAllowed && settings?.whatsappEnabled) channels.push("whatsapp");
+
+  const notifications = await prisma.$transaction(
+    channels.map((channel) =>
+      prisma.interactionNotification.create({
+        data: {
+          interactionId: input.interactionId,
+          messageId: input.messageId ?? null,
+          recipientOrganizationId: input.recipientOrganizationId,
+          recipientOfficeId: input.recipientOfficeId,
+          channel,
+          eventType: input.eventType,
+          status: "pending",
+          title: input.title,
+          body: input.body,
+        },
+      }),
+    ),
+  );
+
+  for (const notification of notifications) {
+    await deliverInteractionNotification(notification);
+  }
+}
+
+function queueInteractionNotifications(input: InteractionNotificationInput) {
+  void createInteractionNotifications(input).catch((error) => {
+    console.error("interaction_notification_failed", error);
+  });
+}
+
+function serializeInteractionMessage(
+  message: {
+    id: string;
+    senderOrganizationId: string;
+    originalText: string;
+    originalLanguage: string;
+    translatedText: string | null;
+    translatedLanguage: string | null;
+    translationStatus: string;
+    deliveryStatus: string;
+    readAt: Date | null;
+    deletedAt: Date | null;
+    createdAt: Date;
+    senderOrganization: { legalName: string; slug: string };
+    senderOffice: { legalName: string; slug: string };
+  },
+  viewerOrganizationId: string,
+) {
+  const deletedForViewer = Boolean(message.deletedAt) && message.senderOrganizationId !== viewerOrganizationId;
+
+  return {
+    id: message.id,
+    sender: {
+      organizationSlug: message.senderOrganization.slug,
+      organizationName: message.senderOrganization.legalName,
+      officeSlug: message.senderOffice.slug,
+      officeName: message.senderOffice.legalName,
+      ownOrganization: message.senderOrganizationId === viewerOrganizationId,
+    },
+    originalText: deletedForViewer ? "[Сообщение удалено]" : message.originalText,
+    originalLanguage: message.originalLanguage,
+    translatedText: deletedForViewer ? null : message.translatedText,
+    translatedLanguage: message.translatedLanguage,
+    translationStatus: message.translationStatus,
+    deliveryStatus: message.deliveryStatus,
+    readAt: message.readAt?.toISOString() ?? null,
+    deleted: Boolean(message.deletedAt),
+    createdAt: message.createdAt.toISOString(),
+  };
+}
+
+function serializeInteractionAttachment(attachment: {
+  id: string;
+  messageId: string | null;
+  originalFileName: string;
+  mimeType: string;
+  sizeBytes: bigint;
+  scanStatus: string;
+  deletedAt: Date | null;
+  createdAt: Date;
+}) {
+  return {
+    id: attachment.id,
+    messageId: attachment.messageId,
+    originalFileName: attachment.originalFileName,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes.toString(),
+    scanStatus: attachment.scanStatus,
+    deleted: Boolean(attachment.deletedAt),
+    url: `/api/v1/admin/interactions/attachments/${encodeURIComponent(attachment.id)}`,
+    createdAt: attachment.createdAt.toISOString(),
+  };
+}
+
+function serializePartnerInteraction(interaction: {
+  id: string;
+  type: string;
+  priority: string;
+  status: string;
+  conversationLanguage: string;
+  subject: string | null;
+  initialMessage: string | null;
+  firstTargetResponseAt: Date | null;
+  remindedAt: Date | null;
+  escalatedAt: Date | null;
+  completedAt?: Date | null;
+  archivedAt: Date | null;
+  dealRoomId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  initiatingOrganization: { slug: string; legalName: string };
+  initiatingOffice: { slug: string; legalName: string };
+  targetOrganization: { slug: string; legalName: string };
+  targetOffice: { slug: string; legalName: string };
+  propertyObject: PublicObjectRow;
+  messages?: Array<Parameters<typeof serializeInteractionMessage>[0]>;
+  attachments?: Array<Parameters<typeof serializeInteractionAttachment>[0]>;
+  reviews?: Array<{
+    id: string;
+    reviewerOrganizationId: string;
+    reviewedOrganizationId: string;
+    rating: number;
+    text: string | null;
+    hiddenByPlatform: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+    reviewerOrganization: { slug: string; legalName: string };
+    reviewedOrganization: { slug: string; legalName: string };
+  }>;
+  events?: Array<{ id: string; eventType: string; payload: unknown; createdAt: Date }>;
+}, viewerOrganizationId: string, language = "ru") {
+  return {
+    id: interaction.id,
+    type: interaction.type,
+    priority: interaction.priority,
+    status: interaction.status,
+    conversationLanguage: interaction.conversationLanguage,
+    subject: interaction.subject,
+    initialMessage: interaction.initialMessage,
+    firstTargetResponseAt: interaction.firstTargetResponseAt?.toISOString() ?? null,
+    remindedAt: interaction.remindedAt?.toISOString() ?? null,
+    escalatedAt: interaction.escalatedAt?.toISOString() ?? null,
+    completedAt: interaction.completedAt?.toISOString() ?? null,
+    archivedAt: interaction.archivedAt?.toISOString() ?? null,
+    dealRoomId: interaction.dealRoomId,
+    createdAt: interaction.createdAt.toISOString(),
+    updatedAt: interaction.updatedAt.toISOString(),
+    initiatingPartner: {
+      organizationSlug: interaction.initiatingOrganization.slug,
+      organizationName: interaction.initiatingOrganization.legalName,
+      officeSlug: interaction.initiatingOffice.slug,
+      officeName: interaction.initiatingOffice.legalName,
+    },
+    targetPartner: {
+      organizationSlug: interaction.targetOrganization.slug,
+      organizationName: interaction.targetOrganization.legalName,
+      officeSlug: interaction.targetOffice.slug,
+      officeName: interaction.targetOffice.legalName,
+    },
+    object: serializeObject(interaction.propertyObject, language, "admin"),
+    messages: interaction.messages?.map((message) => serializeInteractionMessage(message, viewerOrganizationId)) ?? [],
+    attachments: interaction.attachments?.map((attachment) => serializeInteractionAttachment(attachment)) ?? [],
+    reviews: interaction.reviews?.map((review) => ({
+      id: review.id,
+      reviewer: {
+        organizationSlug: review.reviewerOrganization.slug,
+        organizationName: review.reviewerOrganization.legalName,
+        ownOrganization: review.reviewerOrganizationId === viewerOrganizationId,
+      },
+      reviewed: {
+        organizationSlug: review.reviewedOrganization.slug,
+        organizationName: review.reviewedOrganization.legalName,
+      },
+      rating: review.rating,
+      text: review.hiddenByPlatform ? null : review.text,
+      hiddenByPlatform: review.hiddenByPlatform,
+      createdAt: review.createdAt.toISOString(),
+      updatedAt: review.updatedAt.toISOString(),
+    })) ?? [],
+    events: interaction.events?.map((event) => ({
+      id: event.id,
+      eventType: event.eventType,
+      payload: event.payload,
+      createdAt: event.createdAt.toISOString(),
+    })) ?? [],
+  };
+}
+
+const partnerInteractionStatusTransitions = new Map<string, Set<string>>([
+  ["new_request", new Set(["waiting_response", "accepted", "declined", "archived"])],
+  ["waiting_response", new Set(["information_received", "accepted", "declined", "archived"])],
+  ["information_received", new Set(["waiting_response", "accepted", "declined", "archived"])],
+  ["accepted", new Set(["in_deal", "completed", "archived"])],
+  ["declined", new Set(["archived"])],
+  ["in_deal", new Set(["completed", "archived"])],
+  ["completed", new Set(["archived"])],
+  ["archived", new Set<string>()],
+]);
+
+function canTransitionPartnerInteractionStatus(currentStatus: string, nextStatus: string) {
+  return currentStatus === nextStatus || (partnerInteractionStatusTransitions.get(currentStatus)?.has(nextStatus) ?? false);
+}
+
+function normalizeInteractionLanguage(language: string | undefined | null, fallback = "ru") {
+  const normalized = language?.trim().toLowerCase();
+
+  return supportedInteractionLanguages.has(normalized ?? "") ? normalized as "ru" | "en" | "ka" | "hy" | "ar" : fallback as "ru" | "en" | "ka" | "hy" | "ar";
+}
+
+function interactionTranslationHash(text: string) {
+  return createHash("sha256").update(text.trim()).digest("hex");
+}
+
+async function translateInteractionText(text: string, sourceLanguage: string, targetLanguage: string): Promise<InteractionTranslationResult> {
+  const normalizedSourceLanguage = normalizeInteractionLanguage(sourceLanguage);
+  const normalizedTargetLanguage = normalizeInteractionLanguage(targetLanguage);
+
+  if (!text.trim() || normalizedSourceLanguage === normalizedTargetLanguage) {
+    return {
+      translatedText: null,
+      translatedLanguage: null,
+      translationStatus: "not_required" as const,
+      provider: null,
+    };
+  }
+
+  const provider = `gemini:${process.env.GEMINI_MODEL ?? "gemini-2.5-flash"}`;
+  const sourceHash = interactionTranslationHash(text);
+  const cached = await prisma.interactionTranslationCache.findUnique({
+    where: {
+      sourceHash_sourceLanguage_targetLanguage_provider: {
+        sourceHash,
+        sourceLanguage: normalizedSourceLanguage,
+        targetLanguage: normalizedTargetLanguage,
+        provider,
+      },
+    },
+  });
+
+  if (cached) {
+    return {
+      translatedText: cached.translatedText,
+      translatedLanguage: normalizedTargetLanguage,
+      translationStatus: "translated" as const,
+      provider,
+    };
+  }
+
+  const prompt = [
+    "Return only valid JSON, no markdown.",
+    "Translate the text for a real-estate partner interaction.",
+    "Preserve numbers, object names, addresses, legal terms, URLs, emails, phone numbers, line breaks, and tone.",
+    "Do not add explanations, disclaimers, or facts.",
+    `Source language: ${normalizedSourceLanguage}.`,
+    `Target language: ${normalizedTargetLanguage}.`,
+    'Shape: {"translatedText":"..."}',
+    "Text:",
+    text,
+  ].join("\n");
+
+  const parsed = parseGeminiJson(await callGemini(prompt)) as { translatedText?: string };
+  const translatedText = optionalString(parsed.translatedText);
+
+  if (!translatedText) {
+    throw new Error("Gemini translation response did not include translatedText.");
+  }
+
+  await prisma.interactionTranslationCache.upsert({
+    where: {
+      sourceHash_sourceLanguage_targetLanguage_provider: {
+        sourceHash,
+        sourceLanguage: normalizedSourceLanguage,
+        targetLanguage: normalizedTargetLanguage,
+        provider,
+      },
+    },
+    update: { translatedText, providerMetadata: { model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash" } },
+    create: {
+      sourceHash,
+      sourceLanguage: normalizedSourceLanguage,
+      targetLanguage: normalizedTargetLanguage,
+      translatedText,
+      provider,
+      providerMetadata: { model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash" },
+    },
+  });
+
+  return {
+    translatedText,
+    translatedLanguage: normalizedTargetLanguage,
+    translationStatus: "translated" as const,
+    provider,
+  };
+}
+
+function formatPdfDate(value: Date | null | undefined) {
+  return value ? value.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC") : "-";
+}
+
+function addPdfSection(doc: PDFKit.PDFDocument, title: string) {
+  doc.moveDown(0.8);
+  doc.font("Helvetica-Bold").fontSize(13).text(title);
+  doc.moveDown(0.25);
+  doc.font("Helvetica").fontSize(10);
+}
+
+function addPdfKeyValue(doc: PDFKit.PDFDocument, key: string, value: string | null | undefined) {
+  doc.font("Helvetica-Bold").text(`${key}: `, { continued: true });
+  doc.font("Helvetica").text(value || "-");
+}
+
+async function generateInteractionPdfBuffer(interaction: InteractionPdfRow, viewerOrganizationId: string, language: string) {
+  const serialized = serializePartnerInteraction(interaction as never, viewerOrganizationId, language);
+  const chunks: Buffer[] = [];
+  const doc = new PDFDocument({ size: "A4", margin: 48, info: { Title: `Partner interaction ${interaction.id}` } });
+
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const finished = new Promise<Buffer>((resolve, reject) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+  });
+
+  doc.font("Helvetica-Bold").fontSize(18).text("Partner Interaction History");
+  doc.font("Helvetica").fontSize(9).text(`Generated: ${formatPdfDate(new Date())}`);
+  doc.text(`Interaction ID: ${interaction.id}`);
+
+  addPdfSection(doc, "Summary");
+  addPdfKeyValue(doc, "Subject", interaction.subject ?? serialized.object.title);
+  addPdfKeyValue(doc, "Status", interaction.status);
+  addPdfKeyValue(doc, "Type", interaction.type);
+  addPdfKeyValue(doc, "Priority", interaction.priority);
+  addPdfKeyValue(doc, "Language", interaction.conversationLanguage);
+  addPdfKeyValue(doc, "Created", formatPdfDate(interaction.createdAt));
+  addPdfKeyValue(doc, "Updated", formatPdfDate(interaction.updatedAt));
+  addPdfKeyValue(doc, "Deal room", interaction.dealRoomId);
+
+  addPdfSection(doc, "Participants");
+  addPdfKeyValue(doc, "Initiating organization", `${interaction.initiatingOrganization.legalName} / ${interaction.initiatingOffice.legalName}`);
+  addPdfKeyValue(doc, "Target organization", `${interaction.targetOrganization.legalName} / ${interaction.targetOffice.legalName}`);
+
+  addPdfSection(doc, "Object");
+  addPdfKeyValue(doc, "Title", serialized.object.title);
+  addPdfKeyValue(doc, "Address", serialized.object.addressDisplay);
+  addPdfKeyValue(doc, "Market", `${serialized.object.market.city}, ${serialized.object.market.country}`);
+  addPdfKeyValue(doc, "Price", serialized.object.priceDisplay ?? serialized.object.priceAmount);
+
+  addPdfSection(doc, "Messages");
+  const activeMessages = interaction.messages.filter((message) => !message.deletedAt);
+
+  if (!activeMessages.length) {
+    doc.text("No active messages.");
+  }
+
+  for (const message of activeMessages) {
+    doc.moveDown(0.5);
+    doc.font("Helvetica-Bold").fontSize(10).text(`${formatPdfDate(message.createdAt)} - ${message.senderOrganization.legalName} / ${message.senderOffice.legalName}`);
+    doc.font("Helvetica").fontSize(10).text(`[${message.originalLanguage}] ${message.originalText}`);
+
+    if (message.translatedText) {
+      doc.moveDown(0.2);
+      doc.font("Helvetica-Oblique").text(`[${message.translatedLanguage ?? interaction.conversationLanguage}] ${message.translatedText}`);
+      doc.font("Helvetica").text(`Translation status: ${message.translationStatus}`);
+    }
+  }
+
+  addPdfSection(doc, "Attachments");
+  const activeAttachments = interaction.attachments.filter((attachment) => !attachment.deletedAt);
+
+  if (!activeAttachments.length) {
+    doc.text("No active attachments.");
+  }
+
+  for (const attachment of activeAttachments) {
+    doc.text(`${attachment.originalFileName} / ${attachment.mimeType} / ${attachment.sizeBytes.toString()} bytes / scan=${attachment.scanStatus}`);
+  }
+
+  addPdfSection(doc, "Events");
+
+  if (!interaction.events.length) {
+    doc.text("No events.");
+  }
+
+  for (const event of interaction.events) {
+    doc.font("Helvetica-Bold").text(`${formatPdfDate(event.createdAt)} - ${event.eventType}`);
+    doc.font("Helvetica").fontSize(8).text(JSON.stringify(event.payload ?? {}));
+    doc.fontSize(10);
+  }
+
+  doc.end();
+  return finished;
+}
+
+async function saveInteractionPdf(interactionId: string, pdfBuffer: Buffer) {
+  const storagePath = ["interactions", interactionId, "exports", `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}.pdf`].join("/");
+  const file = storageBucket.file(storagePath);
+
+  await file.save(pdfBuffer, {
+    contentType: "application/pdf",
+    resumable: false,
+    metadata: {
+      cacheControl: "private, max-age=300",
+    },
+  });
+
+  const [signedUrl] = await file.getSignedUrl({
+    action: "read",
+    expires: Date.now() + 15 * 60 * 1000,
+  });
+
+  return { storagePath, signedUrl };
+}
+
+async function setInteractionTyping(interactionId: string, context: InteractionSideContext) {
+  await prisma.interactionTypingState.upsert({
+    where: {
+      interactionId_organizationId_officeId: {
+        interactionId,
+        organizationId: context.organization.id,
+        officeId: context.office.id,
+      },
+    },
+    update: { expiresAt: new Date(Date.now() + interactionTypingTtlMs) },
+    create: {
+      interactionId,
+      organizationId: context.organization.id,
+      officeId: context.office.id,
+      expiresAt: new Date(Date.now() + interactionTypingTtlMs),
+    },
+  });
+}
+
+async function getInteractionTyping(interactionId: string, viewerOrganizationId: string) {
+  const now = new Date();
+  await prisma.interactionTypingState.deleteMany({
+    where: {
+      interactionId,
+      expiresAt: { lte: now },
+    },
+  });
+
+  const active = await prisma.interactionTypingState.findMany({
+    where: {
+      interactionId,
+      expiresAt: { gt: now },
+      organizationId: { not: viewerOrganizationId },
+    },
+    include: {
+      organization: true,
+      office: true,
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+
+  return active.map((item) => ({
+    organizationName: item.organization.legalName,
+    officeName: item.office.legalName,
+    expiresAt: item.expiresAt.toISOString(),
+  }));
 }
 
 type PublicMarketRow = {
@@ -1344,6 +2140,81 @@ const server = createServer(async (request, response) => {
     return;
   }
 
+  if (url.pathname === "/api/v1/admin/organization/notification-settings" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const organization = await prisma.organization.findUnique({ where: { slug: organizationSlug } });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const settings = await prisma.interactionNotificationSetting.upsert({
+      where: { organizationId: organization.id },
+      update: {},
+      create: { organizationId: organization.id },
+    });
+
+    sendJson(response, 200, { ok: true, settings });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/organization/notification-settings" && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{
+      organizationSlug?: string;
+      inAdminEnabled?: boolean | string;
+      telegramEnabled?: boolean | string;
+      telegramChatId?: string;
+      whatsappEnabled?: boolean | string;
+      whatsappPhoneE164?: string;
+      whatsappTemplateName?: string;
+      urgentExternalEnabled?: boolean | string;
+      quietHoursStart?: string;
+      quietHoursEnd?: string;
+    }>(request);
+    const organization = await prisma.organization.findUnique({ where: { slug: optionalString(body.organizationSlug) ?? "kvartal-moscow" } });
+
+    if (!organization) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const settings = await prisma.interactionNotificationSetting.upsert({
+      where: { organizationId: organization.id },
+      update: {
+        ...(body.inAdminEnabled !== undefined ? { inAdminEnabled: booleanFromBody(body.inAdminEnabled) } : {}),
+        ...(body.telegramEnabled !== undefined ? { telegramEnabled: booleanFromBody(body.telegramEnabled) } : {}),
+        ...(body.telegramChatId !== undefined ? { telegramChatId: optionalString(body.telegramChatId) ?? null } : {}),
+        ...(body.whatsappEnabled !== undefined ? { whatsappEnabled: booleanFromBody(body.whatsappEnabled) } : {}),
+        ...(body.whatsappPhoneE164 !== undefined ? { whatsappPhoneE164: optionalString(body.whatsappPhoneE164) ?? null } : {}),
+        ...(body.whatsappTemplateName !== undefined ? { whatsappTemplateName: optionalString(body.whatsappTemplateName) ?? null } : {}),
+        ...(body.urgentExternalEnabled !== undefined ? { urgentExternalEnabled: booleanFromBody(body.urgentExternalEnabled) } : {}),
+        ...(body.quietHoursStart !== undefined ? { quietHoursStart: optionalString(body.quietHoursStart) ?? null } : {}),
+        ...(body.quietHoursEnd !== undefined ? { quietHoursEnd: optionalString(body.quietHoursEnd) ?? null } : {}),
+      },
+      create: {
+        organizationId: organization.id,
+        inAdminEnabled: body.inAdminEnabled === undefined ? true : booleanFromBody(body.inAdminEnabled),
+        telegramEnabled: booleanFromBody(body.telegramEnabled),
+        telegramChatId: optionalString(body.telegramChatId) ?? null,
+        whatsappEnabled: booleanFromBody(body.whatsappEnabled),
+        whatsappPhoneE164: optionalString(body.whatsappPhoneE164) ?? null,
+        whatsappTemplateName: optionalString(body.whatsappTemplateName) ?? null,
+        urgentExternalEnabled: body.urgentExternalEnabled === undefined ? true : booleanFromBody(body.urgentExternalEnabled),
+        quietHoursStart: optionalString(body.quietHoursStart) ?? null,
+        quietHoursEnd: optionalString(body.quietHoursEnd) ?? null,
+      },
+    });
+
+    sendJson(response, 200, { ok: true, settings });
+    return;
+  }
+
   if (url.pathname === "/api/v1/admin/objects" && request.method === "GET") {
     const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
     const language = url.searchParams.get("language") ?? "ru";
@@ -1650,6 +2521,2439 @@ const server = createServer(async (request, response) => {
       propertyObjectId,
       hidden,
     });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/partners" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const partners = await prisma.organization.findMany({
+      where: {
+        id: { not: context.organization.id },
+        status: { in: ["active", "draft"] },
+      },
+      orderBy: { legalName: "asc" },
+      include: {
+        offices: { orderBy: { legalName: "asc" }, take: 1 },
+        partnerMetrics: true,
+        _count: {
+          select: {
+            propertyObjects: {
+              where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
+            },
+          },
+        },
+      },
+    });
+
+    const activeInteractions = await prisma.partnerInteraction.groupBy({
+      by: ["targetOrganizationId"],
+      where: {
+        initiatingOrganizationId: context.organization.id,
+        status: { notIn: ["archived", "completed"] },
+      },
+      _count: { _all: true },
+    });
+    const incomingInteractions = await prisma.partnerInteraction.groupBy({
+      by: ["initiatingOrganizationId"],
+      where: {
+        targetOrganizationId: context.organization.id,
+        status: { notIn: ["archived", "completed"] },
+      },
+      _count: { _all: true },
+    });
+    const activeByOrganization = new Map<string, number>();
+    for (const item of activeInteractions) {
+      activeByOrganization.set(item.targetOrganizationId, (activeByOrganization.get(item.targetOrganizationId) ?? 0) + item._count._all);
+    }
+    for (const item of incomingInteractions) {
+      activeByOrganization.set(item.initiatingOrganizationId, (activeByOrganization.get(item.initiatingOrganizationId) ?? 0) + item._count._all);
+    }
+
+    const unreadMessages = await prisma.interactionMessage.groupBy({
+      by: ["senderOrganizationId"],
+      where: {
+        readAt: null,
+        deletedAt: null,
+        senderOrganizationId: { not: context.organization.id },
+        interaction: {
+          OR: [
+            { initiatingOrganizationId: context.organization.id },
+            { targetOrganizationId: context.organization.id },
+          ],
+        },
+      },
+      _count: { _all: true },
+    });
+    const unreadByOrganization = new Map(unreadMessages.map((item) => [item.senderOrganizationId, item._count._all]));
+
+    sendJson(response, 200, {
+      ok: true,
+      partners: partners.map((partner) => {
+        const metric = partner.partnerMetrics[0];
+        const office = partner.offices[0];
+
+        return {
+          id: partner.id,
+          slug: partner.slug,
+          legalName: partner.legalName,
+          defaultLanguage: partner.defaultLanguage,
+          status: partner.status,
+          primaryOffice: office ? { id: office.id, slug: office.slug, legalName: office.legalName, city: office.city, country: office.country } : null,
+          sharedObjectCount: partner._count.propertyObjects,
+          activeInteractionCount: activeByOrganization.get(partner.id) ?? 0,
+          unreadMessageCount: unreadByOrganization.get(partner.id) ?? 0,
+          metrics: {
+            averageFirstResponseSec: metric?.averageFirstResponseSec ?? null,
+            completedDealsCount: metric?.completedDealsCount ?? 0,
+            acceptanceRatePercent: decimalToString(metric?.acceptanceRatePercent),
+            rating: decimalToString(metric?.rating),
+          },
+        };
+      }),
+    });
+    return;
+  }
+
+  const partnerObjectsMatch = url.pathname.match(/^\/api\/v1\/admin\/partners\/([^/]+)\/objects$/);
+
+  if (partnerObjectsMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const partnerKey = decodeURIComponent(partnerObjectsMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const partner = await prisma.organization.findFirst({
+      where: { OR: [{ id: partnerKey }, { slug: partnerKey }] },
+    });
+
+    if (!partner || partner.id === context.organization.id) {
+      sendError(response, 404, "partner_not_found", "Partner was not found.");
+      return;
+    }
+
+    const objects = await prisma.propertyObject.findMany({
+      where: {
+        ownerOrganizationId: partner.id,
+        status: "published",
+        visibility: "public",
+        canBeShownByOtherOffices: true,
+      },
+      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      take: Math.min(Number(url.searchParams.get("limit") ?? 50), 100),
+      include: {
+        market: true,
+        ownerOrganization: true,
+        ownerOffice: true,
+        informationOwnerOrganization: true,
+        informationOwnerOffice: true,
+        localizations: true,
+        media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      partner: { id: partner.id, slug: partner.slug, legalName: partner.legalName, defaultLanguage: partner.defaultLanguage },
+      objects: objects.map((object) => serializeObject(object as PublicObjectRow, language, "admin")),
+    });
+    return;
+  }
+
+  const attachmentDownloadMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/attachments\/([^/]+)$/);
+
+  if (attachmentDownloadMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const attachmentId = decodeURIComponent(attachmentDownloadMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const attachment = await prisma.interactionAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { interaction: true },
+    });
+
+    if (!attachment || attachment.deletedAt || !canAccessInteraction(attachment.interaction, context)) {
+      sendError(response, 404, "attachment_not_found", "Attachment was not found.");
+      return;
+    }
+
+    if (attachment.scanStatus !== "clean") {
+      sendError(response, 423, "attachment_not_clean", "Attachment is not available until security scanning marks it clean.");
+      return;
+    }
+
+    const file = storageBucket.file(attachment.storagePath);
+    const [exists] = await file.exists();
+
+    if (!exists) {
+      sendError(response, 404, "attachment_file_not_found", "Attachment file was not found in Cloud Storage.");
+      return;
+    }
+
+    const [metadata] = await file.getMetadata();
+    streamStorageFile(response, attachment.storagePath, metadata, "private, max-age=300");
+    return;
+  }
+
+  const partnerDetailMatch = url.pathname.match(/^\/api\/v1\/admin\/partners\/([^/]+)$/);
+
+  if (partnerDetailMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const partnerKey = decodeURIComponent(partnerDetailMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const partner = await prisma.organization.findFirst({
+      where: { OR: [{ id: partnerKey }, { slug: partnerKey }] },
+      include: {
+        offices: { orderBy: { legalName: "asc" } },
+        partnerMetrics: true,
+        _count: {
+          select: {
+            propertyObjects: {
+              where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!partner || partner.id === context.organization.id) {
+      sendError(response, 404, "partner_not_found", "Partner was not found.");
+      return;
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      partner: {
+        id: partner.id,
+        slug: partner.slug,
+        legalName: partner.legalName,
+        defaultLanguage: partner.defaultLanguage,
+        defaultCurrency: partner.defaultCurrency,
+        offices: partner.offices.map((office) => ({ id: office.id, slug: office.slug, legalName: office.legalName, city: office.city, country: office.country })),
+        sharedObjectCount: partner._count.propertyObjects,
+        metrics: partner.partnerMetrics,
+      },
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interactions" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const interactions = await prisma.partnerInteraction.findMany({
+      where: {
+        OR: [
+          { initiatingOrganizationId: context.organization.id },
+          { targetOrganizationId: context.organization.id },
+        ],
+        ...(url.searchParams.get("includeArchived") === "true" ? {} : { status: { not: "archived" as const } }),
+      },
+      orderBy: { updatedAt: "desc" },
+      take: Math.min(Number(url.searchParams.get("limit") ?? 50), 100),
+      include: {
+        initiatingOrganization: true,
+        initiatingOffice: true,
+        targetOrganization: true,
+        targetOffice: true,
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: { senderOrganization: true, senderOffice: true },
+        },
+        attachments: { orderBy: { createdAt: "desc" } },
+        reviews: {
+          where: { hiddenByPlatform: false },
+          include: { reviewerOrganization: true, reviewedOrganization: true },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      interactions: interactions
+        .filter((interaction) => canAccessInteraction(interaction, context))
+        .map((interaction) => serializePartnerInteraction(interaction as never, context.organization.id, language)),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interactions/search" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const query = optionalString(url.searchParams.get("query") ?? url.searchParams.get("q") ?? "");
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    if (!query || query.length < 2) {
+      sendJson(response, 200, { ok: true, interactions: [] });
+      return;
+    }
+
+    const interactions = await prisma.partnerInteraction.findMany({
+      where: {
+        OR: [
+          { initiatingOrganizationId: context.organization.id },
+          { targetOrganizationId: context.organization.id },
+        ],
+        ...(url.searchParams.get("includeArchived") === "true" ? {} : { status: { not: "archived" as const } }),
+        AND: [
+          {
+            OR: [
+              { subject: { contains: query, mode: "insensitive" } },
+              { initialMessage: { contains: query, mode: "insensitive" } },
+              { initiatingOrganization: { legalName: { contains: query, mode: "insensitive" } } },
+              { targetOrganization: { legalName: { contains: query, mode: "insensitive" } } },
+              { messages: { some: { deletedAt: null, originalText: { contains: query, mode: "insensitive" } } } },
+              {
+                propertyObject: {
+                  localizations: {
+                    some: {
+                      OR: [
+                        { title: { contains: query, mode: "insensitive" } },
+                        { addressDisplay: { contains: query, mode: "insensitive" } },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: Math.min(Number(url.searchParams.get("limit") ?? 50), 100),
+      include: {
+        initiatingOrganization: true,
+        initiatingOffice: true,
+        targetOrganization: true,
+        targetOffice: true,
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+          },
+        },
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: { senderOrganization: true, senderOffice: true },
+        },
+        attachments: { orderBy: { createdAt: "desc" } },
+        reviews: {
+          where: { hiddenByPlatform: false },
+          include: { reviewerOrganization: true, reviewedOrganization: true },
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      query,
+      interactions: interactions
+        .filter((interaction) => canAccessInteraction(interaction, context))
+        .map((interaction) => serializePartnerInteraction(interaction as never, context.organization.id, language)),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interactions/notifications" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const notifications = await prisma.interactionNotification.findMany({
+      where: {
+        recipientOrganizationId: context.organization.id,
+        recipientOfficeId: context.office.id,
+        channel: "in_admin",
+        ...(url.searchParams.get("includeRead") === "true" ? {} : { readAt: null }),
+      },
+      orderBy: { createdAt: "desc" },
+      take: Math.min(Number(url.searchParams.get("limit") ?? 30), 100),
+    });
+
+    const unreadCount = await prisma.interactionNotification.count({
+      where: {
+        recipientOrganizationId: context.organization.id,
+        recipientOfficeId: context.office.id,
+        channel: "in_admin",
+        readAt: null,
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      unreadCount,
+      notifications: notifications.map((notification) => ({
+        id: notification.id,
+        interactionId: notification.interactionId,
+        messageId: notification.messageId,
+        eventType: notification.eventType,
+        title: notification.title,
+        body: notification.body,
+        status: notification.status,
+        readAt: notification.readAt?.toISOString() ?? null,
+        createdAt: notification.createdAt.toISOString(),
+      })),
+    });
+    return;
+  }
+
+  const notificationReadMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/notifications\/([^/]+)\/read$/);
+
+  if (notificationReadMatch && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const notificationId = decodeURIComponent(notificationReadMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const updated = await prisma.interactionNotification.updateMany({
+      where: {
+        id: notificationId,
+        recipientOrganizationId: context.organization.id,
+        recipientOfficeId: context.office.id,
+        channel: "in_admin",
+      },
+      data: { readAt: new Date(), status: "read" },
+    });
+
+    if (!updated.count) {
+      sendError(response, 404, "notification_not_found", "Notification was not found.");
+      return;
+    }
+
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interactions/notifications/dispatch" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const due = await prisma.interactionNotification.findMany({
+      where: {
+        channel: { in: ["telegram", "whatsapp"] },
+        status: { in: ["pending", "failed"] },
+        OR: [
+          { nextAttemptAt: null },
+          { nextAttemptAt: { lte: new Date() } },
+        ],
+      },
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    });
+
+    for (const notification of due) {
+      await deliverInteractionNotification(notification);
+    }
+
+    sendJson(response, 200, { ok: true, dispatched: due.length });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interactions" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      targetOrganizationId?: string;
+      targetOfficeId?: string;
+      propertyObjectId?: string;
+      type?: string;
+      priority?: string;
+      subject?: string;
+      message?: string;
+      originalLanguage?: string;
+      conversationLanguage?: string;
+      actorEmail?: string;
+      actorName?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const propertyObjectId = optionalString(body.propertyObjectId);
+    const targetOrganizationId = optionalString(body.targetOrganizationId);
+    const targetOfficeId = optionalString(body.targetOfficeId);
+    const message = optionalString(body.message);
+
+    if (!context || !propertyObjectId || !targetOrganizationId || !targetOfficeId || !message) {
+      sendError(response, 400, "required_fields_missing", "organization, target partner, object, and message are required.");
+      return;
+    }
+
+    if (message.length > 5000) {
+      sendError(response, 400, "message_too_long", "Message must be 5000 characters or less.");
+      return;
+    }
+
+    const conversationLanguage = normalizeInteractionLanguage(optionalString(body.conversationLanguage) ?? context.organization.defaultLanguage, context.organization.defaultLanguage);
+    const originalLanguage = normalizeInteractionLanguage(optionalString(body.originalLanguage) ?? conversationLanguage, conversationLanguage);
+    let translation: Awaited<ReturnType<typeof translateInteractionText>>;
+
+    try {
+      translation = await translateInteractionText(message, originalLanguage, conversationLanguage);
+    } catch {
+      translation = {
+        translatedText: null,
+        translatedLanguage: conversationLanguage,
+        translationStatus: "failed",
+        provider: null,
+      };
+    }
+
+    const [propertyObject, blocked, actor] = await Promise.all([
+      prisma.propertyObject.findFirst({
+        where: {
+          id: propertyObjectId,
+          ownerOrganizationId: targetOrganizationId,
+          ownerOfficeId: targetOfficeId,
+          status: "published",
+          visibility: "public",
+          canBeShownByOtherOffices: true,
+        },
+      }),
+      prisma.blockedPartner.findFirst({
+        where: {
+          OR: [
+            {
+              organizationId: targetOrganizationId,
+              blockedPartnerOrganizationId: context.organization.id,
+            },
+            {
+              organizationId: context.organization.id,
+              blockedPartnerOrganizationId: targetOrganizationId,
+            },
+          ],
+        },
+      }),
+      upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName)),
+    ]);
+
+    if (!propertyObject) {
+      sendError(response, 404, "public_object_not_found", "Object is not available in the shared public inventory for this partner.");
+      return;
+    }
+
+    if (blocked) {
+      sendError(response, 403, "partner_unavailable", "Partner is unavailable for new requests.");
+      return;
+    }
+
+    const interaction = await prisma.$transaction(async (tx) => {
+      const created = await tx.partnerInteraction.create({
+        data: {
+          initiatingOrganizationId: context.organization.id,
+          initiatingOfficeId: context.office.id,
+          targetOrganizationId,
+          targetOfficeId,
+          propertyObjectId,
+          createdByUserId: actor.id,
+          type: (["info_request", "commercial", "cooperation"].includes(optionalString(body.type) ?? "") ? body.type : "info_request") as never,
+          priority: (["normal", "urgent", "critical"].includes(optionalString(body.priority) ?? "") ? body.priority : "normal") as never,
+          conversationLanguage: conversationLanguage as never,
+          subject: optionalString(body.subject),
+          initialMessage: message,
+          messages: {
+            create: {
+              senderUserId: actor.id,
+              senderOrganizationId: context.organization.id,
+              senderOfficeId: context.office.id,
+              originalText: message,
+              originalLanguage: originalLanguage as never,
+              translatedText: translation.translatedText,
+              translatedLanguage: translation.translatedLanguage as never,
+              translationStatus: translation.translationStatus,
+              deliveryStatus: "delivered",
+            },
+          },
+          events: {
+            create: [
+              {
+                eventType: "created",
+                actorUserId: actor.id,
+                actorOrganizationId: context.organization.id,
+                actorOfficeId: context.office.id,
+                payload: { priority: optionalString(body.priority) ?? "normal", type: optionalString(body.type) ?? "info_request" },
+              },
+              {
+                eventType: "message_sent",
+                actorUserId: actor.id,
+                actorOrganizationId: context.organization.id,
+                actorOfficeId: context.office.id,
+                payload: { initial: true },
+              },
+            ],
+          },
+        },
+        include: {
+          initiatingOrganization: true,
+          initiatingOffice: true,
+          targetOrganization: true,
+          targetOffice: true,
+          propertyObject: {
+            include: {
+              market: true,
+              ownerOrganization: true,
+              ownerOffice: true,
+              informationOwnerOrganization: true,
+              informationOwnerOffice: true,
+              localizations: true,
+              media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+            },
+          },
+          messages: { include: { senderOrganization: true, senderOffice: true }, orderBy: { createdAt: "asc" } },
+          attachments: { orderBy: { createdAt: "asc" } },
+          reviews: {
+            where: { hiddenByPlatform: false },
+            include: { reviewerOrganization: true, reviewedOrganization: true },
+            orderBy: { createdAt: "desc" },
+          },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      });
+
+      return created;
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      interaction: serializePartnerInteraction(interaction as never, context.organization.id, interaction.conversationLanguage),
+    });
+    queueInteractionNotifications({
+      interactionId: interaction.id,
+      messageId: interaction.messages[0]?.id ?? null,
+      recipientOrganizationId: targetOrganizationId,
+      recipientOfficeId: targetOfficeId,
+      eventType: "new_interaction",
+      title: "New partner interaction",
+      body: `${context.organization.legalName}: ${optionalString(body.subject) ?? message.slice(0, 120)}`,
+      priority: interaction.priority,
+    });
+    return;
+  }
+
+  const interactionMessagesMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/messages$/);
+
+  if (interactionMessagesMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const interactionId = decodeURIComponent(interactionMessagesMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const messages = await prisma.interactionMessage.findMany({
+      where: { interactionId },
+      orderBy: { createdAt: "asc" },
+      take: Math.min(Number(url.searchParams.get("limit") ?? 50), 100),
+      include: { senderOrganization: true, senderOffice: true },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      messages: messages.map((message) => serializeInteractionMessage(message, context.organization.id)),
+    });
+    return;
+  }
+
+  if (interactionMessagesMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      message?: string;
+      originalLanguage?: string;
+      actorEmail?: string;
+      actorName?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionMessagesMatch[1]);
+    const message = optionalString(body.message);
+
+    if (!context || !message) {
+      sendError(response, 400, "required_fields_missing", "Message is required.");
+      return;
+    }
+
+    if (message.length > 5000) {
+      sendError(response, 400, "message_too_long", "Message must be 5000 characters or less.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const isTargetResponse = interaction.targetOrganizationId === context.organization.id && !interaction.firstTargetResponseAt;
+    const originalLanguage = normalizeInteractionLanguage(optionalString(body.originalLanguage) ?? interaction.conversationLanguage, interaction.conversationLanguage);
+    const targetLanguage = normalizeInteractionLanguage(interaction.conversationLanguage);
+    let translation: Awaited<ReturnType<typeof translateInteractionText>>;
+
+    try {
+      translation = await translateInteractionText(message, originalLanguage, targetLanguage);
+    } catch {
+      translation = {
+        translatedText: null,
+        translatedLanguage: targetLanguage,
+        translationStatus: "failed",
+        provider: null,
+      };
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      const newMessage = await tx.interactionMessage.create({
+        data: {
+          interactionId,
+          senderUserId: actor.id,
+          senderOrganizationId: context.organization.id,
+          senderOfficeId: context.office.id,
+          originalText: message,
+          originalLanguage: originalLanguage as never,
+          translatedText: translation.translatedText,
+          translatedLanguage: translation.translatedLanguage as never,
+          translationStatus: translation.translationStatus,
+          deliveryStatus: "delivered",
+        },
+        include: { senderOrganization: true, senderOffice: true },
+      });
+
+      await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: {
+          updatedAt: new Date(),
+          ...(isTargetResponse ? { firstTargetResponseAt: new Date(), status: "information_received" as never } : {}),
+        },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "message_sent",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { messageId: newMessage.id },
+        },
+      });
+
+      return newMessage;
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      message: serializeInteractionMessage(created, context.organization.id),
+    });
+    queueInteractionNotifications({
+      interactionId,
+      messageId: created.id,
+      recipientOrganizationId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOrganizationId : interaction.initiatingOrganizationId,
+      recipientOfficeId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOfficeId : interaction.initiatingOfficeId,
+      eventType: "new_message",
+      title: "New partner message",
+      body: message.slice(0, 500),
+      priority: interaction.priority,
+    });
+    return;
+  }
+
+  const attachmentUploadPolicyMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/attachments\/upload-policy$/);
+
+  if (attachmentUploadPolicyMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      originalFileName?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      uploadedByEmail?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(attachmentUploadPolicyMatch[1]);
+    const originalFileName = optionalString(body.originalFileName) ?? "attachment";
+    const mimeType = optionalString(body.mimeType) ?? "application/octet-stream";
+    const requestedSizeBytes = Number(body.sizeBytes ?? 0);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    if (!allowedInteractionAttachmentMimeTypes.has(mimeType) || !hasAllowedInteractionAttachmentExtension(originalFileName, mimeType)) {
+      sendError(response, 400, "unsupported_attachment_type", `MIME type '${mimeType}' is not allowed for interaction attachments.`);
+      return;
+    }
+
+    if (requestedSizeBytes > maxInteractionAttachmentBytes) {
+      sendError(response, 400, "attachment_too_large", "Attachment exceeds the 25 MB per-file limit.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: { attachments: true },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const activeAttachments = interaction.attachments.filter((attachment) => !attachment.deletedAt);
+    const totalBytes = activeAttachments.reduce((sum, attachment) => sum + Number(attachment.sizeBytes), 0);
+
+    if (activeAttachments.length >= maxInteractionAttachmentCount) {
+      sendError(response, 400, "attachment_count_limit", "Interaction attachment count limit reached.");
+      return;
+    }
+
+    if (totalBytes + requestedSizeBytes > maxInteractionAttachmentTotalBytes) {
+      sendError(response, 400, "attachment_total_limit", "Interaction attachment total size limit reached.");
+      return;
+    }
+
+    const attachmentId = randomUUID();
+    const extension = extensionForFileName(originalFileName, mimeType);
+    const storagePath = [
+      "organizations",
+      context.organization.id,
+      "offices",
+      context.office.id,
+      "interactions",
+      interactionId,
+      "attachments",
+      attachmentId,
+      `original.${extension}`,
+    ].join("/");
+    const [policy] = await storageBucket.file(storagePath).generateSignedPostPolicyV4({
+      expires: Date.now() + 15 * 60 * 1000,
+      conditions: [
+        ["eq", "$Content-Type", mimeType],
+        ["content-length-range", 0, maxInteractionAttachmentBytes],
+      ],
+      fields: {
+        "Content-Type": mimeType,
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      upload: {
+        attachmentId,
+        storagePath,
+        url: policy.url,
+        fields: policy.fields,
+        method: "POST",
+        maxBytes: maxInteractionAttachmentBytes,
+      },
+    });
+    return;
+  }
+
+  const interactionReminderMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/reminder$/);
+
+  if (interactionReminderMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      actorEmail?: string;
+      actorName?: string;
+      message?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionReminderMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    if (interaction.status === "archived" || interaction.status === "completed") {
+      sendError(response, 400, "interaction_closed", "Closed interactions cannot receive reminders.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const now = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: { remindedAt: now },
+        include: {
+          initiatingOrganization: true,
+          initiatingOffice: true,
+          targetOrganization: true,
+          targetOffice: true,
+          propertyObject: {
+            include: {
+              market: true,
+              ownerOrganization: true,
+              ownerOffice: true,
+              informationOwnerOrganization: true,
+              informationOwnerOffice: true,
+              localizations: true,
+              media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+            },
+          },
+          messages: { orderBy: { createdAt: "asc" }, include: { senderOrganization: true, senderOffice: true } },
+          attachments: { orderBy: { createdAt: "asc" } },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "reminder_sent",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { message: optionalString(body.message) ?? null },
+        },
+      });
+
+      return result;
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      interaction: serializePartnerInteraction(updated as never, context.organization.id, updated.conversationLanguage),
+    });
+    queueInteractionNotifications({
+      interactionId,
+      recipientOrganizationId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOrganizationId : interaction.initiatingOrganizationId,
+      recipientOfficeId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOfficeId : interaction.initiatingOfficeId,
+      eventType: "reminder",
+      title: "Partner interaction reminder",
+      body: optionalString(body.message) ?? `Reminder for interaction ${interactionId}`,
+      priority: interaction.priority,
+    });
+    return;
+  }
+
+  const interactionReviewMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/reviews$/);
+
+  if (interactionReviewMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      actorEmail?: string;
+      actorName?: string;
+      rating?: number | string;
+      text?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionReviewMatch[1]);
+    const rating = Number(body.rating);
+    const text = optionalString(body.text);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      sendError(response, 400, "invalid_rating", "Rating must be an integer from 1 to 5.");
+      return;
+    }
+
+    if (text && text.length > 500) {
+      sendError(response, 400, "review_too_long", "Review text must be 500 characters or less.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: {
+        reviews: true,
+      },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    if (interaction.status !== "completed") {
+      sendError(response, 400, "interaction_not_completed", "Reviews can be submitted only after interaction completion.");
+      return;
+    }
+
+    const completedWindowMs = 30 * 24 * 60 * 60 * 1000;
+
+    const completedAt = interaction.completedAt ?? interaction.updatedAt;
+
+    if (Date.now() - completedAt.getTime() > completedWindowMs) {
+      sendError(response, 400, "review_window_closed", "Review window is closed.");
+      return;
+    }
+
+    const reviewingInitiator = interaction.initiatingOrganizationId === context.organization.id;
+    const reviewedOrganizationId = reviewingInitiator ? interaction.targetOrganizationId : interaction.initiatingOrganizationId;
+    const reviewedOfficeId = reviewingInitiator ? interaction.targetOfficeId : interaction.initiatingOfficeId;
+    const existingReview = interaction.reviews.find(
+      (review) => review.reviewerOrganizationId === context.organization.id && review.reviewedOrganizationId === reviewedOrganizationId,
+    );
+
+    if (existingReview && Date.now() - existingReview.createdAt.getTime() > 24 * 60 * 60 * 1000) {
+      sendError(response, 400, "review_edit_window_closed", "Review edit window is closed.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const review = await prisma.$transaction(async (tx) => {
+      const saved = existingReview
+        ? await tx.partnerReview.update({
+            where: { id: existingReview.id },
+            data: { rating, text: text || null },
+            include: { reviewerOrganization: true, reviewedOrganization: true },
+          })
+        : await tx.partnerReview.create({
+            data: {
+              interactionId,
+              reviewerUserId: actor.id,
+              reviewerOrganizationId: context.organization.id,
+              reviewerOfficeId: context.office.id,
+              reviewedOrganizationId,
+              reviewedOfficeId,
+              rating,
+              text: text || null,
+            },
+            include: { reviewerOrganization: true, reviewedOrganization: true },
+          });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: existingReview ? "review_updated" : "review_created",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { rating, reviewedOrganizationId },
+        },
+      });
+
+      const aggregate = await tx.partnerReview.aggregate({
+        where: { reviewedOrganizationId, hiddenByPlatform: false },
+        _avg: { rating: true },
+      });
+
+      const existingMetric = await tx.partnerMetric.findFirst({
+        where: { organizationId: reviewedOrganizationId, officeId: null },
+      });
+
+      if (existingMetric) {
+        await tx.partnerMetric.update({
+          where: { id: existingMetric.id },
+          data: { rating: aggregate._avg.rating ?? null, lastUpdatedAt: new Date() },
+        });
+      } else {
+        await tx.partnerMetric.create({
+          data: {
+            organizationId: reviewedOrganizationId,
+            officeId: null,
+            rating: aggregate._avg.rating ?? null,
+            lastUpdatedAt: new Date(),
+          },
+        });
+      }
+
+      return saved;
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      review: {
+        id: review.id,
+        reviewer: {
+          organizationSlug: review.reviewerOrganization.slug,
+          organizationName: review.reviewerOrganization.legalName,
+          ownOrganization: true,
+        },
+        reviewed: {
+          organizationSlug: review.reviewedOrganization.slug,
+          organizationName: review.reviewedOrganization.legalName,
+        },
+        rating: review.rating,
+        text: review.text,
+        hiddenByPlatform: review.hiddenByPlatform,
+        createdAt: review.createdAt.toISOString(),
+        updatedAt: review.updatedAt.toISOString(),
+      },
+    });
+    return;
+  }
+
+  const interactionDealRoomMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/deal-room$/);
+
+  if (interactionDealRoomMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      actorEmail?: string;
+      actorName?: string;
+      note?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionDealRoomMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: {
+        propertyObject: {
+          include: {
+            localizations: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+          },
+        },
+      },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    if (interaction.dealRoomId) {
+      sendJson(response, 200, { ok: true, dealRoom: { id: interaction.dealRoomId }, alreadyLinked: true });
+      return;
+    }
+
+    if (interaction.status === "archived") {
+      sendError(response, 400, "interaction_archived", "Archived interactions cannot open deal rooms.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const localization =
+      interaction.propertyObject.localizations.find((item) => item.language === interaction.conversationLanguage) ??
+      interaction.propertyObject.localizations.find((item) => item.language === "ru") ??
+      interaction.propertyObject.localizations[0];
+    const requirementText = [
+      interaction.subject ?? `Deal room from partner interaction ${interaction.id}`,
+      localization?.title ? `Object: ${localization.title}` : null,
+      interaction.initialMessage ? `Initial message: ${interaction.initialMessage}` : null,
+      optionalString(body.note) ? `Note: ${optionalString(body.note)}` : null,
+    ].filter(Boolean).join("\n\n");
+
+    const result = await prisma.$transaction(async (tx) => {
+      const clientIntent = await tx.clientIntent.create({
+        data: {
+          sourceOrganizationId: interaction.initiatingOrganizationId,
+          sourceOfficeId: interaction.initiatingOfficeId,
+          marketId: interaction.propertyObject.marketId,
+          preferredLanguage: interaction.conversationLanguage,
+          preferredCurrency: context.organization.defaultCurrency as never,
+          requirementText,
+          status: "in_deal_room",
+        },
+      });
+      const dealRoom = await tx.dealRoom.create({
+        data: {
+          clientIntentId: clientIntent.id,
+          sellerOrganizationId: interaction.targetOrganizationId,
+          sellerOfficeId: interaction.targetOfficeId,
+          buyerOrganizationId: interaction.initiatingOrganizationId,
+          buyerOfficeId: interaction.initiatingOfficeId,
+          status: "draft",
+          objects: {
+            create: {
+              propertyObjectId: interaction.propertyObjectId,
+            },
+          },
+          events: {
+            create: {
+              eventType: "created_from_partner_interaction",
+              authorOrganizationId: context.organization.id,
+              authorOfficeId: context.office.id,
+              payload: {
+                interactionId,
+                propertyObjectId: interaction.propertyObjectId,
+              },
+            },
+          },
+        },
+      });
+
+      await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: { dealRoomId: dealRoom.id, status: "in_deal" },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "deal_room_opened",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { dealRoomId: dealRoom.id, clientIntentId: clientIntent.id },
+        },
+      });
+
+      return { dealRoom, clientIntent };
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      dealRoom: {
+        id: result.dealRoom.id,
+        clientIntentId: result.clientIntent.id,
+        status: result.dealRoom.status,
+      },
+    });
+    return;
+  }
+
+  const interactionExportPdfMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/export-pdf$/);
+
+  if (interactionExportPdfMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      language?: string;
+      actorEmail?: string;
+      actorName?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionExportPdfMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: {
+        initiatingOrganization: true,
+        initiatingOffice: true,
+        targetOrganization: true,
+        targetOffice: true,
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+          },
+        },
+        messages: { orderBy: { createdAt: "asc" }, include: { senderOrganization: true, senderOffice: true } },
+        attachments: { orderBy: { createdAt: "asc" } },
+        events: { orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const pdfBuffer = await generateInteractionPdfBuffer(
+      interaction as never,
+      context.organization.id,
+      normalizeInteractionLanguage(optionalString(body.language) ?? interaction.conversationLanguage, interaction.conversationLanguage),
+    );
+    const exportResult = await saveInteractionPdf(interactionId, pdfBuffer);
+
+    await prisma.interactionEvent.create({
+      data: {
+        interactionId,
+        eventType: "pdf_exported",
+        actorUserId: actor.id,
+        actorOrganizationId: context.organization.id,
+        actorOfficeId: context.office.id,
+        payload: {
+          storagePath: exportResult.storagePath,
+          sizeBytes: pdfBuffer.length,
+        },
+      },
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      export: {
+        storagePath: exportResult.storagePath,
+        url: exportResult.signedUrl,
+        expiresInSec: 900,
+        sizeBytes: pdfBuffer.length,
+      },
+    });
+    return;
+  }
+
+  const interactionEscalationMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/escalate$/);
+
+  if (interactionEscalationMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      actorEmail?: string;
+      actorName?: string;
+      reason?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionEscalationMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    if (interaction.status === "archived" || interaction.status === "completed") {
+      sendError(response, 400, "interaction_closed", "Closed interactions cannot be escalated.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const now = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: { escalatedAt: now },
+        include: {
+          initiatingOrganization: true,
+          initiatingOffice: true,
+          targetOrganization: true,
+          targetOffice: true,
+          propertyObject: {
+            include: {
+              market: true,
+              ownerOrganization: true,
+              ownerOffice: true,
+              informationOwnerOrganization: true,
+              informationOwnerOffice: true,
+              localizations: true,
+              media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+            },
+          },
+          messages: { orderBy: { createdAt: "asc" }, include: { senderOrganization: true, senderOffice: true } },
+          attachments: { orderBy: { createdAt: "asc" } },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "support_escalated",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { reason: optionalString(body.reason) ?? null },
+        },
+      });
+
+      return result;
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      interaction: serializePartnerInteraction(updated as never, context.organization.id, updated.conversationLanguage),
+    });
+    queueInteractionNotifications({
+      interactionId,
+      recipientOrganizationId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOrganizationId : interaction.initiatingOrganizationId,
+      recipientOfficeId: interaction.initiatingOrganizationId === context.organization.id ? interaction.targetOfficeId : interaction.initiatingOfficeId,
+      eventType: "escalation",
+      title: "Partner interaction escalated",
+      body: optionalString(body.reason) ?? `Interaction ${interactionId} was escalated.`,
+      priority: "critical",
+    });
+    return;
+  }
+
+  const attachmentConfirmMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/attachments\/confirm$/);
+
+  if (attachmentConfirmMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      attachmentId?: string;
+      storagePath?: string;
+      originalFileName?: string;
+      uploadedByEmail?: string;
+      uploadedByName?: string;
+      messageId?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(attachmentConfirmMatch[1]);
+    const attachmentId = optionalString(body.attachmentId);
+    const storagePath = optionalString(body.storagePath);
+
+    if (!context || !attachmentId || !storagePath) {
+      sendError(response, 400, "required_fields_missing", "organization, attachmentId, and storagePath are required.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: { attachments: true },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const expectedPrefix = [
+      "organizations",
+      context.organization.id,
+      "offices",
+      context.office.id,
+      "interactions",
+      interactionId,
+      "attachments",
+      attachmentId,
+    ].join("/");
+
+    if (!storagePath.startsWith(`${expectedPrefix}/`)) {
+      sendError(response, 400, "invalid_storage_path", "The uploaded attachment path does not belong to this interaction.");
+      return;
+    }
+
+    const file = storageBucket.file(storagePath);
+    const [exists] = await file.exists();
+
+    if (!exists) {
+      sendError(response, 404, "uploaded_file_not_found", "Uploaded file was not found in Cloud Storage.");
+      return;
+    }
+
+    const [metadata] = await file.getMetadata();
+    const mimeType = metadata.contentType ?? "application/octet-stream";
+    const sizeBytes = Number(metadata.size ?? 0);
+    const originalFileName = optionalString(body.originalFileName) ?? "attachment";
+
+    if (!allowedInteractionAttachmentMimeTypes.has(mimeType) || !hasAllowedInteractionAttachmentExtension(originalFileName, mimeType) || sizeBytes > maxInteractionAttachmentBytes) {
+      await file.delete({ ignoreNotFound: true });
+      sendError(response, 400, "invalid_uploaded_attachment", "Uploaded file type or size is not allowed.");
+      return;
+    }
+
+    const filePrefix = await readStorageFilePrefix(storagePath);
+
+    if (!hasAllowedInteractionAttachmentSignature(filePrefix, mimeType)) {
+      await file.delete({ ignoreNotFound: true });
+      sendError(response, 400, "invalid_uploaded_attachment_signature", "Uploaded file content signature does not match the declared attachment type.");
+      return;
+    }
+
+    const activeAttachments = interaction.attachments.filter((attachment) => !attachment.deletedAt);
+    const totalBytes = activeAttachments.reduce((sum, attachment) => sum + Number(attachment.sizeBytes), 0);
+
+    if (activeAttachments.length >= maxInteractionAttachmentCount || totalBytes + sizeBytes > maxInteractionAttachmentTotalBytes) {
+      await file.delete({ ignoreNotFound: true });
+      sendError(response, 400, "attachment_limit_reached", "Interaction attachment limits would be exceeded.");
+      return;
+    }
+
+    const uploadedByUser = await upsertInteractionActor(optionalString(body.uploadedByEmail), optionalString(body.uploadedByName));
+    const attachment = await prisma.$transaction(async (tx) => {
+      const created = await tx.interactionAttachment.create({
+        data: {
+          id: attachmentId,
+          interactionId,
+          messageId: optionalString(body.messageId) || null,
+          ownerOrganizationId: context.organization.id,
+          ownerOfficeId: context.office.id,
+          uploadedByUserId: uploadedByUser.id,
+          storagePath,
+          originalFileName,
+          mimeType,
+          sizeBytes: BigInt(sizeBytes),
+          scanStatus: "scan_pending",
+        },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "attachment_uploaded",
+          actorUserId: uploadedByUser.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { attachmentId: created.id, originalFileName: created.originalFileName, mimeType, sizeBytes },
+        },
+      });
+
+      await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: { updatedAt: new Date() },
+      });
+
+      return created;
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      attachment: serializeInteractionAttachment(attachment),
+    });
+    return;
+  }
+
+  const attachmentScanResultMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/attachments\/([^/]+)\/scan-result$/);
+
+  if (attachmentScanResultMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      scanStatus?: string;
+      scanner?: string;
+      reason?: string;
+      actorEmail?: string;
+      actorName?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const attachmentId = decodeURIComponent(attachmentScanResultMatch[1]);
+    const scanStatus = optionalString(body.scanStatus);
+
+    if (!scanStatus || !["clean", "blocked", "failed"].includes(scanStatus)) {
+      sendError(response, 400, "invalid_scan_status", "scanStatus must be clean, blocked, or failed.");
+      return;
+    }
+
+    const attachment = await prisma.interactionAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { interaction: true },
+    });
+
+    if (!attachment || attachment.deletedAt) {
+      sendError(response, 404, "attachment_not_found", "Attachment was not found.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.interactionAttachment.update({
+        where: { id: attachmentId },
+        data: { scanStatus: scanStatus as never },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId: attachment.interactionId,
+          eventType: "attachment_scan_result",
+          actorUserId: actor.id,
+          actorOrganizationId: attachment.ownerOrganizationId,
+          actorOfficeId: attachment.ownerOfficeId,
+          payload: {
+            attachmentId,
+            scanStatus,
+            scanner: optionalString(body.scanner) ?? null,
+            reason: optionalString(body.reason) ?? null,
+          },
+        },
+      });
+
+      return result;
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      attachment: serializeInteractionAttachment(updated),
+    });
+    return;
+  }
+
+  const messageReadMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/messages\/([^/]+)\/read$/);
+
+  if (messageReadMatch && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(messageReadMatch[1]);
+    const messageId = decodeURIComponent(messageReadMatch[2]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const message = await prisma.interactionMessage.update({
+      where: { id: messageId },
+      data: { readAt: new Date(), deliveryStatus: "read" },
+      include: { senderOrganization: true, senderOffice: true },
+    });
+
+    sendJson(response, 200, { ok: true, message: serializeInteractionMessage(message, context.organization.id) });
+    return;
+  }
+
+  const messageTranslateMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/messages\/([^/]+)\/translate$/);
+
+  if (messageTranslateMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; targetLanguage?: string; actorEmail?: string; actorName?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(messageTranslateMatch[1]);
+    const messageId = decodeURIComponent(messageTranslateMatch[2]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const existingMessage = await prisma.interactionMessage.findUnique({
+      where: { id: messageId },
+      include: { senderOrganization: true, senderOffice: true },
+    });
+
+    if (!existingMessage || existingMessage.interactionId !== interactionId || existingMessage.deletedAt) {
+      sendError(response, 404, "message_not_found", "Message was not found.");
+      return;
+    }
+
+    const targetLanguage = normalizeInteractionLanguage(optionalString(body.targetLanguage) ?? interaction.conversationLanguage, interaction.conversationLanguage);
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+
+    try {
+      const translation = await translateInteractionText(existingMessage.originalText, existingMessage.originalLanguage, targetLanguage);
+      const updated = await prisma.$transaction(async (tx) => {
+        const message = await tx.interactionMessage.update({
+          where: { id: messageId },
+          data: {
+            translatedText: translation.translatedText,
+            translatedLanguage: translation.translatedLanguage as never,
+            translationStatus: translation.translationStatus,
+          },
+          include: { senderOrganization: true, senderOffice: true },
+        });
+
+        await tx.interactionEvent.create({
+          data: {
+            interactionId,
+            eventType: "message_translated",
+            actorUserId: actor.id,
+            actorOrganizationId: context.organization.id,
+            actorOfficeId: context.office.id,
+            payload: { messageId, targetLanguage, provider: translation.provider },
+          },
+        });
+
+        return message;
+      });
+
+      sendJson(response, 200, { ok: true, message: serializeInteractionMessage(updated, context.organization.id) });
+    } catch (error) {
+      const failed = await prisma.interactionMessage.update({
+        where: { id: messageId },
+        data: { translationStatus: "failed" },
+        include: { senderOrganization: true, senderOffice: true },
+      });
+
+      await prisma.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "message_translation_failed",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { messageId, targetLanguage, error: error instanceof Error ? error.message : "translation_failed" },
+        },
+      });
+
+      sendJson(response, 502, { ok: false, error: { code: "translation_failed", message: "Message translation failed." }, message: serializeInteractionMessage(failed, context.organization.id) });
+    }
+    return;
+  }
+
+  const messageTranslationEditMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/messages\/([^/]+)\/translation-edit$/);
+
+  if (messageTranslationEditMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{
+      organizationSlug?: string;
+      officeSlug?: string;
+      translatedText?: string;
+      translatedLanguage?: string;
+      actorEmail?: string;
+      actorName?: string;
+    }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(messageTranslationEditMatch[1]);
+    const messageId = decodeURIComponent(messageTranslationEditMatch[2]);
+    const translatedText = optionalString(body.translatedText);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    if (!translatedText || translatedText.length > 5000) {
+      sendError(response, 400, "invalid_translation_text", "Translated text is required and must be 5000 characters or less.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const existingMessage = await prisma.interactionMessage.findUnique({ where: { id: messageId } });
+
+    if (!existingMessage || existingMessage.interactionId !== interactionId || existingMessage.deletedAt) {
+      sendError(response, 404, "message_not_found", "Message was not found.");
+      return;
+    }
+
+    const translatedLanguage = normalizeInteractionLanguage(optionalString(body.translatedLanguage) ?? interaction.conversationLanguage, interaction.conversationLanguage);
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const updated = await prisma.$transaction(async (tx) => {
+      const message = await tx.interactionMessage.update({
+        where: { id: messageId },
+        data: {
+          translatedText,
+          translatedLanguage: translatedLanguage as never,
+          translationStatus: "edited",
+        },
+        include: { senderOrganization: true, senderOffice: true },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "message_translation_edited",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { messageId, translatedLanguage },
+        },
+      });
+
+      return message;
+    });
+
+    sendJson(response, 200, { ok: true, message: serializeInteractionMessage(updated, context.organization.id) });
+    return;
+  }
+
+  const messageDeleteMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/messages\/([^/]+)$/);
+
+  if (messageDeleteMatch && request.method === "DELETE") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const interactionId = decodeURIComponent(messageDeleteMatch[1]);
+    const messageId = decodeURIComponent(messageDeleteMatch[2]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    const existingMessage = await prisma.interactionMessage.findUnique({ where: { id: messageId } });
+
+    if (!existingMessage || existingMessage.interactionId !== interactionId) {
+      sendError(response, 404, "message_not_found", "Message was not found.");
+      return;
+    }
+
+    if (existingMessage.senderOrganizationId !== context.organization.id) {
+      sendError(response, 403, "message_delete_forbidden", "Only the message author organization can delete this message.");
+      return;
+    }
+
+    if (Date.now() - existingMessage.createdAt.getTime() > 24 * 60 * 60 * 1000) {
+      sendError(response, 400, "message_delete_window_closed", "Messages can be deleted only within 24 hours.");
+      return;
+    }
+
+    const actor = await upsertInteractionActor(undefined);
+    const message = await prisma.interactionMessage.update({
+      where: { id: messageId },
+      data: { deletedAt: new Date(), deletedByUserId: actor.id },
+      include: { senderOrganization: true, senderOffice: true },
+    });
+
+    sendJson(response, 200, { ok: true, message: serializeInteractionMessage(message, context.organization.id) });
+    return;
+  }
+
+  const interactionTypingMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/typing$/);
+
+  if (interactionTypingMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionTypingMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    await setInteractionTyping(interactionId, context);
+    sendJson(response, 200, { ok: true, expiresInMs: interactionTypingTtlMs });
+    return;
+  }
+
+  const interactionStatusMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)\/status$/);
+
+  if (interactionStatusMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const interactionId = decodeURIComponent(interactionStatusMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      typing: await getInteractionTyping(interactionId, context.organization.id),
+      status: interaction.status,
+      updatedAt: interaction.updatedAt.toISOString(),
+    });
+    return;
+  }
+
+  const interactionDetailMatch = url.pathname.match(/^\/api\/v1\/admin\/interactions\/([^/]+)$/);
+
+  if (interactionDetailMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const language = url.searchParams.get("language") ?? "ru";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const interactionId = decodeURIComponent(interactionDetailMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const interaction = await prisma.partnerInteraction.findUnique({
+      where: { id: interactionId },
+      include: {
+        initiatingOrganization: true,
+        initiatingOffice: true,
+        targetOrganization: true,
+        targetOffice: true,
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+          },
+        },
+        messages: { orderBy: { createdAt: "asc" }, include: { senderOrganization: true, senderOffice: true } },
+        attachments: { orderBy: { createdAt: "asc" } },
+        reviews: {
+          where: { hiddenByPlatform: false },
+          include: { reviewerOrganization: true, reviewedOrganization: true },
+          orderBy: { createdAt: "desc" },
+        },
+        events: { orderBy: { createdAt: "asc" } },
+      },
+    });
+
+    if (!interaction || !canAccessInteraction(interaction, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    sendJson(response, 200, {
+      ok: true,
+      interaction: serializePartnerInteraction(interaction as never, context.organization.id, language),
+    });
+    return;
+  }
+
+  if (interactionDetailMatch && request.method === "PATCH") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; status?: string; actorEmail?: string; actorName?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const interactionId = decodeURIComponent(interactionDetailMatch[1]);
+    const nextStatus = optionalString(body.status);
+    const allowedStatuses = new Set(["waiting_response", "information_received", "accepted", "declined", "in_deal", "completed", "archived"]);
+
+    if (!context || !nextStatus || !allowedStatuses.has(nextStatus)) {
+      sendError(response, 400, "invalid_status", "A valid status is required.");
+      return;
+    }
+
+    const existing = await prisma.partnerInteraction.findUnique({ where: { id: interactionId } });
+
+    if (!existing || !canAccessInteraction(existing, context)) {
+      sendError(response, 404, "interaction_not_found", "Interaction was not found.");
+      return;
+    }
+
+    if (!canTransitionPartnerInteractionStatus(existing.status, nextStatus)) {
+      sendError(response, 400, "invalid_status_transition", `Interaction cannot transition from '${existing.status}' to '${nextStatus}'.`);
+      return;
+    }
+
+    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
+    const updated = await prisma.$transaction(async (tx) => {
+      const result = await tx.partnerInteraction.update({
+        where: { id: interactionId },
+        data: {
+          status: nextStatus as never,
+          ...(nextStatus === "completed" && !existing.completedAt ? { completedAt: new Date() } : {}),
+          ...(nextStatus === "archived" ? { archivedAt: new Date() } : {}),
+        },
+        include: {
+          initiatingOrganization: true,
+          initiatingOffice: true,
+          targetOrganization: true,
+          targetOffice: true,
+          propertyObject: {
+            include: {
+              market: true,
+              ownerOrganization: true,
+              ownerOffice: true,
+              informationOwnerOrganization: true,
+              informationOwnerOffice: true,
+              localizations: true,
+              media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 1 },
+            },
+          },
+          messages: { orderBy: { createdAt: "asc" }, include: { senderOrganization: true, senderOffice: true } },
+          attachments: { orderBy: { createdAt: "asc" } },
+          reviews: {
+            where: { hiddenByPlatform: false },
+            include: { reviewerOrganization: true, reviewedOrganization: true },
+            orderBy: { createdAt: "desc" },
+          },
+          events: { orderBy: { createdAt: "asc" } },
+        },
+      });
+
+      await tx.interactionEvent.create({
+        data: {
+          interactionId,
+          eventType: "status_changed",
+          actorUserId: actor.id,
+          actorOrganizationId: context.organization.id,
+          actorOfficeId: context.office.id,
+          payload: { from: existing.status, to: nextStatus },
+        },
+      });
+
+      return result;
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      interaction: serializePartnerInteraction(updated as never, context.organization.id, updated.conversationLanguage),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interaction-templates" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const templates = await prisma.interactionTemplate.findMany({
+      where: {
+        OR: [
+          { system: true },
+          { organizationId: context.organization.id },
+        ],
+      },
+      orderBy: [{ system: "desc" }, { createdAt: "asc" }],
+    });
+    const fallbackSystemTemplates = [
+      {
+        id: "system-ownership-certificate",
+        organizationId: null,
+        name: "Запросить сертификат собственности",
+        text: "Здравствуйте. Клиент заинтересован в объекте. Пожалуйста, пришлите актуальный сертификат собственности или доступные подтверждающие документы.",
+        type: "info_request",
+        system: true,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      {
+        id: "system-deal-terms",
+        organizationId: null,
+        name: "Уточнить условия сделки",
+        text: "Здравствуйте. Подскажите, пожалуйста, актуальные коммерческие условия, готовность к переговорам и возможные сроки сделки.",
+        type: "commercial",
+        system: true,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      {
+        id: "system-cooperation",
+        organizationId: null,
+        name: "Предложение сотрудничества",
+        text: "Здравствуйте. Есть клиентский интерес к объекту. Предлагаем обсудить формат совместной работы и дальнейшие шаги.",
+        type: "cooperation",
+        system: true,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+    ];
+
+    sendJson(response, 200, {
+      ok: true,
+      templates: [
+        ...fallbackSystemTemplates,
+        ...templates.map((template) => ({
+          id: template.id,
+          organizationId: template.organizationId,
+          name: template.name,
+          text: template.text,
+          type: template.type,
+          system: template.system,
+          createdAt: template.createdAt.toISOString(),
+          updatedAt: template.updatedAt.toISOString(),
+        })),
+      ],
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/interaction-templates" && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    type Body = {
+      organizationSlug?: string;
+      officeSlug?: string;
+      name?: string;
+      text?: string;
+      type?: string;
+    };
+
+    const body = await readJsonBody<Body>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const name = optionalString(body.name);
+    const text = optionalString(body.text);
+
+    if (!context || !name || !text) {
+      sendError(response, 400, "required_fields_missing", "Template name and text are required.");
+      return;
+    }
+
+    if (text.length > 5000) {
+      sendError(response, 400, "template_too_long", "Template text must be 5000 characters or less.");
+      return;
+    }
+
+    const template = await prisma.interactionTemplate.create({
+      data: {
+        organizationId: context.organization.id,
+        name,
+        text,
+        type: (["info_request", "commercial", "cooperation"].includes(optionalString(body.type) ?? "") ? body.type : "info_request") as never,
+        system: false,
+      },
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      template: {
+        id: template.id,
+        organizationId: template.organizationId,
+        name: template.name,
+        text: template.text,
+        type: template.type,
+        system: template.system,
+        createdAt: template.createdAt.toISOString(),
+        updatedAt: template.updatedAt.toISOString(),
+      },
+    });
+    return;
+  }
+
+  const interactionTemplateDeleteMatch = url.pathname.match(/^\/api\/v1\/admin\/interaction-templates\/([^/]+)$/);
+
+  if (interactionTemplateDeleteMatch && request.method === "DELETE") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const templateId = decodeURIComponent(interactionTemplateDeleteMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const template = await prisma.interactionTemplate.findFirst({
+      where: { id: templateId, organizationId: context.organization.id, system: false },
+    });
+
+    if (!template) {
+      sendError(response, 404, "template_not_found", "Template was not found or cannot be deleted.");
+      return;
+    }
+
+    await prisma.interactionTemplate.delete({ where: { id: template.id } });
+    sendJson(response, 200, { ok: true, deleted: true, templateId });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/blocked-partners" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
+      return;
+    }
+
+    const blocked = await prisma.blockedPartner.findMany({
+      where: { organizationId: context.organization.id },
+      orderBy: { createdAt: "desc" },
+      include: {
+        blockedPartnerOrganization: {
+          include: { offices: { orderBy: { legalName: "asc" }, take: 1 } },
+        },
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      blockedPartners: blocked.map((item) => ({
+        id: item.id,
+        partner: {
+          id: item.blockedPartnerOrganization.id,
+          slug: item.blockedPartnerOrganization.slug,
+          legalName: item.blockedPartnerOrganization.legalName,
+          primaryOffice: item.blockedPartnerOrganization.offices[0]
+            ? {
+                id: item.blockedPartnerOrganization.offices[0].id,
+                slug: item.blockedPartnerOrganization.offices[0].slug,
+                legalName: item.blockedPartnerOrganization.offices[0].legalName,
+              }
+            : null,
+        },
+        reason: item.reason,
+        createdAt: item.createdAt.toISOString(),
+      })),
+    });
+    return;
+  }
+
+  const blockedPartnerMatch = url.pathname.match(/^\/api\/v1\/admin\/blocked-partners\/([^/]+)$/);
+
+  if (blockedPartnerMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; reason?: string }>(request);
+    const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
+    const partnerKey = decodeURIComponent(blockedPartnerMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const partner = await prisma.organization.findFirst({
+      where: { OR: [{ id: partnerKey }, { slug: partnerKey }] },
+    });
+
+    if (!partner || partner.id === context.organization.id) {
+      sendError(response, 404, "partner_not_found", "Partner was not found.");
+      return;
+    }
+
+    const blocked = await prisma.blockedPartner.upsert({
+      where: {
+        organizationId_blockedPartnerOrganizationId: {
+          organizationId: context.organization.id,
+          blockedPartnerOrganizationId: partner.id,
+        },
+      },
+      update: { reason: optionalString(body.reason) },
+      create: {
+        organizationId: context.organization.id,
+        blockedPartnerOrganizationId: partner.id,
+        reason: optionalString(body.reason),
+      },
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      blockedPartner: {
+        id: blocked.id,
+        partner: { id: partner.id, slug: partner.slug, legalName: partner.legalName },
+        reason: blocked.reason,
+        createdAt: blocked.createdAt.toISOString(),
+      },
+    });
+    return;
+  }
+
+  if (blockedPartnerMatch && request.method === "DELETE") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+    const partnerKey = decodeURIComponent(blockedPartnerMatch[1]);
+
+    if (!context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+
+    const partner = await prisma.organization.findFirst({
+      where: { OR: [{ id: partnerKey }, { slug: partnerKey }] },
+    });
+
+    if (!partner) {
+      sendError(response, 404, "partner_not_found", "Partner was not found.");
+      return;
+    }
+
+    await prisma.blockedPartner.deleteMany({
+      where: {
+        organizationId: context.organization.id,
+        blockedPartnerOrganizationId: partner.id,
+      },
+    });
+
+    sendJson(response, 200, { ok: true, deleted: true, partnerId: partner.id });
     return;
   }
 
