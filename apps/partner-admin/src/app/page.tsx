@@ -64,6 +64,7 @@ type AdminObjectsResponse = {
     buildingAreaSqm: string | null;
     priceDisplay: string | null;
     priceCurrency: string | null;
+    cadastralNumber: string | null;
     titleEn: string | null;
     descriptionEn: string | null;
     addressDisplayEn: string | null;
@@ -83,6 +84,68 @@ type AdminObjectsResponse = {
       caption: string | null;
     }>;
     mediaCount: number;
+    documents: Array<{
+      id: string;
+      title: string;
+      documentType: string;
+      label: string;
+      source: string;
+      currentVersion: number;
+      url: string;
+      driveWebUrl: string | null;
+      originalFileName: string | null;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      analysisStatus: string;
+      aiSummary: unknown;
+      aiFacts: unknown;
+      aiRisks: unknown;
+      aiRecommendations: unknown;
+      aiMissingItems: unknown;
+      aiConflicts: unknown;
+      aiChangeSummary: unknown;
+      aiAnalyzedAt: string | null;
+      updatedAt: string;
+      versions: Array<{
+        id: string;
+        versionNumber: number;
+        originalFileName: string | null;
+        checksum: string | null;
+        aiChangeSummary: unknown;
+        createdAt: string;
+      }>;
+    }>;
+    documentCompleteness: {
+      required: Array<{ type: string; label: string; status: string; documentIds: string[] }>;
+      requiredCount: number;
+      presentCount: number;
+      missingCount: number;
+      score: number;
+    };
+    aiDossier: null | {
+      id: string;
+      status: string;
+      provider: string | null;
+      model: string | null;
+      summary: unknown;
+      confirmedFacts: unknown;
+      risks: unknown;
+      recommendations: unknown;
+      missingDocuments: unknown;
+      conflicts: unknown;
+      changeLog: unknown;
+      analyzedAt: string;
+      proposals: Array<{
+        id: string;
+        fieldPath: string;
+        currentValue: unknown;
+        proposedValue: unknown;
+        sourceDocumentIds: string[];
+        confidence: string;
+        rationale: string | null;
+        status: string;
+      }>;
+    };
     publishedAt: string | null;
     updatedAt: string;
     driveIntakeFolderUrl: string | null;
@@ -153,6 +216,40 @@ function resolveMediaUrl(url: string | undefined) {
   return `${baseUrl}${url}`;
 }
 
+function asStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && "text" in item) return String((item as { text?: unknown }).text ?? "");
+      if (item && typeof item === "object" && "reason" in item) return String((item as { reason?: unknown }).reason ?? "");
+      if (item && typeof item === "object" && "change" in item) return String((item as { change?: unknown }).change ?? "");
+      return JSON.stringify(item);
+    }).filter(Boolean);
+  }
+
+  return [];
+}
+
+function summaryText(value: unknown) {
+  if (value && typeof value === "object" && "short" in value) {
+    return String((value as { short?: unknown }).short ?? "");
+  }
+
+  return typeof value === "string" ? value : "";
+}
+
+function fieldValue(value: unknown) {
+  if (value === null || value === undefined) return "не заполнено";
+  if (typeof value === "string") return value || "пусто";
+  return JSON.stringify(value);
+}
+
+function formatFileSize(value: number | null) {
+  if (!value) return "не указан";
+  if (value > 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
+  return `${Math.round(value / 1024)} KB`;
+}
+
 function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "warn" | "dark" }) {
   const toneClass = {
     neutral: "border-kv-line bg-white text-kv-muted",
@@ -219,6 +316,55 @@ async function fillFromDriveAction(formData: FormData) {
     organizationSlug: session.organizationSlug,
     driveFolderUrl,
   });
+  revalidatePath("/");
+}
+
+async function syncObjectDriveAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const objectId = formValue(formData, "objectId");
+  const driveFolderUrl = formValue(formData, "driveFolderUrl");
+  if (!objectId || !driveFolderUrl) return;
+  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/intake/process-drive-folder", "POST", {
+    organizationSlug: session.organizationSlug,
+    objectId,
+    driveFolderUrl,
+  });
+  revalidatePath("/");
+}
+
+async function deleteDocumentAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const documentId = formValue(formData, "documentId");
+  if (!documentId) return;
+  await deleteBackendJson(
+    process.env.PARTNER_API_BASE_URL,
+    `/api/v1/admin/documents/${encodeURIComponent(documentId)}?organizationSlug=${encodeURIComponent(session.organizationSlug)}`,
+  );
+  revalidatePath("/");
+}
+
+async function reviewAIProposalAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdminSession();
+  const objectId = formValue(formData, "objectId");
+  const proposalId = formValue(formData, "proposalId");
+  const action = formValue(formData, "proposalAction");
+  if (!objectId || !proposalId) return;
+  await writeBackendJson(
+    process.env.PARTNER_API_BASE_URL,
+    `/api/v1/admin/objects/${encodeURIComponent(objectId)}/ai-proposals/${encodeURIComponent(proposalId)}`,
+    "POST",
+    {
+      organizationSlug: session.organizationSlug,
+      decidedByEmail: session.email,
+      action,
+    },
+  );
   revalidatePath("/");
 }
 
@@ -301,8 +447,9 @@ async function deleteMediaAction(formData: FormData) {
   revalidatePath("/");
 }
 
-export default async function PartnerAdminHome() {
+export default async function PartnerAdminHome({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await requireAdminSession();
+  const params = searchParams ? await searchParams : {};
 
   const organizationSlug = session.organizationSlug;
   const [context, objectResponse, partnerObjectResponse, reference] = await Promise.all([
@@ -338,6 +485,18 @@ export default async function PartnerAdminHome() {
   const assetClasses = reference?.assetClasses ?? ["land", "apartment", "house", "office", "industrial_site", "development_project"];
   const members = organization?.members ?? [];
   const showPartnerObjects = organization?.siteConfig.showPartnerObjects ?? true;
+  const selectedObjectId = typeof params.objectId === "string" ? params.objectId : undefined;
+  const selectedTab = typeof params.tab === "string" ? params.tab : "summary";
+  const selectedObject = objects.find((object) => object.id === selectedObjectId) ?? objects.find((object) => !object.driveIntakePending) ?? objects[0] ?? null;
+  const dossierTabs = [
+    ["summary", "Сводка"],
+    ["description", "Описание"],
+    ["documents", "Документы"],
+    ["ai", "AI-анализ"],
+    ["changes", "Изменения"],
+    ["media", "Медиа"],
+    ["publication", "Публикация"],
+  ];
 
   return (
     <main className="min-h-screen bg-kv-bg text-kv-ink">
@@ -548,6 +707,327 @@ export default async function PartnerAdminHome() {
           </div>
           </form>
         </details>
+      </section>
+
+      <section className="mx-auto grid max-w-[1440px] gap-4 px-6 pb-6 xl:grid-cols-[320px_1fr]">
+        <aside className="rounded-md border border-kv-line bg-white">
+          <div className="border-b border-kv-line px-4 py-3">
+            <div className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">AI-досье объектов</div>
+            <h2 className="mt-1 text-lg font-black text-kv-navy">Объекты</h2>
+          </div>
+          <div className="max-h-[760px] divide-y divide-kv-line overflow-auto">
+            {objects.map((object) => (
+              <a
+                key={object.id}
+                href={`/?objectId=${encodeURIComponent(object.id)}&tab=${encodeURIComponent(selectedTab)}`}
+                className={`block p-4 ${selectedObject?.id === object.id ? "bg-kv-bg" : "bg-white hover:bg-kv-bg"}`}
+              >
+                <div className="flex gap-3">
+                  <div className="h-16 w-20 shrink-0 overflow-hidden rounded-md border border-kv-line bg-kv-bg">
+                    {resolveMediaUrl(object.media[0]?.url) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={resolveMediaUrl(object.media[0]?.url) ?? ""} alt={object.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="grid h-full place-items-center text-[10px] font-bold text-kv-muted">Нет фото</div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-black text-kv-navy">{object.title}</div>
+                    <div className="mt-1 text-[12px] text-kv-muted">{object.market.city}, {object.market.country}</div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <Badge tone={object.documentCompleteness.missingCount ? "warn" : "good"}>docs {object.documentCompleteness.score}%</Badge>
+                      <Badge tone={object.aiDossier ? "good" : "warn"}>{object.aiDossier ? "AI ok" : "AI нет"}</Badge>
+                      <Badge>{object.documents.length} файлов</Badge>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+            {!objects.length ? <div className="p-4 text-[13px] text-kv-muted">Объекты не загружены.</div> : null}
+          </div>
+        </aside>
+
+        <section className="rounded-md border border-kv-line bg-white">
+          {selectedObject ? (
+            <>
+              <div className="border-b border-kv-line px-5 py-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge tone={selectedObject.status === "published" ? "good" : "warn"}>{selectedObject.status}</Badge>
+                      <Badge>{selectedObject.visibility}</Badge>
+                      <Badge tone={selectedObject.documentCompleteness.missingCount ? "warn" : "good"}>
+                        документы {selectedObject.documentCompleteness.presentCount}/{selectedObject.documentCompleteness.requiredCount}
+                      </Badge>
+                      <Badge tone={selectedObject.aiDossier ? "good" : "warn"}>{selectedObject.aiDossier ? "AI-анализ готов" : "AI-анализ не запускался"}</Badge>
+                    </div>
+                    <h2 className="mt-3 text-2xl font-black leading-tight text-kv-navy">{selectedObject.title}</h2>
+                    <p className="mt-2 max-w-4xl text-[14px] leading-6 text-kv-muted">{selectedObject.addressDisplay ?? "Адрес не заполнен."}</p>
+                  </div>
+                  <form action={syncObjectDriveAction} className="grid min-w-[320px] gap-2 rounded-md border border-kv-line bg-kv-bg p-3">
+                    <input type="hidden" name="objectId" value={selectedObject.id} />
+                    <label className="text-[12px] font-black text-kv-muted">
+                      Папка Google Drive для документов
+                      <input
+                        name="driveFolderUrl"
+                        type="url"
+                        defaultValue={selectedObject.driveIntakeFolderUrl ?? ""}
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-[13px] text-kv-ink"
+                        required
+                      />
+                    </label>
+                    <button className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">
+                      Синхронизировать документы и AI
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-b border-kv-line px-5 py-3">
+                {dossierTabs.map(([id, label]) => (
+                  <a
+                    key={id}
+                    href={`/?objectId=${encodeURIComponent(selectedObject.id)}&tab=${encodeURIComponent(id)}`}
+                    className={`rounded-full px-4 py-2 text-[12px] font-black ${selectedTab === id ? "bg-kv-navy text-white" : "border border-kv-line bg-white text-kv-navy"}`}
+                  >
+                    {label}
+                  </a>
+                ))}
+              </div>
+
+              <div className="p-5">
+                {selectedTab === "summary" ? (
+                  <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-md border border-kv-line bg-kv-bg p-4">
+                      <div className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">AI-сводка</div>
+                      <p className="mt-3 text-[15px] leading-6 text-kv-ink">
+                        {summaryText(selectedObject.aiDossier?.summary) || "Сводка появится после синхронизации документов из Google Drive."}
+                      </p>
+                      <div className="mt-4 grid gap-3 md:grid-cols-2">
+                        {[
+                          ["Что известно", asStringList((selectedObject.aiDossier?.summary as { known?: unknown } | undefined)?.known)],
+                          ["Что подтверждено", asStringList((selectedObject.aiDossier?.summary as { confirmed?: unknown } | undefined)?.confirmed)],
+                          ["Что вызывает вопросы", asStringList((selectedObject.aiDossier?.summary as { questions?: unknown } | undefined)?.questions)],
+                          ["Что сделать дальше", asStringList((selectedObject.aiDossier?.summary as { nextActions?: unknown } | undefined)?.nextActions)],
+                        ].map(([title, items]) => (
+                          <div key={String(title)} className="rounded-md border border-kv-line bg-white p-3">
+                            <div className="font-black text-kv-navy">{title}</div>
+                            {Array.isArray(items) && items.length ? (
+                              <ul className="mt-2 space-y-1 text-[13px] text-kv-muted">
+                                {items.slice(0, 5).map((item) => <li key={item}>• {item}</li>)}
+                              </ul>
+                            ) : <div className="mt-2 text-[13px] text-kv-muted">Нет данных.</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-kv-line bg-white p-4">
+                      <div className="font-black text-kv-navy">Комплектность документов</div>
+                      <div className="mt-3 text-[36px] font-black text-kv-navy">{selectedObject.documentCompleteness.score}%</div>
+                      <div className="mt-3 space-y-2">
+                        {selectedObject.documentCompleteness.required.map((item) => (
+                          <div key={item.type} className="flex items-center justify-between gap-3 rounded-md border border-kv-line bg-kv-bg px-3 py-2 text-[13px]">
+                            <span className="font-bold text-kv-ink">{item.label}</span>
+                            <Badge tone={item.status === "present" ? "good" : "warn"}>{item.status === "present" ? "есть" : "не хватает"}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedTab === "description" ? (
+                  <div className="grid gap-4 lg:grid-cols-3">
+                    {[
+                      ["Описание", selectedObject.description ?? "Описание не заполнено."],
+                      ["Тип", selectedObject.assetSubtype ?? assetLabel(selectedObject.assetClass)],
+                      ["Площадь", formatArea(selectedObject)],
+                      ["Цена", selectedObject.priceDisplay ?? "По запросу"],
+                      ["Кадастровый номер", selectedObject.cadastralNumber ?? "Не указан"],
+                      ["Правообладатель информации", selectedObject.informationRightsHolder.organizationName],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-md border border-kv-line bg-kv-bg p-4">
+                        <div className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">{label}</div>
+                        <div className="mt-2 text-[14px] font-bold leading-6 text-kv-ink">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {selectedTab === "documents" ? (
+                  <div className="space-y-3">
+                    {selectedObject.documents.map((document) => (
+                      <div key={document.id} className="grid gap-3 rounded-md border border-kv-line bg-kv-bg p-4 lg:grid-cols-[1fr_160px_180px_180px]">
+                        <div>
+                          <div className="font-black text-kv-navy">{document.label}</div>
+                          <div className="mt-1 text-[13px] text-kv-muted">{document.originalFileName ?? document.title}</div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge>{document.source}</Badge>
+                            <Badge>v{document.currentVersion}</Badge>
+                            <Badge tone={document.analysisStatus === "analyzed" ? "good" : "warn"}>{document.analysisStatus}</Badge>
+                          </div>
+                        </div>
+                        <div className="text-[13px] text-kv-muted">
+                          <span className="block font-black text-kv-ink">Размер</span>
+                          {formatFileSize(document.sizeBytes)}
+                        </div>
+                        <div className="text-[13px] text-kv-muted">
+                          <span className="block font-black text-kv-ink">Обновлено</span>
+                          {new Date(document.updatedAt).toLocaleString("ru-RU")}
+                        </div>
+                        <div className="flex flex-wrap items-start gap-2">
+                          <a href={document.url} className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">Скачать</a>
+                          {document.driveWebUrl ? <a href={document.driveWebUrl} target="_blank" rel="noreferrer" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Drive</a> : null}
+                          <form action={deleteDocumentAction}>
+                            <input type="hidden" name="documentId" value={document.id} />
+                            <button className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-red">Удалить</button>
+                          </form>
+                        </div>
+                        {asStringList(document.aiRecommendations).length ? (
+                          <div className="text-[13px] text-kv-muted lg:col-span-4">
+                            <span className="font-black text-kv-ink">AI-рекомендации: </span>
+                            {asStringList(document.aiRecommendations).join("; ")}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                    {!selectedObject.documents.length ? <div className="rounded-md border border-kv-line bg-kv-bg p-4 text-kv-muted">Документы еще не импортированы из Drive.</div> : null}
+                  </div>
+                ) : null}
+
+                {selectedTab === "ai" ? (
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {[
+                      ["Риски", selectedObject.aiDossier?.risks],
+                      ["Конфликты", selectedObject.aiDossier?.conflicts],
+                      ["Недостающие документы", selectedObject.aiDossier?.missingDocuments],
+                      ["Рекомендации", selectedObject.aiDossier?.recommendations],
+                    ].map(([title, value]) => (
+                      <div key={String(title)} className="rounded-md border border-kv-line bg-kv-bg p-4">
+                        <div className="font-black text-kv-navy">{String(title)}</div>
+                        {asStringList(value).length ? (
+                          <ul className="mt-3 space-y-2 text-[13px] text-kv-muted">
+                            {asStringList(value).map((item) => <li key={item}>• {item}</li>)}
+                          </ul>
+                        ) : <div className="mt-3 text-[13px] text-kv-muted">Нет данных.</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {selectedTab === "changes" ? (
+                  <div className="space-y-4">
+                    <div className="rounded-md border border-kv-line bg-kv-bg p-4">
+                      <div className="font-black text-kv-navy">Что изменилось в документах</div>
+                      {asStringList(selectedObject.aiDossier?.changeLog).length ? (
+                        <ul className="mt-3 space-y-2 text-[13px] text-kv-muted">
+                          {asStringList(selectedObject.aiDossier?.changeLog).map((item) => <li key={item}>• {item}</li>)}
+                        </ul>
+                      ) : <div className="mt-3 text-[13px] text-kv-muted">Изменений не найдено или анализ еще не выполнялся.</div>}
+                    </div>
+                    <div className="rounded-md border border-kv-line bg-white">
+                      <div className="border-b border-kv-line px-4 py-3 font-black text-kv-navy">Предложения AI к карточке</div>
+                      <div className="divide-y divide-kv-line">
+                        {(selectedObject.aiDossier?.proposals ?? []).map((proposal) => (
+                          <div key={proposal.id} className="grid gap-3 p-4 lg:grid-cols-[180px_1fr_1fr_220px]">
+                            <div>
+                              <div className="font-black text-kv-navy">{proposal.fieldPath}</div>
+                              <Badge>{proposal.confidence}</Badge>
+                            </div>
+                            <div className="text-[13px] text-kv-muted">
+                              <span className="block font-black text-kv-ink">Сейчас</span>
+                              {fieldValue(proposal.currentValue)}
+                            </div>
+                            <div className="text-[13px] text-kv-muted">
+                              <span className="block font-black text-kv-ink">Предложение AI</span>
+                              {fieldValue(proposal.proposedValue)}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <form action={reviewAIProposalAction}>
+                                <input type="hidden" name="objectId" value={selectedObject.id} />
+                                <input type="hidden" name="proposalId" value={proposal.id} />
+                                <input type="hidden" name="proposalAction" value="accept" />
+                                <button className="rounded-full bg-emerald-600 px-4 py-2 text-[12px] font-black text-white">Принять</button>
+                              </form>
+                              <form action={reviewAIProposalAction}>
+                                <input type="hidden" name="objectId" value={selectedObject.id} />
+                                <input type="hidden" name="proposalId" value={proposal.id} />
+                                <input type="hidden" name="proposalAction" value="reject" />
+                                <button className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Отклонить</button>
+                              </form>
+                            </div>
+                            {proposal.rationale ? <div className="text-[13px] text-kv-muted lg:col-span-4">{proposal.rationale}</div> : null}
+                          </div>
+                        ))}
+                        {!selectedObject.aiDossier?.proposals.length ? <div className="p-4 text-[13px] text-kv-muted">Нет ожидающих предложений AI.</div> : null}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedTab === "media" ? (
+                  <div>
+                    <MediaUploadForm objectId={selectedObject.id} />
+                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {selectedObject.media.map((media) => (
+                        <div key={media.id} className="rounded-md border border-kv-line bg-kv-bg p-3">
+                          <div className="h-[140px] overflow-hidden rounded-md border border-kv-line bg-white">
+                            {resolveMediaUrl(media.url) ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={resolveMediaUrl(media.url) ?? ""} alt={media.title ?? selectedObject.title} className="h-full w-full object-cover" />
+                            ) : <div className="grid h-full place-items-center text-[12px] text-kv-muted">Нет изображения</div>}
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Badge>{media.kind}</Badge>
+                            <Badge tone={media.public ? "good" : "warn"}>{media.public ? "public" : "private"}</Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {selectedTab === "publication" ? (
+                  <form action={updateObjectAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                    <input type="hidden" name="objectId" value={selectedObject.id} />
+                    <input type="hidden" name="title" value={selectedObject.title} />
+                    <input type="hidden" name="description" value={selectedObject.description ?? ""} />
+                    <input type="hidden" name="addressDisplay" value={selectedObject.addressDisplay ?? ""} />
+                    <input type="hidden" name="assetClass" value={selectedObject.assetClass} />
+                    <input type="hidden" name="marketSlug" value={selectedObject.market.slug} />
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Статус
+                      <select name="status" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={selectedObject.status}>
+                        <option value="draft">Черновик</option>
+                        <option value="published">Опубликован</option>
+                        <option value="archived">Архив</option>
+                      </select>
+                    </label>
+                    <label className="text-[13px] font-bold text-kv-muted">
+                      Видимость
+                      <select name="visibility" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={selectedObject.visibility}>
+                        <option value="private">Приватно</option>
+                        <option value="office_network">Сеть офисов</option>
+                        <option value="public">Публично</option>
+                      </select>
+                    </label>
+                    <label className="flex min-h-11 items-center gap-2 text-[13px] font-bold text-kv-muted">
+                      <input name="canBeShownByOtherOffices" type="checkbox" defaultChecked={selectedObject.canBeShownByOtherOffices} />
+                      Общая витрина
+                    </label>
+                    <div className="flex items-end">
+                      <button name="action" value="save" className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Сохранить публикацию</button>
+                    </div>
+                  </form>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <div className="p-5 text-kv-muted">Выберите объект для просмотра досье.</div>
+          )}
+        </section>
       </section>
 
       <section className="mx-auto grid max-w-[1440px] gap-5 px-6 pb-6 xl:grid-cols-[280px_1fr]">

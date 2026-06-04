@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
 
@@ -18,6 +18,7 @@ export const ownedRoutes = [
   "/api/v1/admin/context",
   "/api/v1/admin/objects",
   "/api/v1/admin/media",
+  "/api/v1/admin/documents",
   "/api/v1/admin/access-settings",
   "/api/v1/admin/partners",
   "/api/v1/admin/interactions",
@@ -84,6 +85,17 @@ const allowedMediaKinds = new Set(Object.keys(maxUploadBytesByKind));
 const maxInteractionAttachmentBytes = 25 * 1024 * 1024;
 const maxInteractionAttachmentCount = 5;
 const maxInteractionAttachmentTotalBytes = 100 * 1024 * 1024;
+const maxPropertyDocumentBytes = 50 * 1024 * 1024;
+const supportedDriveDocumentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "application/vnd.google-apps.document",
+  "application/vnd.google-apps.spreadsheet",
+]);
 const allowedInteractionAttachmentMimeTypes = new Set([
   "application/pdf",
   "application/msword",
@@ -335,6 +347,75 @@ function maxUploadBytesForKind(kind: string) {
   return maxUploadBytesByKind[kind as keyof typeof maxUploadBytesByKind] ?? maxUploadBytesByKind.other;
 }
 
+const propertyDocumentTypeLabels: Record<string, string> = {
+  ownership_certificate: "Свидетельство / выписка о собственности",
+  cadastral_extract: "Кадастровая выписка",
+  title_document: "Правоустанавливающий документ",
+  lease_agreement: "Договор аренды",
+  sale_purchase_agreement: "Договор купли-продажи",
+  power_of_attorney: "Доверенность",
+  corporate_document: "Корпоративные документы",
+  passport_or_id: "Паспорт / ID",
+  tax_document: "Налоговые документы",
+  encumbrance_certificate: "Справка об обременениях",
+  technical_passport: "Технический паспорт",
+  floor_plan: "План / поэтажная схема",
+  presentation: "Презентация",
+  technical_report: "Технический отчет",
+  explication: "Экспликация",
+  certificate: "Сертификат / справка",
+  permit: "Разрешение",
+  due_diligence_report: "Due diligence отчет",
+  valuation_report: "Оценочный отчет",
+  other: "Другой документ",
+};
+
+const requiredDocumentTypesByAssetClass: Record<string, string[]> = {
+  land: ["cadastral_extract", "title_document", "encumbrance_certificate", "permit"],
+  apartment: ["ownership_certificate", "floor_plan", "technical_passport", "encumbrance_certificate"],
+  house: ["ownership_certificate", "cadastral_extract", "technical_passport", "encumbrance_certificate"],
+  office: ["title_document", "floor_plan", "technical_passport", "encumbrance_certificate"],
+  retail: ["title_document", "floor_plan", "technical_passport", "permit"],
+  warehouse: ["title_document", "technical_passport", "floor_plan", "permit"],
+  industrial_site: ["cadastral_extract", "title_document", "technical_report", "permit", "encumbrance_certificate"],
+  factory: ["title_document", "technical_report", "permit", "encumbrance_certificate"],
+  hotel: ["title_document", "technical_passport", "floor_plan", "permit", "due_diligence_report"],
+  mixed_use: ["title_document", "technical_passport", "floor_plan", "permit"],
+  development_project: ["cadastral_extract", "title_document", "permit", "technical_report", "presentation"],
+  investment_project: ["title_document", "valuation_report", "due_diligence_report", "presentation"],
+  other: ["title_document", "technical_report", "presentation"],
+};
+
+function requiredDocumentTypesForAssetClass(assetClass: string) {
+  return requiredDocumentTypesByAssetClass[assetClass] ?? requiredDocumentTypesByAssetClass.other;
+}
+
+function normalizePropertyDocumentType(value: unknown, fileName = "") {
+  const text = `${optionalString(value) ?? ""} ${fileName}`.toLowerCase();
+
+  if (/кадастр|cadastr|кадастров/.test(text)) return "cadastral_extract";
+  if (/собствен|ownership|certificate/.test(text)) return "ownership_certificate";
+  if (/правоустан|title/.test(text)) return "title_document";
+  if (/аренд|lease/.test(text)) return "lease_agreement";
+  if (/купл|продаж|purchase|sale/.test(text)) return "sale_purchase_agreement";
+  if (/довер|attorney/.test(text)) return "power_of_attorney";
+  if (/тех.*паспорт|technical.*passport/.test(text)) return "technical_passport";
+  if (/план|floor/.test(text)) return "floor_plan";
+  if (/экспликац|explication/.test(text)) return "explication";
+  if (/обремен|encumbrance/.test(text)) return "encumbrance_certificate";
+  if (/разреш|permit/.test(text)) return "permit";
+  if (/оцен|valuation/.test(text)) return "valuation_report";
+  if (/due|diligence|провер/.test(text)) return "due_diligence_report";
+  if (/презентац|presentation/.test(text)) return "presentation";
+  if (/отчет|report/.test(text)) return "technical_report";
+
+  return "other";
+}
+
+function serializeJsonValue(value: unknown) {
+  return value ?? null;
+}
+
 type PublicObjectLocalizationRow = {
   language: string;
   title: string;
@@ -355,6 +436,79 @@ type PublicObjectMediaRow = {
   caption: string | null;
 };
 
+type PropertyDocumentVersionRow = {
+  id: string;
+  versionNumber: number;
+  storagePath: string;
+  originalFileName: string | null;
+  mimeType: string | null;
+  sizeBytes: bigint | number | null;
+  checksum: string | null;
+  driveModifiedTime: Date | null;
+  driveChecksum: string | null;
+  aiAnalysis: unknown;
+  aiChangeSummary: unknown;
+  comparedToVersion: number | null;
+  createdAt: Date;
+};
+
+type PropertyDocumentRow = {
+  id: string;
+  title: string;
+  storagePath: string;
+  documentType: string;
+  source: string;
+  public: boolean;
+  currentVersion: number;
+  driveFileId: string | null;
+  driveModifiedTime: Date | null;
+  driveChecksum: string | null;
+  driveWebUrl: string | null;
+  originalFileName: string | null;
+  mimeType: string | null;
+  sizeBytes: bigint | number | null;
+  checksum: string | null;
+  analysisStatus: string;
+  aiSummary: unknown;
+  aiFacts: unknown;
+  aiRisks: unknown;
+  aiRecommendations: unknown;
+  aiMissingItems: unknown;
+  aiConflicts: unknown;
+  aiChangeSummary: unknown;
+  aiAnalyzedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  versions?: PropertyDocumentVersionRow[];
+};
+
+type PropertyObjectAIAnalysisRow = {
+  id: string;
+  status: string;
+  provider: string | null;
+  model: string | null;
+  summary: unknown;
+  confirmedFacts: unknown;
+  risks: unknown;
+  recommendations: unknown;
+  missingDocuments: unknown;
+  conflicts: unknown;
+  changeLog: unknown;
+  fieldProposals: unknown;
+  analyzedAt: Date;
+  proposals?: Array<{
+    id: string;
+    fieldPath: string;
+    currentValue: unknown;
+    proposedValue: unknown;
+    sourceDocumentIds: string[];
+    confidence: string;
+    rationale: string | null;
+    status: string;
+    createdAt: Date;
+  }>;
+};
+
 type PublicObjectRow = {
   id: string;
   assetClass: string;
@@ -365,6 +519,7 @@ type PublicObjectRow = {
   buildingAreaSqm: unknown;
   priceAmount: unknown;
   priceCurrency: string | null;
+  cadastralNumber: string | null;
   representationSide: string;
   requiresOwnerOfficeApprovalForLead: boolean;
   ownerOrganization: { slug: string; legalName: string };
@@ -372,6 +527,8 @@ type PublicObjectRow = {
   informationOwnerOrganization: { slug: string; legalName: string };
   informationOwnerOffice: { slug: string; legalName: string };
   media: PublicObjectMediaRow[];
+  documents?: PropertyDocumentRow[];
+  aiAnalyses?: PropertyObjectAIAnalysisRow[];
   publishedAt: Date | null;
 };
 
@@ -436,6 +593,106 @@ function mediaUrlForContext(media: PublicObjectMediaRow, context: "public" | "ad
   return media.url ?? "";
 }
 
+function serializePropertyDocument(document: PropertyDocumentRow) {
+  return {
+    id: document.id,
+    title: document.title,
+    documentType: document.documentType,
+    label: propertyDocumentTypeLabels[document.documentType] ?? propertyDocumentTypeLabels.other,
+    source: document.source,
+    public: document.public,
+    currentVersion: document.currentVersion,
+    url: `/api/v1/admin/documents/${encodeURIComponent(document.id)}`,
+    driveFileId: document.driveFileId,
+    driveModifiedTime: document.driveModifiedTime?.toISOString() ?? null,
+    driveChecksum: document.driveChecksum,
+    driveWebUrl: document.driveWebUrl,
+    originalFileName: document.originalFileName,
+    mimeType: document.mimeType,
+    sizeBytes: document.sizeBytes === null || document.sizeBytes === undefined ? null : Number(document.sizeBytes),
+    checksum: document.checksum,
+    analysisStatus: document.analysisStatus,
+    aiSummary: serializeJsonValue(document.aiSummary),
+    aiFacts: serializeJsonValue(document.aiFacts),
+    aiRisks: serializeJsonValue(document.aiRisks),
+    aiRecommendations: serializeJsonValue(document.aiRecommendations),
+    aiMissingItems: serializeJsonValue(document.aiMissingItems),
+    aiConflicts: serializeJsonValue(document.aiConflicts),
+    aiChangeSummary: serializeJsonValue(document.aiChangeSummary),
+    aiAnalyzedAt: document.aiAnalyzedAt?.toISOString() ?? null,
+    createdAt: document.createdAt.toISOString(),
+    updatedAt: document.updatedAt.toISOString(),
+    versions: (document.versions ?? []).map((version) => ({
+      id: version.id,
+      versionNumber: version.versionNumber,
+      originalFileName: version.originalFileName,
+      mimeType: version.mimeType,
+      sizeBytes: version.sizeBytes === null || version.sizeBytes === undefined ? null : Number(version.sizeBytes),
+      checksum: version.checksum,
+      driveModifiedTime: version.driveModifiedTime?.toISOString() ?? null,
+      driveChecksum: version.driveChecksum,
+      aiAnalysis: serializeJsonValue(version.aiAnalysis),
+      aiChangeSummary: serializeJsonValue(version.aiChangeSummary),
+      comparedToVersion: version.comparedToVersion,
+      createdAt: version.createdAt.toISOString(),
+    })),
+  };
+}
+
+function documentCompletenessForObject(object: { assetClass: string; documents?: PropertyDocumentRow[] }) {
+  const requiredTypes = requiredDocumentTypesForAssetClass(object.assetClass);
+  const documents = object.documents ?? [];
+  const presentTypes = new Set(documents.map((document) => document.documentType));
+  const required = requiredTypes.map((type) => ({
+    type,
+    label: propertyDocumentTypeLabels[type] ?? type,
+    status: presentTypes.has(type) ? "present" : "missing",
+    documentIds: documents.filter((document) => document.documentType === type).map((document) => document.id),
+  }));
+  const missing = required.filter((item) => item.status === "missing");
+
+  return {
+    required,
+    requiredCount: required.length,
+    presentCount: required.length - missing.length,
+    missingCount: missing.length,
+    score: required.length ? Math.round(((required.length - missing.length) / required.length) * 100) : 100,
+  };
+}
+
+function serializePropertyObjectAIAnalysis(analysis: PropertyObjectAIAnalysisRow | undefined) {
+  if (!analysis) {
+    return null;
+  }
+
+  return {
+    id: analysis.id,
+    status: analysis.status,
+    provider: analysis.provider,
+    model: analysis.model,
+    summary: serializeJsonValue(analysis.summary),
+    confirmedFacts: serializeJsonValue(analysis.confirmedFacts),
+    risks: serializeJsonValue(analysis.risks),
+    recommendations: serializeJsonValue(analysis.recommendations),
+    missingDocuments: serializeJsonValue(analysis.missingDocuments),
+    conflicts: serializeJsonValue(analysis.conflicts),
+    changeLog: serializeJsonValue(analysis.changeLog),
+    fieldProposals: serializeJsonValue(analysis.fieldProposals),
+    analyzedAt: analysis.analyzedAt.toISOString(),
+    proposals: (analysis.proposals ?? []).map((proposal) => ({
+      id: proposal.id,
+      fieldPath: proposal.fieldPath,
+      currentValue: serializeJsonValue(proposal.currentValue),
+      proposedValue: serializeJsonValue(proposal.proposedValue),
+      sourceDocumentIds: proposal.sourceDocumentIds,
+      confidence: proposal.confidence,
+      rationale: proposal.rationale,
+      status: proposal.status,
+      createdAt: proposal.createdAt.toISOString(),
+    })),
+  };
+}
+
 function serializeObject(object: PublicObjectRow, language = "ru", context: "public" | "admin" = "public") {
   const localization =
     object.localizations.find((item: PublicObjectLocalizationRow) => item.language === language) ??
@@ -460,6 +717,7 @@ function serializeObject(object: PublicObjectRow, language = "ru", context: "pub
     buildingAreaSqm: decimalToString(object.buildingAreaSqm),
     priceAmount: decimalToString(object.priceAmount),
     priceCurrency: object.priceCurrency,
+    cadastralNumber: object.cadastralNumber,
     representationSide: object.representationSide,
     requiresOwnerOfficeApprovalForLead: object.requiresOwnerOfficeApprovalForLead,
     sellerSide: {
@@ -483,6 +741,9 @@ function serializeObject(object: PublicObjectRow, language = "ru", context: "pub
       title: media.title,
       caption: media.caption,
     })),
+    documents: (object.documents ?? []).map(serializePropertyDocument),
+    documentCompleteness: documentCompletenessForObject(object),
+    aiDossier: serializePropertyObjectAIAnalysis(object.aiAnalyses?.[0]),
     publishedAt: object.publishedAt?.toISOString() ?? null,
   };
 }
@@ -1371,6 +1632,190 @@ async function callGemini(prompt: string, fileParts?: Array<{ fileData: { mimeTy
   return payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
 }
 
+type DriveFile = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  modifiedTime?: string;
+  md5Checksum?: string;
+  webViewLink?: string;
+};
+
+type DownloadedDriveFile = {
+  buffer: Buffer;
+  mimeType: string;
+  originalFileName: string;
+};
+
+async function downloadDriveFile(file: DriveFile, driveToken: string): Promise<DownloadedDriveFile | null> {
+  const exportTypes: Record<string, { mimeType: string; extension: string }> = {
+    "application/vnd.google-apps.document": { mimeType: "application/pdf", extension: "pdf" },
+    "application/vnd.google-apps.spreadsheet": { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", extension: "xlsx" },
+  };
+  const exportType = exportTypes[file.mimeType];
+  const endpoint = exportType
+    ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}/export?mimeType=${encodeURIComponent(exportType.mimeType)}`
+    : `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`;
+  const downloadResponse = await fetch(endpoint, { headers: { Authorization: `Bearer ${driveToken}` } });
+
+  if (!downloadResponse.ok) {
+    return null;
+  }
+
+  const mimeType = exportType?.mimeType ?? file.mimeType;
+  const baseName = file.name.replace(/\.[a-z0-9]+$/i, "");
+  const extension = exportType?.extension ?? extensionForFileName(file.name, mimeType);
+
+  return {
+    buffer: Buffer.from(await downloadResponse.arrayBuffer()),
+    mimeType,
+    originalFileName: exportType ? `${baseName}.${extension}` : file.name,
+  };
+}
+
+async function uploadBufferToGeminiFile(fileName: string, mimeType: string, buffer: Buffer) {
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+
+  if (!geminiApiKey) {
+    return null;
+  }
+
+  const uploadResponse = await fetch(
+    `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart&key=${encodeURIComponent(geminiApiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "multipart/related; boundary=boundary" },
+      body: Buffer.concat([
+        Buffer.from(`--boundary\r\nContent-Type: application/json\r\n\r\n${JSON.stringify({ file: { displayName: fileName } })}\r\n--boundary\r\nContent-Type: ${mimeType}\r\n\r\n`),
+        buffer,
+        Buffer.from("\r\n--boundary--"),
+      ]),
+    },
+  );
+
+  if (!uploadResponse.ok) {
+    return null;
+  }
+
+  const uploadPayload = await uploadResponse.json() as { file?: { uri?: string; mimeType?: string } };
+
+  return uploadPayload.file?.uri ? { fileData: { mimeType: uploadPayload.file.mimeType ?? mimeType, fileUri: uploadPayload.file.uri } } : null;
+}
+
+function fallbackDocumentAnalysis(fileName: string, documentType: string, versionNumber: number, changed: boolean) {
+  return {
+    summary: `Документ "${fileName}" сохранен в системное досье объекта. AI-анализ будет дополнен после доступного Gemini file processing.`,
+    facts: [{ field: "documentType", value: documentType, confidence: "medium", source: fileName }],
+    risks: [],
+    recommendations: changed
+      ? ["Проверить изменения в новой версии документа и подтвердить влияние на карточку объекта."]
+      : ["Проверить документ и при необходимости подтвердить извлеченные данные."],
+    missingItems: [],
+    conflicts: [],
+    changeSummary: changed ? [{ version: versionNumber, change: "Загружена новая версия документа." }] : [],
+  };
+}
+
+function normalizeAIArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+async function analyzeObjectDocumentsWithAI(params: {
+  propertyObject: {
+    id: string;
+    assetClass: string;
+    assetSubtype: string | null;
+    areaSqm: unknown;
+    landAreaSqm: unknown;
+    buildingAreaSqm: unknown;
+    cadastralNumber: string | null;
+    priceAmount: unknown;
+    priceCurrency: string | null;
+    ownerOrganizationId: string;
+    ownerOfficeId: string;
+    localizations: PublicObjectLocalizationRow[];
+  };
+  documents: PropertyDocumentRow[];
+  geminiFileParts: Array<{ fileData: { mimeType: string; fileUri: string } }>;
+}) {
+  const { propertyObject, documents, geminiFileParts } = params;
+  const currentLocalization = propertyObject.localizations.find((item) => item.language === "ru") ?? propertyObject.localizations[0];
+  const requiredTypes = requiredDocumentTypesForAssetClass(propertyObject.assetClass);
+  const documentContext = documents.map((document) => ({
+    id: document.id,
+    title: document.title,
+    type: document.documentType,
+    version: document.currentVersion,
+    fileName: document.originalFileName,
+    analysis: document.aiSummary,
+  }));
+  const currentObject = {
+    title: currentLocalization?.title ?? null,
+    description: currentLocalization?.description ?? null,
+    addressDisplay: currentLocalization?.addressDisplay ?? null,
+    assetClass: propertyObject.assetClass,
+    assetSubtype: propertyObject.assetSubtype,
+    areaSqm: decimalToString(propertyObject.areaSqm),
+    landAreaSqm: decimalToString(propertyObject.landAreaSqm),
+    buildingAreaSqm: decimalToString(propertyObject.buildingAreaSqm),
+    cadastralNumber: propertyObject.cadastralNumber,
+    priceAmount: decimalToString(propertyObject.priceAmount),
+    priceCurrency: propertyObject.priceCurrency,
+  };
+  const fallback = {
+    summary: {
+      short: "Документы импортированы в системное досье. Требуется AI-анализ или ручная проверка.",
+      known: [],
+      confirmed: [],
+      questions: [],
+      nextActions: ["Проверить комплектность документов и подтвердить изменения карточки объекта."],
+    },
+    confirmedFacts: [],
+    risks: [],
+    recommendations: ["Проверить недостающие документы по чеклисту объекта."],
+    missingDocuments: requiredTypes
+      .filter((type) => !documents.some((document) => document.documentType === type))
+      .map((type) => ({ type, label: propertyDocumentTypeLabels[type] ?? type })),
+    conflicts: [],
+    changeLog: [],
+    fieldProposals: [],
+  };
+
+  if (!geminiFileParts.length) {
+    return fallback;
+  }
+
+  const prompt = [
+    "You are an AI document intelligence assistant for a real estate admin system.",
+    "Return ONLY valid JSON. Do not use markdown.",
+    "Analyze the attached documents and the stored document metadata.",
+    "Do not make legal conclusions. Use careful wording: risks, questions, recommendations.",
+    "Suggest changes to object fields only as proposals requiring human approval.",
+    `Current object JSON: ${JSON.stringify(currentObject)}`,
+    `Required document types: ${JSON.stringify(requiredTypes)}`,
+    `Document registry JSON: ${JSON.stringify(documentContext)}`,
+    'Shape: {"summary":{"short":"string","known":["string"],"confirmed":["string"],"questions":["string"],"nextActions":["string"]},"confirmedFacts":[{"field":"string","value":"string","confidence":"high|medium|low","sourceDocumentId":"string|null"}],"risks":[{"severity":"low|medium|high","text":"string","sourceDocumentId":"string|null"}],"recommendations":["string"],"missingDocuments":[{"type":"string","reason":"string"}],"conflicts":[{"field":"string","currentValue":"string|null","documentValue":"string|null","sourceDocumentId":"string|null","note":"string"}],"changeLog":[{"documentId":"string","text":"string"}],"fieldProposals":[{"fieldPath":"title|description|addressDisplay|assetSubtype|areaSqm|landAreaSqm|buildingAreaSqm|cadastralNumber|priceAmount|priceCurrency|priceDisplay","currentValue":"string|null","proposedValue":"string|null","confidence":"high|medium|low","rationale":"string","sourceDocumentIds":["string"]}]}',
+  ].join("\n");
+
+  try {
+    const result = parseGeminiJson(await callGemini(prompt, geminiFileParts)) as Record<string, unknown>;
+
+    return {
+      summary: result.summary ?? fallback.summary,
+      confirmedFacts: normalizeAIArray(result.confirmedFacts),
+      risks: normalizeAIArray(result.risks),
+      recommendations: normalizeAIArray(result.recommendations),
+      missingDocuments: normalizeAIArray(result.missingDocuments),
+      conflicts: normalizeAIArray(result.conflicts),
+      changeLog: normalizeAIArray(result.changeLog),
+      fieldProposals: normalizeAIArray(result.fieldProposals),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 // Exchange rates cache: { rates: Record<string,number>, fetchedAt: number }
 let exchangeRatesCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
 
@@ -2236,6 +2681,22 @@ const server = createServer(async (request, response) => {
         media: {
           orderBy: { sortOrder: "asc" },
           take: 5,
+        },
+        documents: {
+          orderBy: [{ documentType: "asc" }, { updatedAt: "desc" }],
+          include: {
+            versions: { orderBy: { versionNumber: "desc" }, take: 5 },
+          },
+        },
+        aiAnalyses: {
+          orderBy: { analyzedAt: "desc" },
+          take: 1,
+          include: {
+            proposals: {
+              where: { status: "pending" },
+              orderBy: { createdAt: "desc" },
+            },
+          },
         },
       },
     });
@@ -5063,9 +5524,10 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const body = await readJsonBody<{ organizationSlug?: string; driveFolderUrl?: string }>(request);
+    const body = await readJsonBody<{ organizationSlug?: string; driveFolderUrl?: string; objectId?: string }>(request);
     const organizationSlug = body.organizationSlug ?? "kvartal-moscow";
     const driveFolderUrl = body.driveFolderUrl ?? "";
+    const targetObjectId = optionalString(body.objectId);
 
     // Extract folder ID from Drive URL
     const folderIdMatch = driveFolderUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
@@ -5094,11 +5556,10 @@ const server = createServer(async (request, response) => {
     }
 
     // List files in Drive folder
-    type DriveFile = { id: string; name: string; mimeType: string; size?: string };
     let driveFiles: DriveFile[] = [];
     if (driveToken) {
       const listRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=%27${folderId}%27+in+parents+and+trashed%3Dfalse&fields=files(id,name,mimeType,size)&pageSize=20`,
+        `https://www.googleapis.com/drive/v3/files?q=%27${folderId}%27+in+parents+and+trashed%3Dfalse&fields=files(id,name,mimeType,size,modifiedTime,md5Checksum,webViewLink)&pageSize=50`,
         { headers: { Authorization: `Bearer ${driveToken}` } },
       );
       if (!listRes.ok) {
@@ -5110,49 +5571,36 @@ const server = createServer(async (request, response) => {
     }
 
     const imageFiles = driveFiles.filter((f) => f.mimeType.startsWith("image/"));
-    const docFiles = driveFiles.filter((f) =>
-      f.mimeType === "application/pdf" ||
-      f.mimeType.includes("spreadsheet") ||
-      f.mimeType.includes("word") ||
-      f.mimeType.includes("document") ||
-      f.mimeType === "text/plain"
-    );
+    const docFiles = driveFiles.filter((file) => supportedDriveDocumentMimeTypes.has(file.mimeType));
+    const downloadedDocs: Array<{ file: DriveFile; data: DownloadedDriveFile }> = [];
+    const downloadedImages: Array<{ file: DriveFile; data: DownloadedDriveFile }> = [];
+
+    if (driveToken) {
+      for (const file of docFiles) {
+        const downloaded = await downloadDriveFile(file, driveToken);
+        if (downloaded && downloaded.buffer.length <= maxPropertyDocumentBytes) {
+          downloadedDocs.push({ file, data: downloaded });
+        }
+      }
+
+      for (const file of imageFiles) {
+        const downloaded = await downloadDriveFile(file, driveToken);
+        if (downloaded) {
+          downloadedImages.push({ file, data: downloaded });
+        }
+      }
+    }
 
     // Upload files to Gemini Files API and extract property data
-    const geminiApiKey = process.env.GEMINI_API_KEY ?? "";
     const geminiFileParts: Array<{ fileData: { mimeType: string; fileUri: string } }> = [];
 
-    if (driveToken && geminiApiKey) {
-      const filesToProcess = [...docFiles, ...imageFiles].slice(0, 10);
-      for (const file of filesToProcess) {
+    if (process.env.GEMINI_API_KEY) {
+      const filesToProcess = [...downloadedDocs, ...downloadedImages].slice(0, 10);
+      for (const item of filesToProcess) {
         try {
-          // Download from Drive
-          const dlRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
-            { headers: { Authorization: `Bearer ${driveToken}` } },
-          );
-          if (!dlRes.ok) continue;
-          const fileBuffer = await dlRes.arrayBuffer();
-
-          // Upload to Gemini Files API
-          const mimeType = file.mimeType.startsWith("image/") ? file.mimeType : "application/pdf";
-          const uploadRes = await fetch(
-            `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=multipart&key=${geminiApiKey}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": `multipart/related; boundary=boundary` },
-              body: Buffer.concat([
-                Buffer.from(`--boundary\r\nContent-Type: application/json\r\n\r\n{"file":{"displayName":"${file.name}"}}\r\n--boundary\r\nContent-Type: ${mimeType}\r\n\r\n`),
-                Buffer.from(fileBuffer),
-                Buffer.from(`\r\n--boundary--`),
-              ]),
-            },
-          );
-          if (uploadRes.ok) {
-            const uploadData = await uploadRes.json() as { file?: { uri?: string; mimeType?: string } };
-            if (uploadData.file?.uri) {
-              geminiFileParts.push({ fileData: { mimeType, fileUri: uploadData.file.uri } });
-            }
+          const uploaded = await uploadBufferToGeminiFile(item.data.originalFileName, item.data.mimeType, item.data.buffer);
+          if (uploaded) {
+            geminiFileParts.push(uploaded);
           }
         } catch { /* skip file on error */ }
       }
@@ -5216,81 +5664,112 @@ Schema:
     const office = organization.offices[0];
     const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
 
-    // Create draft object
+    const existingObject = targetObjectId
+      ? await prisma.propertyObject.findFirst({
+          where: { id: targetObjectId, ownerOrganization: { slug: organizationSlug } },
+          include: {
+            localizations: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            market: true,
+            media: { orderBy: { sortOrder: "asc" } },
+            documents: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 5 } } },
+            aiAnalyses: { orderBy: { analyzedAt: "desc" }, take: 1, include: { proposals: true } },
+          },
+        })
+      : null;
+
+    if (targetObjectId && !existingObject) {
+      sendError(response, 404, "object_not_found", `Object '${targetObjectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+
+    // Create draft object when no target object is supplied.
     const title = String(extracted.title ?? "Новый объект (AI черновик)");
     const addressDisplay = String(extracted.addressDisplay ?? "Адрес уточняется");
 
-    const newObject = await prisma.propertyObject.create({
-      data: {
-        ownerOrganizationId: organization.id,
-        ownerOfficeId: office.id,
-        informationOwnerOrganizationId: organization.id,
-        informationOwnerOfficeId: office.id,
-        createdByUserId: (await prisma.appUser.findFirst())!.id,
-        marketId: market!.id,
-        assetClass: (extracted.assetClass as string ?? "other") as never,
-        assetSubtype: extracted.assetSubtype as string ?? null,
-        status: "draft",
-        visibility: "private",
-        areaSqm: extracted.areaSqm ? String(extracted.areaSqm) as never : null,
-        landAreaSqm: extracted.landAreaSqm ? String(extracted.landAreaSqm) as never : null,
-        buildingAreaSqm: extracted.buildingAreaSqm ? String(extracted.buildingAreaSqm) as never : null,
-        roomsCount: extracted.roomsCount as number ?? null,
-        bedroomsCount: extracted.bedroomsCount as number ?? null,
-        floorNumber: extracted.floorNumber as number ?? null,
-        floorsTotal: extracted.floorsTotal as number ?? null,
-        cadastralNumber: extracted.cadastralNumber as string ?? null,
-        priceAmount: extracted.priceAmount ? String(extracted.priceAmount) as never : null,
-        priceCurrency: (extracted.priceCurrency as string ?? null) as never,
-        priceMode: extracted.priceAmount ? "fixed" : "on_request",
-        driveIntakeFolderUrl: driveFolderUrl,
-        driveIntakeProcessedAt: new Date(),
-        driveIntakeConfidence: extracted.confidence as number ?? null,
-        driveIntakePending: true,
-        localizations: {
-          create: [
-            {
-              language: "ru",
-              title,
-              description: extracted.description as string ?? null,
-              addressDisplay,
-              tags: (extracted.tags as string[]) ?? [],
-              priceDisplay: extracted.priceDisplay as string ?? null,
-            },
-            ...(extracted.titleEn ? [{
-              language: "en" as const,
-              title: extracted.titleEn as string,
-              description: extracted.descriptionEn as string ?? null,
-              addressDisplay: extracted.addressDisplayEn as string ?? addressDisplay,
-              tags: (extracted.tagsEn as string[]) ?? [],
-              priceDisplay: extracted.priceDisplayEn as string ?? null,
-            }] : []),
-          ],
+    const newObject = existingObject ?? await prisma.propertyObject.create({
+        data: {
+          ownerOrganizationId: organization.id,
+          ownerOfficeId: office.id,
+          informationOwnerOrganizationId: organization.id,
+          informationOwnerOfficeId: office.id,
+          createdByUserId: (await prisma.appUser.findFirst())!.id,
+          marketId: market!.id,
+          assetClass: (extracted.assetClass as string ?? "other") as never,
+          assetSubtype: extracted.assetSubtype as string ?? null,
+          status: "draft",
+          visibility: "private",
+          areaSqm: extracted.areaSqm ? String(extracted.areaSqm) as never : null,
+          landAreaSqm: extracted.landAreaSqm ? String(extracted.landAreaSqm) as never : null,
+          buildingAreaSqm: extracted.buildingAreaSqm ? String(extracted.buildingAreaSqm) as never : null,
+          roomsCount: extracted.roomsCount as number ?? null,
+          bedroomsCount: extracted.bedroomsCount as number ?? null,
+          floorNumber: extracted.floorNumber as number ?? null,
+          floorsTotal: extracted.floorsTotal as number ?? null,
+          cadastralNumber: extracted.cadastralNumber as string ?? null,
+          priceAmount: extracted.priceAmount ? String(extracted.priceAmount) as never : null,
+          priceCurrency: (extracted.priceCurrency as string ?? null) as never,
+          priceMode: extracted.priceAmount ? "fixed" : "on_request",
+          driveIntakeFolderUrl: driveFolderUrl,
+          driveIntakeProcessedAt: new Date(),
+          driveIntakeConfidence: extracted.confidence as number ?? null,
+          driveIntakePending: true,
+          localizations: {
+            create: [
+              {
+                language: "ru",
+                title,
+                description: extracted.description as string ?? null,
+                addressDisplay,
+                tags: (extracted.tags as string[]) ?? [],
+                priceDisplay: extracted.priceDisplay as string ?? null,
+              },
+              ...(extracted.titleEn ? [{
+                language: "en" as const,
+                title: extracted.titleEn as string,
+                description: extracted.descriptionEn as string ?? null,
+                addressDisplay: extracted.addressDisplayEn as string ?? addressDisplay,
+                tags: (extracted.tagsEn as string[]) ?? [],
+                priceDisplay: extracted.priceDisplayEn as string ?? null,
+              }] : []),
+            ],
+          },
         },
-      },
-    });
+      });
+
+    if (existingObject) {
+      await prisma.propertyObject.update({
+        where: { id: existingObject.id },
+        data: {
+          driveIntakeFolderUrl: driveFolderUrl,
+          driveIntakeProcessedAt: new Date(),
+          driveIntakeConfidence: extracted.confidence as number ?? existingObject.driveIntakeConfidence,
+        },
+      });
+    }
 
     // Upload images from Drive to GCS and register as media
     let mediaCount = 0;
     const coverIndex = Number(extracted.coverPhotoIndex ?? 0);
 
     if (driveToken) {
-      for (let i = 0; i < imageFiles.length; i++) {
-        const imgFile = imageFiles[i]!;
+      for (let i = 0; i < downloadedImages.length; i++) {
+        const { file: imgFile, data: imgData } = downloadedImages[i]!;
         try {
-          const dlRes = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${imgFile.id}?alt=media`,
-            { headers: { Authorization: `Bearer ${driveToken}` } },
-          );
-          if (!dlRes.ok) continue;
-          const imgBuffer = Buffer.from(await dlRes.arrayBuffer());
-          const ext = imgFile.mimeType === "image/png" ? "png" : imgFile.mimeType === "image/webp" ? "webp" : "jpg";
+          const existingMedia = await prisma.propertyMedia.findFirst({
+            where: { propertyObjectId: newObject.id, originalFileName: imgData.originalFileName, sizeBytes: BigInt(imgData.buffer.length) },
+          });
+          if (existingMedia) continue;
+          const ext = imgData.mimeType === "image/png" ? "png" : imgData.mimeType === "image/webp" ? "webp" : "jpg";
           const mediaId = randomUUID();
           const isCover = i === coverIndex;
           const storagePath = `organizations/${organization.id}/offices/${office.id}/objects/${newObject.id}/public/media/${mediaId}/original.${ext}`;
 
-          await storageBucket.file(storagePath).save(imgBuffer, {
-            metadata: { contentType: imgFile.mimeType },
+          await storageBucket.file(storagePath).save(imgData.buffer, {
+            metadata: { contentType: imgData.mimeType },
           });
 
           await prisma.propertyMedia.create({
@@ -5302,13 +5781,203 @@ Schema:
               kind: "image",
               public: true,
               sortOrder: isCover ? 0 : (i + 1) * 10,
-              originalFileName: imgFile.name,
-              mimeType: imgFile.mimeType,
-              sizeBytes: imgBuffer.length,
+              originalFileName: imgData.originalFileName,
+              mimeType: imgData.mimeType,
+              sizeBytes: imgData.buffer.length,
             },
           });
           mediaCount++;
         } catch { /* skip image on error */ }
+      }
+    }
+
+    let importedDocumentCount = 0;
+    let newDocumentVersionCount = 0;
+
+    for (const { file, data } of downloadedDocs) {
+      const checksum = file.md5Checksum ?? createHash("sha256").update(data.buffer).digest("hex");
+      const existingDocument = await prisma.propertyDocument.findUnique({
+        where: { propertyObjectId_driveFileId: { propertyObjectId: newObject.id, driveFileId: file.id } },
+        include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
+      });
+      const existingChecksum = existingDocument?.driveChecksum ?? existingDocument?.checksum;
+      const existingModified = existingDocument?.driveModifiedTime?.toISOString();
+      const driveModifiedTime = file.modifiedTime ? new Date(file.modifiedTime) : null;
+
+      if (existingDocument && existingChecksum === checksum && existingModified === driveModifiedTime?.toISOString()) {
+        importedDocumentCount++;
+        continue;
+      }
+
+      const versionNumber = existingDocument ? existingDocument.currentVersion + 1 : 1;
+      const documentId = existingDocument?.id ?? randomUUID();
+      const extension = extensionForFileName(data.originalFileName, data.mimeType);
+      const storagePath = [
+        "organizations",
+        newObject.ownerOrganizationId,
+        "offices",
+        newObject.ownerOfficeId,
+        "objects",
+        newObject.id,
+        "private",
+        "documents",
+        documentId,
+        `v${versionNumber}`,
+        `original.${extension}`,
+      ].join("/");
+
+      await storageBucket.file(storagePath).save(data.buffer, {
+        metadata: { contentType: data.mimeType },
+      });
+
+      const documentType = normalizePropertyDocumentType(undefined, data.originalFileName);
+      const fallbackAnalysis = fallbackDocumentAnalysis(data.originalFileName, documentType, versionNumber, Boolean(existingDocument));
+
+      const document = existingDocument
+        ? await prisma.propertyDocument.update({
+            where: { id: existingDocument.id },
+            data: {
+              title: data.originalFileName,
+              storagePath,
+              documentType: documentType as never,
+              source: "google_drive",
+              currentVersion: versionNumber,
+              driveModifiedTime,
+              driveChecksum: checksum,
+              driveWebUrl: file.webViewLink ?? existingDocument.driveWebUrl,
+              originalFileName: data.originalFileName,
+              mimeType: data.mimeType,
+              sizeBytes: BigInt(data.buffer.length),
+              checksum,
+              analysisStatus: "analyzed",
+              aiSummary: fallbackAnalysis.summary as never,
+              aiFacts: fallbackAnalysis.facts as never,
+              aiRisks: fallbackAnalysis.risks as never,
+              aiRecommendations: fallbackAnalysis.recommendations as never,
+              aiMissingItems: fallbackAnalysis.missingItems as never,
+              aiConflicts: fallbackAnalysis.conflicts as never,
+              aiChangeSummary: fallbackAnalysis.changeSummary as never,
+              aiAnalyzedAt: new Date(),
+            },
+          })
+        : await prisma.propertyDocument.create({
+            data: {
+              id: documentId,
+              propertyObjectId: newObject.id,
+              ownerOrganizationId: newObject.ownerOrganizationId,
+              ownerOfficeId: newObject.ownerOfficeId,
+              title: data.originalFileName,
+              storagePath,
+              documentType: documentType as never,
+              source: "google_drive",
+              currentVersion: versionNumber,
+              driveFileId: file.id,
+              driveModifiedTime,
+              driveChecksum: checksum,
+              driveWebUrl: file.webViewLink ?? null,
+              originalFileName: data.originalFileName,
+              mimeType: data.mimeType,
+              sizeBytes: BigInt(data.buffer.length),
+              checksum,
+              analysisStatus: "analyzed",
+              aiSummary: fallbackAnalysis.summary as never,
+              aiFacts: fallbackAnalysis.facts as never,
+              aiRisks: fallbackAnalysis.risks as never,
+              aiRecommendations: fallbackAnalysis.recommendations as never,
+              aiMissingItems: fallbackAnalysis.missingItems as never,
+              aiConflicts: fallbackAnalysis.conflicts as never,
+              aiChangeSummary: fallbackAnalysis.changeSummary as never,
+              aiAnalyzedAt: new Date(),
+            },
+          });
+
+      await prisma.propertyDocumentVersion.create({
+        data: {
+          propertyDocumentId: document.id,
+          versionNumber,
+          storagePath,
+          originalFileName: data.originalFileName,
+          mimeType: data.mimeType,
+          sizeBytes: BigInt(data.buffer.length),
+          checksum,
+          driveModifiedTime,
+          driveChecksum: checksum,
+          aiAnalysis: fallbackAnalysis as never,
+          aiChangeSummary: fallbackAnalysis.changeSummary as never,
+          comparedToVersion: existingDocument ? versionNumber - 1 : null,
+        },
+      });
+
+      importedDocumentCount++;
+      newDocumentVersionCount++;
+    }
+
+    const objectForAnalysis = await prisma.propertyObject.findUnique({
+      where: { id: newObject.id },
+      include: {
+        localizations: true,
+        documents: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 5 } } },
+      },
+    });
+    let aiAnalysisId: string | null = null;
+    let proposalCount = 0;
+
+    if (objectForAnalysis) {
+      const aiDossier = await analyzeObjectDocumentsWithAI({
+        propertyObject: {
+          id: objectForAnalysis.id,
+          assetClass: objectForAnalysis.assetClass,
+          assetSubtype: objectForAnalysis.assetSubtype,
+          areaSqm: objectForAnalysis.areaSqm,
+          landAreaSqm: objectForAnalysis.landAreaSqm,
+          buildingAreaSqm: objectForAnalysis.buildingAreaSqm,
+          cadastralNumber: objectForAnalysis.cadastralNumber,
+          priceAmount: objectForAnalysis.priceAmount,
+          priceCurrency: objectForAnalysis.priceCurrency,
+          ownerOrganizationId: objectForAnalysis.ownerOrganizationId,
+          ownerOfficeId: objectForAnalysis.ownerOfficeId,
+          localizations: objectForAnalysis.localizations,
+        },
+        documents: objectForAnalysis.documents as PropertyDocumentRow[],
+        geminiFileParts,
+      });
+      const analysis = await prisma.propertyObjectAIAnalysis.create({
+        data: {
+          propertyObjectId: objectForAnalysis.id,
+          organizationId: objectForAnalysis.ownerOrganizationId,
+          officeId: objectForAnalysis.ownerOfficeId,
+          status: "analyzed",
+          provider: process.env.GEMINI_API_KEY ? "gemini-api" : "system-fallback",
+          model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+          summary: aiDossier.summary as never,
+          confirmedFacts: aiDossier.confirmedFacts as never,
+          risks: aiDossier.risks as never,
+          recommendations: aiDossier.recommendations as never,
+          missingDocuments: aiDossier.missingDocuments as never,
+          conflicts: aiDossier.conflicts as never,
+          changeLog: aiDossier.changeLog as never,
+          fieldProposals: aiDossier.fieldProposals as never,
+        },
+      });
+      aiAnalysisId = analysis.id;
+
+      for (const proposal of normalizeAIArray(aiDossier.fieldProposals).slice(0, 20) as Array<Record<string, unknown>>) {
+        const fieldPath = optionalString(proposal.fieldPath);
+        if (!fieldPath) continue;
+        await prisma.propertyObjectAIFieldProposal.create({
+          data: {
+            analysisId: analysis.id,
+            propertyObjectId: objectForAnalysis.id,
+            organizationId: objectForAnalysis.ownerOrganizationId,
+            fieldPath,
+            currentValue: proposal.currentValue === undefined || proposal.currentValue === null ? Prisma.JsonNull : (proposal.currentValue as never),
+            proposedValue: proposal.proposedValue === undefined || proposal.proposedValue === null ? Prisma.JsonNull : (proposal.proposedValue as never),
+            sourceDocumentIds: Array.isArray(proposal.sourceDocumentIds) ? proposal.sourceDocumentIds.map(String) : [],
+            confidence: (["high", "medium", "low", "unsupported"].includes(String(proposal.confidence)) ? proposal.confidence : "medium") as never,
+            rationale: optionalString(proposal.rationale),
+          },
+        });
+        proposalCount++;
       }
     }
 
@@ -5318,6 +5987,10 @@ Schema:
       confidence: extracted.confidence ?? null,
       fieldsExtracted: Object.keys(extracted).filter((k) => extracted[k] !== null).length,
       mediaCount,
+      importedDocumentCount,
+      newDocumentVersionCount,
+      aiAnalysisId,
+      proposalCount,
       driveFilesFound: driveFiles.length,
     });
     return;
@@ -5724,6 +6397,148 @@ Schema:
   }
 
   const objectMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)$/);
+
+  const adminDocumentMatch = url.pathname.match(/^\/api\/v1\/admin\/documents\/([^/]+)$/);
+
+  if (adminDocumentMatch && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const documentId = decodeURIComponent(adminDocumentMatch[1]);
+    const document = await prisma.propertyDocument.findFirst({
+      where: { id: documentId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+    });
+
+    if (!document) {
+      sendError(response, 404, "document_not_found", "Document was not found.");
+      return;
+    }
+
+    const [metadata] = await storageBucket.file(document.storagePath).getMetadata();
+    streamStorageFile(response, document.storagePath, metadata, "private, max-age=300");
+    return;
+  }
+
+  if (adminDocumentMatch && request.method === "DELETE") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const documentId = decodeURIComponent(adminDocumentMatch[1]);
+    const document = await prisma.propertyDocument.findFirst({
+      where: { id: documentId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+      include: { versions: true },
+    });
+
+    if (!document) {
+      sendError(response, 404, "document_not_found", "Document was not found.");
+      return;
+    }
+
+    await Promise.all([
+      storageBucket.file(document.storagePath).delete({ ignoreNotFound: true }),
+      ...document.versions.map((version) => storageBucket.file(version.storagePath).delete({ ignoreNotFound: true })),
+    ]);
+    await prisma.propertyDocument.delete({ where: { id: document.id } });
+
+    sendJson(response, 200, { ok: true, deletedDocumentId: document.id });
+    return;
+  }
+
+  const aiProposalMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)\/ai-proposals\/([^/]+)$/);
+
+  if (aiProposalMatch && request.method === "POST") {
+    if (!hasAdminWriteAccess(request)) {
+      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+
+    const objectId = decodeURIComponent(aiProposalMatch[1]);
+    const proposalId = decodeURIComponent(aiProposalMatch[2]);
+    const body = await readJsonBody<{ organizationSlug?: string; action?: string; decidedByEmail?: string }>(request);
+    const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
+    const action = optionalString(body.action) ?? "accept";
+    const proposal = await prisma.propertyObjectAIFieldProposal.findFirst({
+      where: {
+        id: proposalId,
+        propertyObjectId: objectId,
+        organization: { slug: organizationSlug },
+        status: "pending",
+      },
+      include: {
+        propertyObject: {
+          include: { localizations: true, ownerOrganization: true },
+        },
+      },
+    });
+
+    if (!proposal) {
+      sendError(response, 404, "proposal_not_found", "AI field proposal was not found.");
+      return;
+    }
+
+    const decidedByEmail = optionalString(body.decidedByEmail)?.toLowerCase();
+    const decidedByUser = decidedByEmail
+      ? await prisma.appUser.upsert({
+          where: { email: decidedByEmail },
+          update: { active: true },
+          create: { firebaseUid: `pending:${decidedByEmail}`, email: decidedByEmail, active: true },
+        })
+      : null;
+
+    if (action === "reject") {
+      await prisma.propertyObjectAIFieldProposal.update({
+        where: { id: proposal.id },
+        data: { status: "rejected", decidedByUserId: decidedByUser?.id ?? null, decidedAt: new Date() },
+      });
+      sendJson(response, 200, { ok: true, status: "rejected" });
+      return;
+    }
+
+    const value = proposal.proposedValue === null || proposal.proposedValue === undefined ? null : String(proposal.proposedValue);
+    const localizationFields = new Set(["title", "description", "addressDisplay", "priceDisplay"]);
+    const objectStringFields = new Set(["assetSubtype", "cadastralNumber"]);
+    const objectDecimalFields = new Set(["areaSqm", "landAreaSqm", "buildingAreaSqm", "priceAmount"]);
+    const objectEnumFields = new Set(["priceCurrency"]);
+
+    if (localizationFields.has(proposal.fieldPath)) {
+      const localization = proposal.propertyObject.localizations.find((item) => item.language === "ru") ?? proposal.propertyObject.localizations[0];
+      if (!localization) {
+        sendError(response, 400, "localization_missing", "Object localization is missing.");
+        return;
+      }
+      await prisma.propertyObjectLocalization.update({
+        where: { id: localization.id },
+        data: { [proposal.fieldPath]: value ?? "" },
+      });
+    } else if (objectStringFields.has(proposal.fieldPath)) {
+      await prisma.propertyObject.update({
+        where: { id: proposal.propertyObjectId },
+        data: { [proposal.fieldPath]: value },
+      });
+    } else if (objectDecimalFields.has(proposal.fieldPath)) {
+      await prisma.propertyObject.update({
+        where: { id: proposal.propertyObjectId },
+        data: { [proposal.fieldPath]: value ? value.replace(",", ".") : null },
+      });
+    } else if (objectEnumFields.has(proposal.fieldPath)) {
+      await prisma.propertyObject.update({
+        where: { id: proposal.propertyObjectId },
+        data: { [proposal.fieldPath]: value as never },
+      });
+    } else {
+      sendError(response, 400, "unsupported_proposal_field", `Field '${proposal.fieldPath}' cannot be applied automatically.`);
+      return;
+    }
+
+    await prisma.propertyObjectAIFieldProposal.update({
+      where: { id: proposal.id },
+      data: { status: "accepted", decidedByUserId: decidedByUser?.id ?? null, decidedAt: new Date() },
+    });
+
+    sendJson(response, 200, { ok: true, status: "accepted", fieldPath: proposal.fieldPath });
+    return;
+  }
 
   if (objectMatch && request.method === "PATCH") {
     if (!hasAdminWriteAccess(request)) {

@@ -295,12 +295,45 @@ enum PropertyMediaKind {
 }
 
 enum PropertyDocumentType {
+  ownership_certificate
+  cadastral_extract
+  title_document
+  lease_agreement
+  sale_purchase_agreement
+  power_of_attorney
+  corporate_document
+  passport_or_id
+  tax_document
+  encumbrance_certificate
+  technical_passport
   floor_plan
   presentation
   technical_report
   explication
   certificate
+  permit
+  due_diligence_report
+  valuation_report
   other
+}
+
+enum PropertyDocumentSource {
+  manual
+  google_drive
+}
+
+enum PropertyDocumentAnalysisStatus {
+  pending
+  analyzing
+  analyzed
+  failed
+}
+
+enum PropertyAIProposalStatus {
+  pending
+  accepted
+  rejected
+  superseded
 }
 
 enum LegalReviewStatus {
@@ -359,6 +392,8 @@ model Organization {
   intakeSubmissions                PropertyIntakeSubmission[]
   aiDrafts                         PropertyAIDraft[]
   aiExternalChecks                 PropertyAIExternalCheck[]
+  propertyAIAnalyses               PropertyObjectAIAnalysis[]
+  propertyAIFieldProposals         PropertyObjectAIFieldProposal[]
   legalDocuments                   LegalDocument[]
 }
 
@@ -410,6 +445,7 @@ model Office {
   intakeSubmissions                PropertyIntakeSubmission[]
   aiDrafts                         PropertyAIDraft[]
   aiExternalChecks                 PropertyAIExternalCheck[]
+  propertyAIAnalyses               PropertyObjectAIAnalysis[]
   legalDocuments                   LegalDocument[]
 
   @@unique([organizationId, slug])
@@ -449,26 +485,27 @@ model Market {
 }
 
 model AppUser {
-  id                             String                     @id @default(cuid())
-  firebaseUid                    String                     @unique
-  email                          String                     @unique
+  id                             String                          @id @default(cuid())
+  firebaseUid                    String                          @unique
+  email                          String                          @unique
   displayName                    String?
-  active                         Boolean                    @default(true)
-  createdAt                      DateTime                   @default(now())
-  updatedAt                      DateTime                   @updatedAt
+  active                         Boolean                         @default(true)
+  createdAt                      DateTime                        @default(now())
+  updatedAt                      DateTime                        @updatedAt
   platformRoleAssignments        PlatformRoleAssignment[]
   organizationMemberships        OrganizationMembership[]
   officeMemberships              OfficeMembership[]
   createdPropertyObjects         PropertyObject[]
   createdIntakeSubmissions       PropertyIntakeSubmission[]
   createdAIDrafts                PropertyAIDraft[]
-  uploadedLegalDocuments         LegalDocument[]            @relation("LegalDocumentUploadedBy")
-  uploadedPropertyMedia          PropertyMedia[]            @relation("PropertyMediaUploadedBy")
-  uploadedPropertyDocuments      PropertyDocument[]         @relation("PropertyDocumentUploadedBy")
-  createdPartnerInteractions     PartnerInteraction[]       @relation("PartnerInteractionCreatedBy")
-  sentInteractionMessages        InteractionMessage[]       @relation("InteractionMessageSender")
-  uploadedInteractionAttachments InteractionAttachment[]    @relation("InteractionAttachmentUploadedBy")
-  reviewedPartners               PartnerReview[]            @relation("PartnerReviewReviewer")
+  uploadedLegalDocuments         LegalDocument[]                 @relation("LegalDocumentUploadedBy")
+  uploadedPropertyMedia          PropertyMedia[]                 @relation("PropertyMediaUploadedBy")
+  uploadedPropertyDocuments      PropertyDocument[]              @relation("PropertyDocumentUploadedBy")
+  createdPartnerInteractions     PartnerInteraction[]            @relation("PartnerInteractionCreatedBy")
+  sentInteractionMessages        InteractionMessage[]            @relation("InteractionMessageSender")
+  uploadedInteractionAttachments InteractionAttachment[]         @relation("InteractionAttachmentUploadedBy")
+  decidedPropertyAIProposals     PropertyObjectAIFieldProposal[]
+  reviewedPartners               PartnerReview[]                 @relation("PartnerReviewReviewer")
   reviewedLegalDocuments         LegalDocumentReview[]
   auditLogs                      AuditLog[]
 }
@@ -569,56 +606,58 @@ model SiteObjectVisibilityOverride {
 }
 
 model PropertyObject {
-  id                                 String                         @id @default(cuid())
+  id                                 String                          @id @default(cuid())
   ownerOrganizationId                String
   ownerOfficeId                      String
   informationOwnerOrganizationId     String
   informationOwnerOfficeId           String
   createdByUserId                    String
   marketId                           String
-  status                             PublicationStatus              @default(draft)
-  visibility                         Visibility                     @default(private)
+  status                             PublicationStatus               @default(draft)
+  visibility                         Visibility                      @default(private)
   assetClass                         AssetClass
   assetSubtype                       String?
   addressPrivate                     String?
-  areaSqm                            Decimal?                       @db.Decimal(14, 2)
-  landAreaSqm                        Decimal?                       @db.Decimal(14, 2)
-  buildingAreaSqm                    Decimal?                       @db.Decimal(14, 2)
-  rentableAreaSqm                    Decimal?                       @db.Decimal(14, 2)
+  areaSqm                            Decimal?                        @db.Decimal(14, 2)
+  landAreaSqm                        Decimal?                        @db.Decimal(14, 2)
+  buildingAreaSqm                    Decimal?                        @db.Decimal(14, 2)
+  rentableAreaSqm                    Decimal?                        @db.Decimal(14, 2)
   floorNumber                        Int?
   floorsTotal                        Int?
   roomsCount                         Int?
   bedroomsCount                      Int?
   bathroomsCount                     Int?
   cadastralNumber                    String?
-  priceMode                          PriceMode                      @default(on_request)
-  priceAmount                        Decimal?                       @db.Decimal(18, 2)
+  priceMode                          PriceMode                       @default(on_request)
+  priceAmount                        Decimal?                        @db.Decimal(18, 2)
   priceCurrency                      CurrencyCode?
-  priceMinAmount                     Decimal?                       @db.Decimal(18, 2)
-  priceMaxAmount                     Decimal?                       @db.Decimal(18, 2)
-  representationSide                 RepresentationSide             @default(seller)
-  exclusivity                        Exclusivity                    @default(unknown)
-  canBeShownByOtherOffices           Boolean                        @default(false)
-  requiresOwnerOfficeApprovalForLead Boolean                        @default(true)
+  priceMinAmount                     Decimal?                        @db.Decimal(18, 2)
+  priceMaxAmount                     Decimal?                        @db.Decimal(18, 2)
+  representationSide                 RepresentationSide              @default(seller)
+  exclusivity                        Exclusivity                     @default(unknown)
+  canBeShownByOtherOffices           Boolean                         @default(false)
+  requiresOwnerOfficeApprovalForLead Boolean                         @default(true)
   driveIntakeFolderUrl               String?
   driveIntakeProcessedAt             DateTime?
   driveIntakeConfidence              Float?
-  driveIntakePending                 Boolean                        @default(false)
-  createdAt                          DateTime                       @default(now())
-  updatedAt                          DateTime                       @updatedAt
+  driveIntakePending                 Boolean                         @default(false)
+  createdAt                          DateTime                        @default(now())
+  updatedAt                          DateTime                        @updatedAt
   publishedAt                        DateTime?
-  ownerOrganization                  Organization                   @relation("PropertyOwnerOrganization", fields: [ownerOrganizationId], references: [id])
-  ownerOffice                        Office                         @relation("PropertyOwnerOffice", fields: [ownerOfficeId], references: [id])
-  informationOwnerOrganization       Organization                   @relation("PropertyInformationOwnerOrganization", fields: [informationOwnerOrganizationId], references: [id])
-  informationOwnerOffice             Office                         @relation("PropertyInformationOwnerOffice", fields: [informationOwnerOfficeId], references: [id])
-  createdByUser                      AppUser                        @relation(fields: [createdByUserId], references: [id])
-  market                             Market                         @relation(fields: [marketId], references: [id])
+  ownerOrganization                  Organization                    @relation("PropertyOwnerOrganization", fields: [ownerOrganizationId], references: [id])
+  ownerOffice                        Office                          @relation("PropertyOwnerOffice", fields: [ownerOfficeId], references: [id])
+  informationOwnerOrganization       Organization                    @relation("PropertyInformationOwnerOrganization", fields: [informationOwnerOrganizationId], references: [id])
+  informationOwnerOffice             Office                          @relation("PropertyInformationOwnerOffice", fields: [informationOwnerOfficeId], references: [id])
+  createdByUser                      AppUser                         @relation(fields: [createdByUserId], references: [id])
+  market                             Market                          @relation(fields: [marketId], references: [id])
   localizations                      PropertyObjectLocalization[]
   components                         PropertyObjectComponent[]
   attributes                         PropertyObjectAttribute[]
   economics                          PropertyObjectEconomics[]
   media                              PropertyMedia[]
   documents                          PropertyDocument[]
+  aiAnalyses                         PropertyObjectAIAnalysis[]
+  aiFieldProposals                   PropertyObjectAIFieldProposal[]
   legalDocuments                     LegalDocument[]
   coBrokerRequests                   CoBrokerRequest[]
   dealRoomObjects                    DealRoomObject[]
@@ -747,27 +786,121 @@ model PropertyMedia {
 }
 
 model PropertyDocument {
-  id                  String               @id @default(cuid())
+  id                  String                         @id @default(cuid())
   propertyObjectId    String
   ownerOrganizationId String
   ownerOfficeId       String
   title               String
   storagePath         String
-  documentType        PropertyDocumentType @default(other)
-  public              Boolean              @default(false)
+  documentType        PropertyDocumentType           @default(other)
+  source              PropertyDocumentSource         @default(manual)
+  public              Boolean                        @default(false)
+  currentVersion      Int                            @default(1)
+  driveFileId         String?
+  driveModifiedTime   DateTime?
+  driveChecksum       String?
+  driveWebUrl         String?
   originalFileName    String?
   mimeType            String?
   sizeBytes           BigInt?
   checksum            String?
   uploadedByUserId    String?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  propertyObject      PropertyObject       @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
-  uploadedByUser      AppUser?             @relation("PropertyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  analysisStatus      PropertyDocumentAnalysisStatus @default(pending)
+  aiSummary           Json?
+  aiFacts             Json?
+  aiRisks             Json?
+  aiRecommendations   Json?
+  aiMissingItems      Json?
+  aiConflicts         Json?
+  aiChangeSummary     Json?
+  aiAnalyzedAt        DateTime?
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  propertyObject      PropertyObject                 @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  uploadedByUser      AppUser?                       @relation("PropertyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  versions            PropertyDocumentVersion[]
 
+  @@unique([propertyObjectId, driveFileId])
   @@index([propertyObjectId])
   @@index([ownerOfficeId])
   @@index([uploadedByUserId])
+  @@index([driveFileId])
+}
+
+model PropertyDocumentVersion {
+  id                 String           @id @default(cuid())
+  propertyDocumentId String
+  versionNumber      Int
+  storagePath        String
+  originalFileName   String?
+  mimeType           String?
+  sizeBytes          BigInt?
+  checksum           String?
+  driveModifiedTime  DateTime?
+  driveChecksum      String?
+  aiAnalysis         Json?
+  aiChangeSummary    Json?
+  comparedToVersion  Int?
+  createdAt          DateTime         @default(now())
+  document           PropertyDocument @relation(fields: [propertyDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyDocumentId, versionNumber])
+  @@index([propertyDocumentId, createdAt])
+}
+
+model PropertyObjectAIAnalysis {
+  id               String                          @id @default(cuid())
+  propertyObjectId String
+  organizationId   String
+  officeId         String
+  status           PropertyDocumentAnalysisStatus  @default(analyzed)
+  provider         String?
+  model            String?
+  summary          Json?
+  confirmedFacts   Json?
+  risks            Json?
+  recommendations  Json?
+  missingDocuments Json?
+  conflicts        Json?
+  changeLog        Json?
+  fieldProposals   Json?
+  analyzedAt       DateTime                        @default(now())
+  createdAt        DateTime                        @default(now())
+  updatedAt        DateTime                        @updatedAt
+  propertyObject   PropertyObject                  @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  organization     Organization                    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  office           Office                          @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  proposals        PropertyObjectAIFieldProposal[]
+
+  @@index([propertyObjectId, analyzedAt])
+  @@index([organizationId])
+  @@index([officeId])
+}
+
+model PropertyObjectAIFieldProposal {
+  id                String                   @id @default(cuid())
+  analysisId        String
+  propertyObjectId  String
+  organizationId    String
+  fieldPath         String
+  currentValue      Json?
+  proposedValue     Json?
+  sourceDocumentIds String[]
+  confidence        SourceConfidence         @default(medium)
+  rationale         String?
+  status            PropertyAIProposalStatus @default(pending)
+  decidedByUserId   String?
+  decidedAt         DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  analysis          PropertyObjectAIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  propertyObject    PropertyObject           @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  decidedByUser     AppUser?                 @relation(fields: [decidedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([analysisId])
+  @@index([propertyObjectId, status])
+  @@index([organizationId])
 }
 
 model LegalDocument {
