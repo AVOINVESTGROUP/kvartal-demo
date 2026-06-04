@@ -5923,6 +5923,17 @@ Schema:
     let proposalCount = 0;
 
     if (objectForAnalysis) {
+      const analysisFileParts = geminiFileParts.length
+        ? geminiFileParts
+        : objectForAnalysis.documents
+            .filter((document) => document.mimeType)
+            .slice(0, 10)
+            .map((document) => ({
+              fileData: {
+                mimeType: document.mimeType ?? "application/pdf",
+                fileUri: `gs://${storageBucketName}/${document.storagePath}`,
+              },
+            }));
       const aiDossier = await analyzeObjectDocumentsWithAI({
         propertyObject: {
           id: objectForAnalysis.id,
@@ -5939,7 +5950,7 @@ Schema:
           localizations: objectForAnalysis.localizations,
         },
         documents: objectForAnalysis.documents as PropertyDocumentRow[],
-        geminiFileParts,
+        geminiFileParts: analysisFileParts,
       });
       const analysis = await prisma.propertyObjectAIAnalysis.create({
         data: {
