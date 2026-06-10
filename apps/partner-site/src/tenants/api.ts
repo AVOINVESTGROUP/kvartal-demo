@@ -62,14 +62,16 @@ export async function fetchPartnerInventory(tenant: PartnerTenantKey, language: 
             ? "Dubai Partner"
             : tenant === "aurum"
               ? "Aurum Key Realty NYC"
-              : "Yerevan Partner",
+              : tenant === "huajing"
+                ? "HUAJING Estate Partners"
+                : "Yerevan Partner",
     };
   });
 }
 
 export async function fetchPartnerInventoryByLanguage(
   tenant: PartnerTenantKey,
-  languages: PartnerSiteLanguage[] = ["en", "ru", "ka"],
+  languages: PartnerSiteLanguage[] = ["en", "ru", "zh", "ka"],
 ): Promise<PartnerInventoryByLanguage> {
   const entries = await Promise.all(
     languages.map(async (language) => [language, (await fetchPartnerInventory(tenant, language)) ?? []] as const),

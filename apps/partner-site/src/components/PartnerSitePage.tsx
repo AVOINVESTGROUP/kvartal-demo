@@ -1,6 +1,7 @@
 import type { PartnerInventoryByLanguage, PartnerTenantConfig } from "../tenants";
 import { Apart4uSite } from "./Apart4uSite";
 import { AurumSite } from "./AurumSite";
+import { HuajingSite } from "./HuajingSite";
 
 type PartnerSitePageProps = {
   tenant: PartnerTenantConfig;
@@ -17,6 +18,10 @@ export function PartnerSitePage({ tenant, inventoryOverride, inventoryByLanguage
 
   if (tenant.key === "aurum") {
     return <AurumSite tenant={tenant} inventoryByLanguage={inventoryByLanguage ?? { en: inventoryOverride ?? [] }} />;
+  }
+
+  if (tenant.key === "huajing") {
+    return <HuajingSite tenant={tenant} inventoryByLanguage={inventoryByLanguage ?? { zh: inventoryOverride ?? [] }} />;
   }
 
   return (

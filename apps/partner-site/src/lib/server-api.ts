@@ -32,3 +32,30 @@ export async function fetchBackendJson<T>(baseUrl: string | undefined, path: str
 
   return response.json() as Promise<T>;
 }
+
+export async function postBackendJson<T>(baseUrl: string | undefined, path: string, body: unknown): Promise<{ status: number; data: T | null }> {
+  if (!baseUrl) {
+    return { status: 503, data: null };
+  }
+
+  const token = await getIdentityToken(baseUrl);
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  let data: T | null = null;
+
+  try {
+    data = (await response.json()) as T;
+  } catch {
+    data = null;
+  }
+
+  return { status: response.status, data };
+}

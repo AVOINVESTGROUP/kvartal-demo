@@ -1,6 +1,5 @@
 import { PartnerSitePage } from "../components/PartnerSitePage";
 import { fetchPartnerInventoryByLanguage } from "../tenants/api";
-import { partnerTenants } from "../tenants";
 import { getPartnerTenantByHost } from "../tenants/domains";
 import { headers } from "next/headers";
 
@@ -12,7 +11,14 @@ function resolveRequestHost(requestHeaders: Awaited<ReturnType<typeof headers>>)
 
 export async function generateMetadata() {
   const requestHeaders = await headers();
-  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders)) ?? partnerTenants.apart4u;
+  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders));
+
+  if (!tenant) {
+    return {
+      title: "Partner Site Backend",
+      description: "Internal partner-site routing endpoint. Public partner websites are served by custom domains.",
+    };
+  }
 
   return {
     title: `${tenant.name} | Partner Network`,
@@ -30,7 +36,20 @@ export async function generateMetadata() {
 
 export default async function PartnerSiteHome() {
   const requestHeaders = await headers();
-  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders)) ?? partnerTenants.apart4u;
+  const tenant = getPartnerTenantByHost(resolveRequestHost(requestHeaders));
+
+  if (!tenant) {
+    return (
+      <main className="internal-site-shell">
+        <section>
+          <p>Fixer.guru partner-site backend</p>
+          <h1>Custom domain required</h1>
+          <span>Partner websites are routed by their branded domain. This technical App Hosting URL is for rollout checks only.</span>
+        </section>
+      </main>
+    );
+  }
+
   const inventoryByLanguage = await fetchPartnerInventoryByLanguage(tenant.key);
 
   return <PartnerSitePage tenant={tenant} inventoryByLanguage={inventoryByLanguage} />;

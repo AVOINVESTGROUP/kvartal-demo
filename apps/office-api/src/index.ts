@@ -40,11 +40,11 @@ const storage = new Storage();
 const storageBucketName = process.env.STORAGE_BUCKET ?? "kvartal-dev-property-assets";
 const storageBucket = storage.bucket(storageBucketName);
 const interactionTypingTtlMs = 3000;
-const supportedInteractionLanguages = new Set(["ru", "en", "ka", "hy", "ar"]);
+const supportedInteractionLanguages = new Set(["ru", "en", "zh", "ka", "hy", "ar"]);
 
 type InteractionTranslationResult = {
   translatedText: string | null;
-  translatedLanguage: "ru" | "en" | "ka" | "hy" | "ar" | null;
+  translatedLanguage: "ru" | "en" | "zh" | "ka" | "hy" | "ar" | null;
   translationStatus: "pending" | "translated" | "failed" | "not_required" | "edited";
   provider: string | null;
 };
@@ -272,8 +272,10 @@ const tenantOrganizationSlugs = {
   dubai: "dubai-partner",
   yerevan: "yerevan-partner",
   aurum: "aurum-key-nyc",
+  huajing: "huajing-estate",
 } as const;
 
+const supportedClientCurrencies = new Set(["RUB", "USD", "EUR", "GEL", "AMD", "AED"]);
 const marketInsightMetric = "average_price_usd_sqm";
 const marketInsightCategories = ["residential", "commercial"] as const;
 
@@ -304,6 +306,12 @@ function stableMonthlyScore(input: string) {
 
 function organizationSlugForTenant(tenant: string) {
   return tenantOrganizationSlugs[tenant as keyof typeof tenantOrganizationSlugs] ?? tenant;
+}
+
+function normalizeClientCurrency(currency: string | undefined | null, fallback = "USD") {
+  const normalized = currency?.trim().toUpperCase();
+
+  return supportedClientCurrencies.has(normalized ?? "") ? normalized : fallback;
 }
 
 function normalizeMediaKind(value: unknown) {
@@ -1190,7 +1198,9 @@ function canTransitionPartnerInteractionStatus(currentStatus: string, nextStatus
 function normalizeInteractionLanguage(language: string | undefined | null, fallback = "ru") {
   const normalized = language?.trim().toLowerCase();
 
-  return supportedInteractionLanguages.has(normalized ?? "") ? normalized as "ru" | "en" | "ka" | "hy" | "ar" : fallback as "ru" | "en" | "ka" | "hy" | "ar";
+  return supportedInteractionLanguages.has(normalized ?? "")
+    ? normalized as "ru" | "en" | "zh" | "ka" | "hy" | "ar"
+    : fallback as "ru" | "en" | "zh" | "ka" | "hy" | "ar";
 }
 
 function interactionTranslationHash(text: string) {
@@ -2243,6 +2253,100 @@ const server = createServer(async (request, response) => {
         ? "status=published AND visibility=public AND canBeShownByOtherOffices=true AND ownerOrganization=tenant"
         : "status=published AND visibility=public AND canBeShownByOtherOffices=true",
       objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/public/client-intents" && request.method === "POST") {
+    type PublicClientIntentBody = {
+      tenant?: string;
+      sourceOrganizationSlug?: string;
+      sourceOfficeSlug?: string;
+      sourceOfficeId?: string;
+      sourceWebsiteId?: string;
+      marketId?: string;
+      preferredLanguage?: string;
+      preferredCurrency?: string;
+      clientName?: string;
+      clientContact?: string;
+      requirementText?: string;
+      propertyObjectId?: string;
+      notes?: string;
+    };
+
+    const body = await readJsonBody<PublicClientIntentBody>(request);
+    const tenant = optionalString(body.tenant) ?? "apart4u";
+    const sourceOrganizationSlug = optionalString(body.sourceOrganizationSlug) ?? organizationSlugForTenant(tenant);
+    const requirementText = optionalString(body.requirementText);
+
+    if (!requirementText) {
+      sendError(response, 400, "requirement_text_required", "requirementText is required.");
+      return;
+    }
+
+    const organization = await prisma.organization.findUnique({
+      where: { slug: sourceOrganizationSlug },
+      include: {
+        offices: {
+          where: optionalString(body.sourceOfficeId)
+            ? { id: optionalString(body.sourceOfficeId) }
+            : optionalString(body.sourceOfficeSlug)
+              ? { slug: optionalString(body.sourceOfficeSlug) }
+              : undefined,
+          orderBy: { legalName: "asc" },
+          take: 1,
+        },
+        siteConfigs: {
+          where: { active: true },
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+        },
+      },
+    });
+
+    const office = organization?.offices[0];
+
+    if (!organization || !office) {
+      sendError(response, 404, "source_context_not_found", `Source organization '${sourceOrganizationSlug}' was not found.`);
+      return;
+    }
+
+    const requestedMarketId = optionalString(body.marketId);
+    const market = requestedMarketId
+      ? await prisma.market.findUnique({ where: { id: requestedMarketId } })
+      : office.defaultMarketId
+        ? await prisma.market.findUnique({ where: { id: office.defaultMarketId } })
+        : null;
+    const language = normalizeInteractionLanguage(optionalString(body.preferredLanguage) ?? organization.defaultLanguage, organization.defaultLanguage);
+    const currency = normalizeClientCurrency(optionalString(body.preferredCurrency), organization.defaultCurrency);
+    const clientIntent = await prisma.clientIntent.create({
+      data: {
+        sourceOrganizationId: organization.id,
+        sourceOfficeId: office.id,
+        sourceWebsiteId: optionalString(body.sourceWebsiteId) ?? organization.siteConfigs[0]?.id ?? tenant,
+        marketId: market?.id ?? null,
+        preferredLanguage: language as never,
+        preferredCurrency: currency as never,
+        requirementText,
+        status: "new",
+        privateDetails: {
+          create: {
+            clientName: optionalString(body.clientName),
+            clientContact: optionalString(body.clientContact),
+            notes: optionalString(body.notes) ?? (optionalString(body.propertyObjectId) ? `Property object: ${optionalString(body.propertyObjectId)}` : undefined),
+          },
+        },
+      },
+      include: { privateDetails: true },
+    });
+
+    sendJson(response, 201, {
+      ok: true,
+      clientIntentId: clientIntent.id,
+      status: clientIntent.status,
+      tenant,
+      organizationSlug: organization.slug,
+      officeSlug: office.slug,
     });
     return;
   }

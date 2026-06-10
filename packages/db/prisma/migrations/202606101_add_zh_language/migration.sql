@@ -1,0 +1,1 @@
+ALTER TYPE "LanguageCode" ADD VALUE IF NOT EXISTS 'zh';

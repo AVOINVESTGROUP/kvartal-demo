@@ -1,6 +1,7 @@
 import { apart4uTenant } from "./apart4u/config";
 import { aurumTenant } from "./aurum/config";
 import { dubaiTenant } from "./dubai/config";
+import { huajingTenant } from "./huajing/config";
 import type { PartnerInventoryByLanguage, PartnerInventoryItem, PartnerSiteLanguage, PartnerTenantConfig, PartnerTenantKey } from "./types";
 import { yerevanTenant } from "./yerevan/config";
 
@@ -9,6 +10,7 @@ export const partnerTenants = {
   dubai: dubaiTenant,
   yerevan: yerevanTenant,
   aurum: aurumTenant,
+  huajing: huajingTenant,
 } satisfies Record<PartnerTenantKey, PartnerTenantConfig>;
 
 export const partnerTenantKeys = Object.keys(partnerTenants) as PartnerTenantKey[];

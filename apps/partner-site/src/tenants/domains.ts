@@ -8,6 +8,8 @@ const tenantDomains: Record<string, PartnerTenantKey> = {
   "www.aurumkey.estate": "aurum",
   "aurumkeynyc.com": "aurum",
   "www.aurumkeynyc.com": "aurum",
+  "huajing.estate": "huajing",
+  "www.huajing.estate": "huajing",
 };
 
 export function normalizeHost(host: string | null | undefined) {

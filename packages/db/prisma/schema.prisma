@@ -10,6 +10,7 @@ datasource db {
 enum LanguageCode {
   ru
   en
+  zh
   ka
   hy
   ar

@@ -1,4 +1,4 @@
-export type LanguageCode = "ru" | "en" | "ka" | "hy" | "ar";
+export type LanguageCode = "ru" | "en" | "zh" | "ka" | "hy" | "ar";
 
 export type CurrencyCode = "RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED";
 

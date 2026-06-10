@@ -27,6 +27,11 @@ type SeedObjectInput = {
   addressDisplayEn?: string;
   tagsEn?: string[];
   priceDisplayEn?: string;
+  titleZh?: string;
+  descriptionZh?: string;
+  addressDisplayZh?: string;
+  tagsZh?: string[];
+  priceDisplayZh?: string;
   mediaUrl?: string;
 };
 
@@ -130,6 +135,28 @@ async function ensurePublishedObject(input: SeedObjectInput) {
     },
   });
 
+  if (input.titleZh) {
+    await prisma.propertyObjectLocalization.upsert({
+      where: { propertyObjectId_language: { propertyObjectId: propertyObject.id, language: "zh" } },
+      update: {
+        title: input.titleZh,
+        description: input.descriptionZh ?? input.descriptionEn ?? input.description,
+        addressDisplay: input.addressDisplayZh ?? input.addressDisplayEn ?? input.addressDisplay,
+        tags: input.tagsZh ?? input.tagsEn ?? input.tags,
+        priceDisplay: input.priceDisplayZh ?? input.priceDisplayEn ?? input.priceDisplay,
+      },
+      create: {
+        propertyObjectId: propertyObject.id,
+        language: "zh",
+        title: input.titleZh,
+        description: input.descriptionZh ?? input.descriptionEn ?? input.description,
+        addressDisplay: input.addressDisplayZh ?? input.addressDisplayEn ?? input.addressDisplay,
+        tags: input.tagsZh ?? input.tagsEn ?? input.tags,
+        priceDisplay: input.priceDisplayZh ?? input.priceDisplayEn ?? input.priceDisplay,
+      },
+    });
+  }
+
   await prisma.propertyMedia.deleteMany({ where: { propertyObjectId: propertyObject.id, kind: "image" } });
 
   if (input.mediaUrl) {
@@ -154,8 +181,8 @@ async function ensureSiteConfig(input: {
   officeId: string;
   domain?: string;
   subdomain?: string;
-  defaultLanguage: "ru" | "en" | "ka" | "hy" | "ar";
-  supportedLanguages: Array<"ru" | "en" | "ka" | "hy" | "ar">;
+  defaultLanguage: "ru" | "en" | "zh" | "ka" | "hy" | "ar";
+  supportedLanguages: Array<"ru" | "en" | "zh" | "ka" | "hy" | "ar">;
   defaultCurrency: "RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED";
   supportedCurrencies: Array<"RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED">;
   primaryMarketIds: string[];
@@ -409,6 +436,111 @@ async function main() {
     },
   });
 
+  const shanghaiMarket = await prisma.market.upsert({
+    where: { slug: "shanghai-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "house", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "shanghai-residential",
+      city: "Shanghai",
+      country: "CN",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+      assetClasses: ["apartment", "house", "investment_project"],
+      complianceRegion: "CN-SH",
+      active: true,
+    },
+  });
+
+  const shenzhenMarket = await prisma.market.upsert({
+    where: { slug: "shenzhen-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "house", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "shenzhen-residential",
+      city: "Shenzhen",
+      country: "CN",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+      assetClasses: ["apartment", "house", "investment_project"],
+      complianceRegion: "CN-GD",
+      active: true,
+    },
+  });
+
+  const hangzhouMarket = await prisma.market.upsert({
+    where: { slug: "hangzhou-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "house", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "hangzhou-residential",
+      city: "Hangzhou",
+      country: "CN",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+      assetClasses: ["apartment", "house", "investment_project"],
+      complianceRegion: "CN-ZJ",
+      active: true,
+    },
+  });
+
+  const singaporeMarket = await prisma.market.upsert({
+    where: { slug: "singapore-central-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "singapore-central-residential",
+      city: "Singapore",
+      country: "SG",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+      assetClasses: ["apartment", "investment_project"],
+      complianceRegion: "SG",
+      active: true,
+    },
+  });
+
+  const tokyoMarket = await prisma.market.upsert({
+    where: { slug: "tokyo-aoyama-residential" },
+    update: {
+      active: true,
+      assetClasses: ["apartment", "investment_project"],
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "tokyo-aoyama-residential",
+      city: "Tokyo",
+      country: "JP",
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD"],
+      supportedLanguages: ["zh", "en", "ru"],
+      assetClasses: ["apartment", "investment_project"],
+      complianceRegion: "JP-TK",
+      active: true,
+    },
+  });
+
   const fixer = await prisma.organization.upsert({
     where: { slug: "fixer-guru" },
     update: {
@@ -535,6 +667,27 @@ async function main() {
     },
   });
 
+  const huajing = await prisma.organization.upsert({
+    where: { slug: "huajing-estate" },
+    update: {
+      status: "active",
+      operatingCountryCodes: ["CN", "AE", "SG", "JP"],
+      supportedCurrencies: ["USD", "AED"],
+      supportedLanguages: ["zh", "en", "ru"],
+    },
+    create: {
+      slug: "huajing-estate",
+      legalName: "HUAJING Estate Partners",
+      countryOfRegistration: "CN",
+      operatingCountryCodes: ["CN", "AE", "SG", "JP"],
+      defaultLanguage: "zh",
+      supportedLanguages: ["zh", "en", "ru"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD", "AED"],
+      status: "active",
+    },
+  });
+
   const platformOffice = await prisma.office.upsert({
     where: { organizationId_slug: { organizationId: fixer.id, slug: "platform-operator" } },
     update: { status: "active", defaultMarketId: dubaiMarket.id },
@@ -643,6 +796,24 @@ async function main() {
     },
   });
 
+  const huajingOffice = await prisma.office.upsert({
+    where: { organizationId_slug: { organizationId: huajing.id, slug: "shanghai-office" } },
+    update: { status: "active", defaultMarketId: shanghaiMarket.id },
+    create: {
+      organizationId: huajing.id,
+      slug: "shanghai-office",
+      legalName: "HUAJING Shanghai Office",
+      city: "Shanghai",
+      country: "CN",
+      defaultMarketId: shanghaiMarket.id,
+      defaultLanguage: "zh",
+      supportedLanguages: ["zh", "en", "ru"],
+      defaultCurrency: "USD",
+      supportedCurrencies: ["USD", "AED"],
+      status: "active",
+    },
+  });
+
   await ensureSiteConfig({
     organizationId: aurumKey.id,
     officeId: aurumOffice.id,
@@ -656,6 +827,21 @@ async function main() {
     contactEmail: "hello@aurumkeynyc.com",
     contactPhone: "+1 212 555 0126",
     brandName: "Aurum Key Realty NYC",
+  });
+
+  await ensureSiteConfig({
+    organizationId: huajing.id,
+    officeId: huajingOffice.id,
+    domain: "huajing.estate",
+    subdomain: "huajing",
+    defaultLanguage: "zh",
+    supportedLanguages: ["zh", "en", "ru"],
+    defaultCurrency: "USD",
+    supportedCurrencies: ["USD", "AED"],
+    primaryMarketIds: [shanghaiMarket.id, shenzhenMarket.id, hangzhouMarket.id, dubaiMarket.id, singaporeMarket.id, tokyoMarket.id],
+    contactEmail: "contact@huajing.estate",
+    contactPhone: "+86 21 5550 2026",
+    brandName: "华境置业 HUAJING Estate Partners",
   });
 
   const seedUser = await prisma.appUser.upsert({
@@ -797,6 +983,180 @@ async function main() {
     tagsEn: ["Brooklyn Heights", "Townhouse", "Garden"],
     priceDisplayEn: "$4.65M",
     mediaUrl: "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: shanghaiMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "riverside residence",
+    areaSqm: "189.00",
+    priceCurrency: "USD",
+    title: "Резиденция Riverside Cloud",
+    description: "Квартира у набережной Хуанпу с private reception, видом на skyline и процессом документальной проверки.",
+    addressDisplay: "Шанхай, Huangpu Riverside",
+    tags: ["Шанхай", "Набережная", "Документы по запросу"],
+    priceDisplay: "от ¥18,600,000",
+    titleEn: "Riverside Cloud Residence",
+    descriptionEn: "Huangpu riverside apartment with private reception, skyline views and document review workflow.",
+    addressDisplayEn: "Shanghai, Huangpu Riverside",
+    tagsEn: ["Shanghai", "Riverside", "Document review"],
+    priceDisplayEn: "From ¥18,600,000",
+    titleZh: "滨江云邸",
+    descriptionZh: "黄浦滨江高端公寓，私享会客空间，城市天际线视野，交易资料需经专业复核。",
+    addressDisplayZh: "上海 · 黄浦滨江",
+    tagsZh: ["上海", "滨江", "资料复核"],
+    priceDisplayZh: "约 ¥18,600,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: shenzhenMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "bay area residence",
+    areaSqm: "143.00",
+    priceCurrency: "USD",
+    title: "Bay Area Prologue",
+    description: "Резиденция в Qianhai Bay Area для предпринимателей, семейной релокации и инвестиционного шортлиста.",
+    addressDisplay: "Шэньчжэнь, Qianhai Bay Area",
+    tags: ["Шэньчжэнь", "Qianhai", "Инвестиции"],
+    priceDisplay: "от ¥12,800,000",
+    titleEn: "Bay Area Prologue",
+    descriptionEn: "Qianhai Bay Area residence for technology founders, family relocation and investment shortlist scenarios.",
+    addressDisplayEn: "Shenzhen, Qianhai Bay Area",
+    tagsEn: ["Shenzhen", "Qianhai", "Investment"],
+    priceDisplayEn: "From ¥12,800,000",
+    titleZh: "湾区序章",
+    descriptionZh: "前海湾区核心住宅，适合科技创业者、家庭迁居与资产配置初筛。",
+    addressDisplayZh: "深圳 · 前海湾区",
+    tagsZh: ["深圳", "前海", "资产配置"],
+    priceDisplayZh: "约 ¥12,800,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: hangzhouMarket.id,
+    assetClass: "house",
+    assetSubtype: "stacked villa",
+    areaSqm: "168.00",
+    priceCurrency: "USD",
+    title: "Вилла Xixi Hidden",
+    description: "Малоэтажный формат рядом с Xixi Wetland; private viewing и юридическая проверка перед сделкой обязательны.",
+    addressDisplay: "Ханчжоу, Xixi Wetland",
+    tags: ["Ханчжоу", "Вилла", "Low density"],
+    priceDisplay: "от ¥9,600,000",
+    titleEn: "Xixi Hidden Villa",
+    descriptionEn: "Low-density villa-style home near Xixi Wetland with private viewing and legal review required.",
+    addressDisplayEn: "Hangzhou, Xixi Wetland",
+    tagsEn: ["Hangzhou", "Villa", "Low density"],
+    priceDisplayEn: "From ¥9,600,000",
+    titleZh: "西溪隐墅",
+    descriptionZh: "西溪湿地旁低密叠墅，预约私享看房，成交前需完成法律与资料审阅。",
+    addressDisplayZh: "杭州 · 西溪湿地",
+    tagsZh: ["杭州", "叠墅", "低密"],
+    priceDisplayZh: "约 ¥9,600,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: dubaiMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "marina residence",
+    areaSqm: "112.00",
+    priceCurrency: "AED",
+    title: "Gulf Skyline",
+    description: "Dubai Marina apartment for cross-border investors; projected rental scenarios require broker review.",
+    addressDisplay: "Dubai Marina",
+    tags: ["Dubai", "Marina", "Investor shortlist"],
+    priceDisplay: "от ¥5,900,000",
+    titleEn: "Gulf Skyline",
+    descriptionEn: "Dubai Marina apartment for cross-border investors; projected rental scenarios require broker review.",
+    addressDisplayEn: "Dubai Marina",
+    tagsEn: ["Dubai", "Marina", "Investor shortlist"],
+    priceDisplayEn: "From ¥5,900,000",
+    titleZh: "海湾天际",
+    descriptionZh: "迪拜码头公寓，面向跨境投资客，租金测算需经经纪人与文件复核。",
+    addressDisplayZh: "迪拜 · Dubai Marina",
+    tagsZh: ["迪拜", "滨海", "投资初筛"],
+    priceDisplayZh: "约 ¥5,900,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: singaporeMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "central residence",
+    areaSqm: "128.00",
+    priceCurrency: "USD",
+    title: "Central Garden",
+    description: "Central Area residence prepared for capital preservation briefs and family-office review.",
+    addressDisplay: "Singapore, Central Area",
+    tags: ["Singapore", "Central", "Capital preservation"],
+    priceDisplay: "от ¥21,500,000",
+    titleEn: "Central Garden",
+    descriptionEn: "Central Area residence prepared for capital preservation briefs and family-office review.",
+    addressDisplayEn: "Singapore, Central Area",
+    tagsEn: ["Singapore", "Central", "Capital preservation"],
+    priceDisplayEn: "From ¥21,500,000",
+    titleZh: "中央花园",
+    descriptionZh: "新加坡核心区住宅，适合稳健资产配置与家族办公室初步评估。",
+    addressDisplayZh: "新加坡 · Central Area",
+    tagsZh: ["新加坡", "核心区", "稳健配置"],
+    priceDisplayZh: "约 ¥21,500,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1525625293386-3f8f99389edd?auto=format&fit=crop&w=1000&q=82",
+  });
+
+  await ensurePublishedObject({
+    ownerOrganizationId: huajing.id,
+    ownerOfficeId: huajingOffice.id,
+    informationOwnerOrganizationId: huajing.id,
+    informationOwnerOfficeId: huajingOffice.id,
+    createdByUserId: seedUser.id,
+    marketId: tokyoMarket.id,
+    assetClass: "apartment",
+    assetSubtype: "aoyama residence",
+    areaSqm: "96.00",
+    priceCurrency: "USD",
+    title: "Aoyama Residence",
+    description: "Tokyo Aoyama compact luxury residence for long-horizon liquidity and lifestyle use cases.",
+    addressDisplay: "Tokyo, Aoyama",
+    tags: ["Tokyo", "Aoyama", "Long horizon"],
+    priceDisplay: "от ¥14,200,000",
+    titleEn: "Aoyama Residence",
+    descriptionEn: "Tokyo Aoyama compact luxury residence for long-horizon liquidity and lifestyle use cases.",
+    addressDisplayEn: "Tokyo, Aoyama",
+    tagsEn: ["Tokyo", "Aoyama", "Long horizon"],
+    priceDisplayEn: "From ¥14,200,000",
+    titleZh: "青山公馆",
+    descriptionZh: "东京青山精品住宅，适合长期流动性与生活方式双重需求。",
+    addressDisplayZh: "东京 · 青山",
+    tagsZh: ["东京", "青山", "长期持有"],
+    priceDisplayZh: "约 ¥14,200,000 起",
+    mediaUrl: "https://images.unsplash.com/photo-1542051841857-5f90071e7989?auto=format&fit=crop&w=1000&q=82",
   });
 
   await ensurePublishedObject({
@@ -1033,9 +1393,22 @@ async function main() {
         dubaiMarket.slug,
         yerevanMarket.slug,
         newYorkMarket.slug,
+        shanghaiMarket.slug,
+        shenzhenMarket.slug,
+        hangzhouMarket.slug,
+        singaporeMarket.slug,
+        tokyoMarket.slug,
       ],
-      organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug, aurumKey.slug],
-      offices: [platformOffice.slug, kvartalOffice.slug, apart4uOffice.slug, dubaiOffice.slug, yerevanOffice.slug, aurumOffice.slug],
+      organizations: [fixer.slug, kvartal.slug, apart4u.slug, dubaiPartner.slug, yerevanPartner.slug, aurumKey.slug, huajing.slug],
+      offices: [
+        platformOffice.slug,
+        kvartalOffice.slug,
+        apart4uOffice.slug,
+        dubaiOffice.slug,
+        yerevanOffice.slug,
+        aurumOffice.slug,
+        huajingOffice.slug,
+      ],
       aurumOwnerSeeded: aurumOwner.email,
       platformOwnerSeeded: Boolean(platformOwnerFirebaseUid && platformOwnerEmail),
     }),
