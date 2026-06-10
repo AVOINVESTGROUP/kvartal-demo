@@ -1633,35 +1633,108 @@ body {
   position: relative;
   min-height: 100svh;
   overflow: hidden;
+  isolation: isolate;
   background:
-    linear-gradient(115deg, rgba(9, 58, 54, 0.96), rgba(12, 79, 74, 0.78) 50%, rgba(248, 243, 234, 0.16)),
-    radial-gradient(circle at 72% 18%, rgba(198, 161, 91, 0.48), transparent 28%),
-    #0c4f4a;
-  color: #fff;
-  padding: 150px 5vw 76px;
+    linear-gradient(90deg, rgba(3, 26, 24, 0.92) 0%, rgba(3, 26, 24, 0.74) 38%, rgba(6, 45, 40, 0.32) 67%, rgba(3, 26, 24, 0.18) 100%),
+    linear-gradient(180deg, rgba(3, 26, 24, 0.22), rgba(3, 26, 24, 0.72)),
+    url("/huajing/hero-china-real-estate.png") center / cover no-repeat,
+    #062d28;
+  color: #fffaf0;
+  padding: 150px 5vw 54px;
 }
 
-.huajing-skyline {
+.huajing-hero::before {
+  content: "";
   position: absolute;
-  right: 0;
-  bottom: 0;
-  width: min(56vw, 760px);
-  height: 72%;
-  opacity: 0.58;
+  inset: 0;
+  z-index: -3;
   background:
-    linear-gradient(to top, rgba(248, 243, 234, 0.55), rgba(248, 243, 234, 0.1) 70%, transparent),
-    repeating-linear-gradient(to right, transparent 0 32px, rgba(255, 253, 248, 0.38) 32px 34px),
-    linear-gradient(90deg, transparent 0 10%, rgba(255, 253, 248, 0.08) 10% 18%, transparent 18% 24%, rgba(255, 253, 248, 0.12) 24% 36%, transparent 36%);
-  clip-path: polygon(0 100%, 0 42%, 10% 42%, 10% 27%, 17% 27%, 17% 52%, 25% 52%, 25% 18%, 34% 18%, 34% 46%, 43% 46%, 43% 10%, 55% 10%, 55% 50%, 66% 50%, 66% 24%, 76% 24%, 76% 56%, 86% 56%, 86% 34%, 100% 34%, 100% 100%);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: linear-gradient(90deg, #000 0%, transparent 72%);
+}
+
+.huajing-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10vw -18vh auto;
+  z-index: -2;
+  width: 72vw;
+  height: 72vw;
+  min-width: 760px;
+  min-height: 760px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232, 215, 180, 0.34), rgba(232, 215, 180, 0.08) 42%, transparent 70%);
+  filter: blur(4px);
+}
+
+.huajing-architecture {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: -1;
+  width: min(58vw, 850px);
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+.huajing-architecture span {
+  position: absolute;
+  bottom: -24px;
+  width: 14%;
+  border-radius: 26px 26px 0 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.05)),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px 28px),
+    rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 40px 100px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(4px);
+  animation: huajingFloatTower 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite alternate;
+}
+
+.huajing-architecture span:nth-child(1) {
+  right: 9%;
+  height: 64%;
+}
+
+.huajing-architecture span:nth-child(2) {
+  right: 25%;
+  width: 18%;
+  height: 78%;
+  animation-delay: -0.7s;
+}
+
+.huajing-architecture span:nth-child(3) {
+  right: 46%;
+  width: 13%;
+  height: 52%;
+  animation-delay: -1.2s;
+}
+
+.huajing-architecture span:nth-child(4) {
+  right: 64%;
+  width: 11%;
+  height: 66%;
+  animation-delay: -0.3s;
+}
+
+@keyframes huajingFloatTower {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(-18px);
+  }
 }
 
 .huajing-hero-inner {
   position: relative;
   z-index: 1;
   display: grid;
-  min-height: calc(100svh - 226px);
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 420px);
-  gap: 54px;
+  min-height: calc(100svh - 204px);
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.72fr);
+  gap: 50px;
   align-items: end;
 }
 
@@ -1688,15 +1761,72 @@ body {
 }
 
 .huajing-hero h1 {
-  max-width: 800px;
-  font-size: clamp(52px, 7vw, 104px);
+  max-width: 840px;
+  font-size: clamp(44px, 6vw, 88px);
+  line-height: 0.94;
 }
 
 .huajing-hero-copy > p:not(.huajing-eyebrow) {
-  max-width: 680px;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 19px;
-  line-height: 1.75;
+  max-width: 610px;
+  margin-top: 24px;
+  color: rgba(255, 250, 240, 0.76);
+  font-size: clamp(16px, 1.5vw, 20px);
+  line-height: 1.8;
+}
+
+.huajing-search-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  width: min(820px, 100%);
+  margin-top: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.16);
+  padding: 12px;
+  backdrop-filter: blur(18px);
+}
+
+.huajing-search-panel label {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-height: 58px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 10px 14px;
+}
+
+.huajing-search-panel label::after {
+  content: "⌄";
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  color: rgba(255, 250, 240, 0.52);
+}
+
+.huajing-search-panel span {
+  color: rgba(255, 250, 240, 0.56);
+  font-size: 11px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.huajing-search-panel strong {
+  overflow: hidden;
+  color: #fffaf0;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.huajing-primary.gold {
+  min-height: 58px;
+  color: #1b1508;
+  background: linear-gradient(135deg, #e7d1a3, var(--hj-gold));
+  box-shadow: 0 16px 34px rgba(198, 161, 91, 0.26);
 }
 
 .huajing-hero-buttons,
@@ -1727,122 +1857,177 @@ body {
   font-size: 28px;
 }
 
-.huajing-hero-stack {
-  display: grid;
-  gap: 18px;
-}
-
-.huajing-tower-card,
-.huajing-search {
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 8px;
-  background: rgba(255, 253, 248, 0.94);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.25);
-  color: var(--hj-ink);
-  padding: 26px;
-}
-
-.huajing-tower-card {
+.huajing-media-stack {
   position: relative;
-  min-height: 360px;
-  overflow: hidden;
-  background:
-    linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(233, 222, 202, 0.95)),
-    radial-gradient(circle at 72% 14%, rgba(198, 161, 91, 0.28), transparent 32%);
-}
-
-.huajing-tower-scene {
-  position: absolute;
-  inset: 24px 22px 94px;
   display: grid;
-  grid-template-columns: 0.82fr 1.05fr 0.72fr;
+  min-height: 600px;
   align-items: end;
-  gap: 12px;
+  justify-items: end;
 }
 
-.huajing-tower-scene span {
+.huajing-cinema-card {
   position: relative;
-  display: block;
+  isolation: isolate;
+  width: min(360px, 100%);
+  aspect-ratio: 9 / 15.2;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 36px;
   overflow: hidden;
-  border: 1px solid rgba(15, 118, 110, 0.18);
-  border-radius: 6px 6px 2px 2px;
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.28);
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.32), transparent 28%, rgba(255, 255, 255, 0.18) 58%, transparent),
-    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0 2px, transparent 2px 18px),
-    linear-gradient(160deg, rgba(15, 118, 110, 0.88), rgba(8, 54, 51, 0.95));
-  box-shadow: 0 24px 50px rgba(12, 79, 74, 0.28);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 28%, rgba(0, 0, 0, 0.44)),
+    radial-gradient(circle at 70% 15%, rgba(232, 215, 180, 0.58), transparent 16rem),
+    linear-gradient(135deg, #0a3b34, #021816 52%, #946f32);
 }
 
-.huajing-tower-scene span:nth-child(1) {
-  height: 68%;
-}
-
-.huajing-tower-scene span:nth-child(2) {
-  height: 100%;
-  background:
-    radial-gradient(circle at 68% 12%, rgba(198, 161, 91, 0.5), transparent 20%),
-    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0 2px, transparent 2px 16px),
-    linear-gradient(160deg, #0f766e, #073f3c);
-}
-
-.huajing-tower-scene span:nth-child(3) {
-  height: 78%;
-}
-
-.huajing-preview-copy {
+.huajing-cinema-card::before {
+  content: "";
   position: absolute;
-  left: 26px;
-  right: 26px;
-  bottom: 24px;
-  border-top: 1px solid rgba(15, 118, 110, 0.16);
-  padding-top: 16px;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    repeating-linear-gradient(180deg, transparent 0 34px, rgba(255, 255, 255, 0.1) 34px 35px);
+  background-size: 46px 100%;
+  opacity: 0.75;
+  transform: skewX(-7deg) scaleX(1.18);
+  animation: huajingSlowPan 9s linear infinite alternate;
 }
 
-.huajing-preview-copy p {
-  margin: 0 0 6px;
-  color: var(--hj-jade);
+@keyframes huajingSlowPan {
+  from {
+    transform: translateX(-12px) skewX(-7deg) scaleX(1.18);
+  }
+
+  to {
+    transform: translateX(16px) skewX(-7deg) scaleX(1.18);
+  }
+}
+
+.huajing-video-ui {
+  position: absolute;
+  inset: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.huajing-recording {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 250, 240, 0.86);
+  padding: 9px 12px;
   font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
+  backdrop-filter: blur(8px);
+}
+
+.huajing-recording::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5a4f;
+  box-shadow: 0 0 0 6px rgba(255, 90, 79, 0.14);
+}
+
+.huajing-video-caption {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 18px;
+  backdrop-filter: blur(10px);
+}
+
+.huajing-video-caption p {
+  margin: 0;
+  color: rgba(255, 250, 240, 0.66);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.huajing-preview-copy h2 {
-  margin: 0;
-  color: var(--hj-ink);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 30px;
-  font-weight: 500;
+.huajing-video-caption strong {
+  display: block;
+  margin-top: 8px;
+  color: #fffaf0;
+  font-size: 24px;
+  letter-spacing: 0;
   line-height: 1.1;
 }
 
-.huajing-preview-copy span {
+.huajing-video-caption span {
   display: block;
   margin-top: 8px;
-  color: var(--hj-muted);
+  color: rgba(255, 250, 240, 0.66);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.huajing-floating-chip {
+  position: absolute;
+  left: -50px;
+  top: 88px;
+  display: flex;
+  width: 210px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.18);
+  color: #fffaf0;
+  padding: 14px;
+  backdrop-filter: blur(16px);
+}
+
+.huajing-floating-chip > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 15px;
+  background: rgba(232, 215, 180, 0.18);
+  color: var(--hj-gold);
   font-weight: 800;
 }
 
-.huajing-search h2 {
-  margin: 0 0 18px;
-  font-size: 28px;
+.huajing-floating-chip strong {
+  display: block;
+  font-size: 14px;
 }
 
-.huajing-search label {
-  display: grid;
-  gap: 7px;
-  border-top: 1px solid var(--hj-line);
-  color: var(--hj-muted);
+.huajing-floating-chip small {
+  display: block;
+  margin-top: 4px;
+  color: rgba(255, 250, 240, 0.58);
   font-size: 12px;
-  font-weight: 900;
-  padding: 17px 0;
-  text-transform: uppercase;
 }
 
-.huajing-search span {
-  color: var(--hj-ink);
-  font-size: 15px;
-  text-transform: none;
+.huajing-seal {
+  position: absolute;
+  right: -8px;
+  bottom: 76px;
+  display: grid;
+  width: 104px;
+  height: 104px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 26px;
+  background: rgba(163, 41, 31, 0.92);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
+  color: #fff9ef;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  transform: rotate(7deg);
+  writing-mode: vertical-rl;
 }
 
 .huajing-trust {
@@ -2253,8 +2438,27 @@ body {
     padding-top: 238px;
   }
 
-  .huajing-tower-card {
-    min-height: 300px;
+  .huajing-search-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .huajing-search-panel .huajing-primary {
+    grid-column: 1 / -1;
+  }
+
+  .huajing-media-stack {
+    min-height: 500px;
+    justify-items: start;
+  }
+
+  .huajing-floating-chip {
+    left: 250px;
+    top: 36px;
+  }
+
+  .huajing-seal {
+    right: auto;
+    left: 280px;
   }
 
   .huajing-property-grid,
@@ -2301,20 +2505,28 @@ body {
   }
 
   .huajing-hero h1 {
-    font-size: 44px;
+    font-size: clamp(38px, 12vw, 52px);
   }
 
   .huajing-hero-copy > p:not(.huajing-eyebrow) {
     font-size: 16px;
   }
 
-  .huajing-skyline {
-    width: 100%;
-    height: 44%;
+  .huajing-search-panel {
+    grid-template-columns: 1fr;
   }
 
-  .huajing-tower-card {
-    min-height: 260px;
+  .huajing-media-stack {
+    min-height: auto;
+  }
+
+  .huajing-cinema-card {
+    width: min(320px, 100%);
+  }
+
+  .huajing-floating-chip,
+  .huajing-seal {
+    display: none;
   }
 
   .huajing-section,

@@ -169,8 +169,8 @@ const copy: Record<"zh" | "en" | "ru", Copy> = {
     nav: ["Объекты", "Города", "Команда", "AI"],
     consult: "Консультация",
     heroKicker: "Fixer.guru partner network",
-    heroTitle: "Глобальный real estate advisory для клиентов китайского рынка",
-    heroText: "HUAJING соединяет Китай, Дубай, Сингапур и Токио в одном процессе: бриф клиента, curated shortlist, проверка материалов и работа брокера.",
+    heroTitle: "Глобальный подбор недвижимости для клиентов китайского рынка",
+    heroText: "HUAJING соединяет Китай, Дубай, Сингапур и Токио в одном процессе: бриф клиента, подобранный список объектов, проверка материалов и работа брокера.",
     primary: "Получить подборку",
     secondary: "Смотреть объекты",
     searchTitle: "Собрать быстрый бриф",
@@ -225,7 +225,9 @@ const localizedUi = {
   zh: {
     brand: "华境置业",
     mark: "境",
+    seal: "华境",
     searchValues: ["上海 / 迪拜 / 新加坡", "¥5M - ¥25M+", "自住 / 投资 / 迁居"],
+    previewLive: "实时预览",
     previewCaption: "精选资产预览",
     previewTitle: "滨江云邸",
     previewMeta: "上海 · 黄浦滨江 · 私享看房",
@@ -250,7 +252,9 @@ const localizedUi = {
   en: {
     brand: "HUAJING Estate",
     mark: "境",
+    seal: "HUAJING",
     searchValues: ["Shanghai / Dubai / Singapore", "¥5M - ¥25M+", "Residence / Investment / Relocation"],
+    previewLive: "Live preview",
     previewCaption: "Curated asset preview",
     previewTitle: "Riverside Cloud Residence",
     previewMeta: "Shanghai · Huangpu Riverside · Private viewing",
@@ -275,7 +279,9 @@ const localizedUi = {
   ru: {
     brand: "HUAJING Estate",
     mark: "境",
+    seal: "HUAJING",
     searchValues: ["Шанхай / Дубай / Сингапур", "¥5M - ¥25M+", "Жизнь / Инвестиции / Релокация"],
+    previewLive: "Живое превью",
     previewCaption: "Превью подобранного объекта",
     previewTitle: "Резиденция Riverside Cloud",
     previewMeta: "Шанхай · набережная Хуанпу · приватный показ",
@@ -412,16 +418,29 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
       </header>
 
       <section className="huajing-hero" id="home">
-        <div className="huajing-skyline" />
+        <div className="huajing-architecture" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+          <span />
+        </div>
         <div className="huajing-hero-inner">
           <div className="huajing-hero-copy">
             <p className="huajing-eyebrow">{t.heroKicker}</p>
             <h1>{t.heroTitle}</h1>
             <p>{t.heroText}</p>
-            <div className="huajing-hero-buttons">
-              <a className="huajing-primary" href="#lead">
+            <div className="huajing-search-panel" role="search" aria-label="Property search">
+              {t.filters.map((label, index) => (
+                <label key={label}>
+                  <span>{label}</span>
+                  <strong>{ui.searchValues[index]}</strong>
+                </label>
+              ))}
+              <a className="huajing-primary gold" href="#lead">
                 {t.primary}
               </a>
+            </div>
+            <div className="huajing-hero-buttons">
               <a className="huajing-outline dark" href="#properties">
                 {t.secondary}
               </a>
@@ -435,31 +454,25 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
               ))}
             </div>
           </div>
-          <aside className="huajing-hero-stack">
-            <div className="huajing-tower-card">
-              <div className="huajing-tower-scene" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </div>
-              <div className="huajing-preview-copy">
-                <p>{ui.previewCaption}</p>
-                <h2>{ui.previewTitle}</h2>
-                <span>{ui.previewMeta}</span>
+          <aside className="huajing-media-stack" aria-label="Cinematic property preview">
+            <div className="huajing-cinema-card">
+              <div className="huajing-video-ui">
+                <span className="huajing-recording">{ui.previewLive}</span>
+                <div className="huajing-video-caption">
+                  <p>{ui.previewCaption}</p>
+                  <strong>{ui.previewTitle}</strong>
+                  <span>{ui.previewMeta}</span>
+                </div>
               </div>
             </div>
-            <div className="huajing-search">
-              <h2>{t.searchTitle}</h2>
-              {t.filters.map((label, index) => (
-                <label key={label}>
-                  {label}
-                  <span>{ui.searchValues[index]}</span>
-                </label>
-              ))}
-              <a className="huajing-primary wide" href="#lead">
-                {t.primary}
-              </a>
+            <div className="huajing-floating-chip">
+              <span>{ui.mark}</span>
+              <div>
+                <strong>{t.searchTitle}</strong>
+                <small>{ui.searchValues[0]}</small>
+              </div>
             </div>
+            <div className="huajing-seal">{ui.seal}</div>
           </aside>
         </div>
       </section>
