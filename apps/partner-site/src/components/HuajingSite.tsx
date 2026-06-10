@@ -75,7 +75,7 @@ const copy: Record<"zh" | "en" | "ru", Copy> = {
     trust: [
       ["资料复核流程", "每个展示项目均进入经纪人资料检查与后续法律审阅流程。"],
       ["跨境沟通", "中文、英文、俄文团队可承接境内与海外买方需求。"],
-      ["平台化记录", "需求、对象与跟进状态进入 Fixer.guru partner workflow。"],
+      ["平台化记录", "需求、对象与跟进状态进入 Fixer.guru 伙伴流程。"],
     ],
     aboutKicker: "关于华境",
     aboutTitle: "把高端房产搜索做成可追踪的决策流程。",
@@ -181,9 +181,9 @@ const copy: Record<"zh" | "en" | "ru", Copy> = {
       ["24h", "первичный ответ"],
     ],
     trust: [
-      ["Процесс проверки", "Объекты проходят брокерскую проверку материалов и требуют отдельного legal review."],
-      ["Cross-border desk", "Китайский, английский и русский для локальных и зарубежных запросов покупателей."],
-      ["Платформенный учет", "Заявки, объекты и follow-up идут в workflow Fixer.guru partner network."],
+      ["Процесс проверки", "Объекты проходят брокерскую проверку материалов и требуют отдельную юридическую проверку."],
+      ["Международная команда", "Китайский, английский и русский для локальных и зарубежных запросов покупателей."],
+      ["Платформенный учет", "Заявки, объекты и сопровождение идут через рабочий процесс Fixer.guru partner network."],
     ],
     aboutKicker: "О HUAJING",
     aboutTitle: "Премиальный поиск недвижимости как управляемый процесс принятия решения.",
@@ -197,9 +197,9 @@ const copy: Record<"zh" | "en" | "ru", Copy> = {
     enquire: "Запросить",
     locationKicker: "Городская сеть",
     locationTitle: "Шанхайский офис с доступом к Китаю и зарубежным рынкам.",
-    locationText: "Шанхай, Шэньчжэнь и Ханчжоу как локальная база; Дубай, Сингапур и Токио для cross-border задач.",
+    locationText: "Шанхай, Шэньчжэнь и Ханчжоу как локальная база; Дубай, Сингапур и Токио для международных задач.",
     teamKicker: "Команда",
-    teamTitle: "Координация для покупателей, инвесторов и family offices.",
+    teamTitle: "Координация для покупателей, инвесторов и семейных офисов.",
     aiKicker: "AI assisted",
     aiTitle: "AI структурирует бриф; решение остается за брокером и профильными консультантами.",
     aiText: "Бюджет, город, цель и комментарий превращаются в структурированный client intent платформы.",
@@ -221,14 +221,113 @@ const copy: Record<"zh" | "en" | "ru", Copy> = {
   },
 };
 
-const advisors = [
-  ["Li Wei", "China buyer desk", "Shanghai / Shenzhen"],
-  ["Anna Chen", "Cross-border investment", "Dubai / Singapore"],
-  ["Mikhail Orlov", "Partner network", "RU / EN coordination"],
-];
+const localizedUi = {
+  zh: {
+    brand: "华境置业",
+    mark: "境",
+    searchValues: ["上海 / 迪拜 / 新加坡", "¥5M - ¥25M+", "自住 / 投资 / 迁居"],
+    previewCaption: "精选资产预览",
+    previewTitle: "滨江云邸",
+    previewMeta: "上海 · 黄浦滨江 · 私享看房",
+    budgetLabel: "预算",
+    sqm: "平方米",
+    onRequest: "价格待询",
+    powered: "由 Fixer.guru partner network 提供技术支持",
+    cities: ["上海", "深圳", "杭州", "迪拜", "新加坡", "东京"],
+    advisors: [
+      ["李伟", "中国买方顾问", "上海 / 深圳"],
+      ["陈安娜", "跨境资产配置", "迪拜 / 新加坡"],
+      ["米哈伊尔", "伙伴网络协调", "中文 / 英文 / 俄文"],
+    ],
+    assetLabels: {
+      apartment: "公寓",
+      house: "住宅",
+      investment_project: "投资项目",
+      development_project: "开发项目",
+      property: "物业",
+    },
+  },
+  en: {
+    brand: "HUAJING Estate",
+    mark: "境",
+    searchValues: ["Shanghai / Dubai / Singapore", "¥5M - ¥25M+", "Residence / Investment / Relocation"],
+    previewCaption: "Curated asset preview",
+    previewTitle: "Riverside Cloud Residence",
+    previewMeta: "Shanghai · Huangpu Riverside · Private viewing",
+    budgetLabel: "Budget",
+    sqm: "sqm",
+    onRequest: "On request",
+    powered: "Powered by Fixer.guru partner network",
+    cities: ["Shanghai", "Shenzhen", "Hangzhou", "Dubai", "Singapore", "Tokyo"],
+    advisors: [
+      ["Li Wei", "China buyer desk", "Shanghai / Shenzhen"],
+      ["Anna Chen", "Cross-border investment", "Dubai / Singapore"],
+      ["Mikhail Orlov", "Partner network", "ZH / EN / RU coordination"],
+    ],
+    assetLabels: {
+      apartment: "Apartment",
+      house: "Residence",
+      investment_project: "Investment project",
+      development_project: "Development project",
+      property: "Property",
+    },
+  },
+  ru: {
+    brand: "HUAJING Estate",
+    mark: "境",
+    searchValues: ["Шанхай / Дубай / Сингапур", "¥5M - ¥25M+", "Жизнь / Инвестиции / Релокация"],
+    previewCaption: "Превью подобранного объекта",
+    previewTitle: "Резиденция Riverside Cloud",
+    previewMeta: "Шанхай · набережная Хуанпу · приватный показ",
+    budgetLabel: "Бюджет",
+    sqm: "м²",
+    onRequest: "По запросу",
+    powered: "Работает на платформе Fixer.guru partner network",
+    cities: ["Шанхай", "Шэньчжэнь", "Ханчжоу", "Дубай", "Сингапур", "Токио"],
+    advisors: [
+      ["Ли Вэй", "Китайский стол покупателей", "Шанхай / Шэньчжэнь"],
+      ["Анна Чэнь", "Международные инвестиции", "Дубай / Сингапур"],
+      ["Михаил Орлов", "Координация партнерской сети", "ZH / EN / RU"],
+    ],
+    assetLabels: {
+      apartment: "Апартаменты",
+      house: "Резиденция",
+      investment_project: "Инвестпроект",
+      development_project: "Девелопмент",
+      property: "Объект",
+    },
+  },
+} as const;
 
-function assetLabel(value?: string) {
-  return value?.replace(/_/g, " ") ?? "property";
+const marketLabels = {
+  Shanghai: { zh: "上海", en: "Shanghai", ru: "Шанхай" },
+  Shenzhen: { zh: "深圳", en: "Shenzhen", ru: "Шэньчжэнь" },
+  Hangzhou: { zh: "杭州", en: "Hangzhou", ru: "Ханчжоу" },
+  Dubai: { zh: "迪拜", en: "Dubai", ru: "Дубай" },
+  Singapore: { zh: "新加坡", en: "Singapore", ru: "Сингапур" },
+  Tokyo: { zh: "东京", en: "Tokyo", ru: "Токио" },
+  China: { zh: "中国", en: "China", ru: "Китай" },
+  CN: { zh: "中国", en: "China", ru: "Китай" },
+  AE: { zh: "阿联酋", en: "UAE", ru: "ОАЭ" },
+  SG: { zh: "新加坡", en: "Singapore", ru: "Сингапур" },
+  JP: { zh: "日本", en: "Japan", ru: "Япония" },
+} as const;
+
+function assetLabel(value: string | undefined, language: "zh" | "en" | "ru") {
+  const labels = localizedUi[language].assetLabels;
+
+  return value ? labels[value as keyof typeof labels] ?? value.replace(/_/g, " ") : labels.property;
+}
+
+function localizeMarket(item: PartnerInventoryItem, language: "zh" | "en" | "ru") {
+  const city = item.city ? marketLabels[item.city as keyof typeof marketLabels]?.[language] ?? item.city : null;
+  const country = item.country ? marketLabels[item.country as keyof typeof marketLabels]?.[language] ?? item.country : null;
+
+  if (city && country && city !== country) {
+    return `${city}, ${country}`;
+  }
+
+  return city ?? item.market;
 }
 
 export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
@@ -239,10 +338,11 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
   const [budget, setBudget] = useState(12);
   const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
   const t = copy[language];
+  const ui = localizedUi[language];
   const inventory = (inventoryByLanguage[language]?.length ? inventoryByLanguage[language] : tenant.inventory) as PartnerInventoryItem[];
-  const markets = useMemo(() => Array.from(new Set(inventory.map((item) => item.market).filter(Boolean))), [inventory]);
+  const markets = useMemo(() => Array.from(new Set(inventory.map((item) => localizeMarket(item, language)).filter(Boolean))), [inventory, language]);
   const types = useMemo(() => Array.from(new Set(inventory.map((item) => item.assetClass).filter(Boolean))) as string[], [inventory]);
-  const filtered = inventory.filter((item) => (market === "all" || item.market === market) && (type === "all" || item.assetClass === type));
+  const filtered = inventory.filter((item) => (market === "all" || localizeMarket(item, language) === market) && (type === "all" || item.assetClass === type));
   const roi = Math.round(budget * 10000 * 0.038);
 
   async function submitLead(event: FormEvent<HTMLFormElement>) {
@@ -288,10 +388,8 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
     <main className="huajing-site">
       <header className="huajing-header">
         <a className="huajing-brand" href="#home" aria-label="HUAJING home">
-          <span className="huajing-mark">境</span>
-          <span>
-            华境置业 <b>HUAJING</b>
-          </span>
+          <span className="huajing-mark">{ui.mark}</span>
+          <span>{ui.brand} <b>HUAJING</b></span>
         </a>
         <nav className="huajing-nav">
           <a href="#properties">{t.nav[0]}</a>
@@ -337,17 +435,31 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
               ))}
             </div>
           </div>
-          <aside className="huajing-search">
-            <h2>{t.searchTitle}</h2>
-            {t.filters.map((label) => (
-              <label key={label}>
-                {label}
-                <span>{label === t.filters[0] ? "Shanghai / Dubai / Singapore" : label === t.filters[1] ? "¥5M - ¥25M+" : "Residence / Investment / Relocation"}</span>
-              </label>
-            ))}
-            <a className="huajing-primary wide" href="#lead">
-              {t.primary}
-            </a>
+          <aside className="huajing-hero-stack">
+            <div className="huajing-tower-card">
+              <div className="huajing-tower-scene" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="huajing-preview-copy">
+                <p>{ui.previewCaption}</p>
+                <h2>{ui.previewTitle}</h2>
+                <span>{ui.previewMeta}</span>
+              </div>
+            </div>
+            <div className="huajing-search">
+              <h2>{t.searchTitle}</h2>
+              {t.filters.map((label, index) => (
+                <label key={label}>
+                  {label}
+                  <span>{ui.searchValues[index]}</span>
+                </label>
+              ))}
+              <a className="huajing-primary wide" href="#lead">
+                {t.primary}
+              </a>
+            </div>
           </aside>
         </div>
       </section>
@@ -389,7 +501,7 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
               <option value="all">{t.allTypes}</option>
               {types.map((item) => (
                 <option key={item} value={item}>
-                  {assetLabel(item)}
+                  {assetLabel(item, language)}
                 </option>
               ))}
             </select>
@@ -404,12 +516,12 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
                 <span>{t.review}</span>
               </div>
               <div className="huajing-property-body">
-                <p>{item.market}</p>
+                <p>{localizeMarket(item, language)}</p>
                 <h3>{item.title}</h3>
-                <strong>{item.priceDisplay ?? "On request"}</strong>
+                <strong>{item.priceDisplay ?? ui.onRequest}</strong>
                 <div className="huajing-chips">
-                  <span>{assetLabel(item.assetClass)}</span>
-                  {item.areaSqm ? <span>{item.areaSqm} sqm</span> : null}
+                  <span>{assetLabel(item.assetClass, language)}</span>
+                  {item.areaSqm ? <span>{item.areaSqm} {ui.sqm}</span> : null}
                   {item.addressDisplay ? <span>{item.addressDisplay}</span> : null}
                 </div>
                 <p>{item.description}</p>
@@ -424,7 +536,7 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
 
       <section className="huajing-section huajing-location" id="location">
         <div className="huajing-map">
-          {["Shanghai", "Shenzhen", "Hangzhou", "Dubai", "Singapore", "Tokyo"].map((city) => (
+          {ui.cities.map((city) => (
             <span key={city}>{city}</span>
           ))}
         </div>
@@ -441,7 +553,7 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
           <h2>{t.teamTitle}</h2>
         </div>
         <div className="huajing-team-grid">
-          {advisors.map(([name, role, desk]) => (
+          {ui.advisors.map(([name, role, desk]) => (
             <article key={name}>
               <div>{name.split(" ").map((part) => part[0]).join("")}</div>
               <h3>{name}</h3>
@@ -461,7 +573,7 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
         <aside className="huajing-roi">
           <h3>{t.roi}</h3>
           <label>
-            Budget: ¥{budget}M
+            {ui.budgetLabel}: ¥{budget}M
             <input min="5" max="35" type="range" value={budget} onChange={(event) => setBudget(Number(event.target.value))} />
           </label>
           <strong>~¥{roi.toLocaleString("en-US")}</strong>
@@ -494,10 +606,10 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
 
       <footer className="huajing-footer">
         <div>
-          <span className="huajing-mark">境</span>
-          <b>华境置业 HUAJING Estate Partners</b>
+          <span className="huajing-mark">{ui.mark}</span>
+          <b>{ui.brand} HUAJING Estate Partners</b>
         </div>
-        <p>Powered by Fixer.guru partner network. {tenant.domainLabel}</p>
+        <p>{ui.powered}. {tenant.domainLabel}</p>
       </footer>
 
       {selected ? (
@@ -507,13 +619,13 @@ export function HuajingSite({ tenant, inventoryByLanguage }: HuajingSiteProps) {
               x
             </button>
             {selected.mediaUrl ? <img src={selected.mediaUrl} alt={selected.title} /> : null}
-            <p className="huajing-eyebrow">{selected.market}</p>
+            <p className="huajing-eyebrow">{localizeMarket(selected, language)}</p>
             <h2>{selected.title}</h2>
-            <strong>{selected.priceDisplay}</strong>
+            <strong>{selected.priceDisplay ?? ui.onRequest}</strong>
             <p>{selected.description}</p>
             <div className="huajing-chips">
-              <span>{assetLabel(selected.assetClass)}</span>
-              {selected.areaSqm ? <span>{selected.areaSqm} sqm</span> : null}
+              <span>{assetLabel(selected.assetClass, language)}</span>
+              {selected.areaSqm ? <span>{selected.areaSqm} {ui.sqm}</span> : null}
               <span>{selected.sellerSidePartner}</span>
             </div>
             <a className="huajing-primary wide" href="#lead" onClick={() => setSelected(null)}>
