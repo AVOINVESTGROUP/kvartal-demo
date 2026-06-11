@@ -65,6 +65,7 @@ export async function fetchBackendJson<T>(baseUrl: string | undefined, path: str
   });
 
   if (!response.ok) {
+    console.warn(`Backend request failed: ${path} returned ${response.status}`);
     return null;
   }
 

@@ -112,17 +112,6 @@ async function updateOrganizationAccessAction(formData: FormData) {
   revalidatePath("/");
 }
 
-const fallbackOrganizations: PlatformOrganizationsResponse["organizations"] = [
-  {
-    slug: "apart4u-tbilisi",
-    legalName: "Apart4u.co Tbilisi",
-    countryOfRegistration: "GE",
-    status: "fallback",
-    counts: { offices: 1, propertyObjects: 0, clientIntents: 0 },
-    offices: [],
-  },
-];
-
 export default async function PlatformAdminHome() {
   const { session, access } = await requirePlatformOwner();
   const [organizationsResponse, summaryResponse, accessMembersResponse] = await Promise.all([
@@ -131,7 +120,8 @@ export default async function PlatformAdminHome() {
     fetchBackendJson<PlatformAccessMembersResponse>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/access/members"),
   ]);
 
-  const organizations = organizationsResponse?.organizations ?? fallbackOrganizations;
+  const organizations = organizationsResponse?.organizations ?? [];
+  const organizationListUnavailable = !organizationsResponse;
   const summary = summaryResponse?.summary;
   const accessMembers = accessMembersResponse?.members ?? [];
 
@@ -159,6 +149,11 @@ export default async function PlatformAdminHome() {
         <div className="rounded-md border border-kv-line bg-white">
           <div className="border-b border-kv-line px-4 py-3">
             <h2 className="font-black text-kv-navy">Partner organizations</h2>
+            {organizationListUnavailable ? (
+              <p className="mt-1 text-[13px] text-kv-red">
+                Список организаций не загрузился из platform-api. Проверьте App Hosting logs: таблица не подставляет тестовые данные.
+              </p>
+            ) : null}
           </div>
           <div className="overflow-x-auto p-4">
             <table className="w-full min-w-[760px] text-left text-[14px]">
@@ -172,15 +167,23 @@ export default async function PlatformAdminHome() {
                 </tr>
               </thead>
               <tbody>
-                {organizations.map((organization) => (
-                  <tr key={organization.slug} className="border-b border-kv-line last:border-0">
-                    <td className="py-3 pr-4 font-black text-kv-navy">{organization.legalName}</td>
-                    <td className="py-3 pr-4 text-kv-muted">{organization.countryOfRegistration}</td>
-                    <td className="py-3 pr-4">{organization.counts.offices}</td>
-                    <td className="py-3 pr-4">{organization.counts.propertyObjects}</td>
-                    <td className="py-3">{organization.status}</td>
+                {organizations.length ? (
+                  organizations.map((organization) => (
+                    <tr key={organization.slug} className="border-b border-kv-line last:border-0">
+                      <td className="py-3 pr-4 font-black text-kv-navy">{organization.legalName}</td>
+                      <td className="py-3 pr-4 text-kv-muted">{organization.countryOfRegistration}</td>
+                      <td className="py-3 pr-4">{organization.counts.offices}</td>
+                      <td className="py-3 pr-4">{organization.counts.propertyObjects}</td>
+                      <td className="py-3">{organization.status}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-kv-muted">
+                      Организации не найдены или список временно недоступен.
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
