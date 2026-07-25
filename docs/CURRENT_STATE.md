@@ -690,3 +690,13 @@
   - `Cross-Origin-Opener-Policy: same-origin-allow-popups` is present;
   - exact application origin is configured;
   - a session request without a Firebase credential returns the expected `401`, not `DEPLOYMENT_PREREQUISITE_MISSING`.
+
+## Auth Foundation incident Stage 0 (2026-07-25)
+
+- Completed the approved read-only evidence and rollback-matrix stage; no IAM grant, bootstrap, code rollout or traffic change was performed.
+- Live tracing proves `POST /api/auth/firebase/session = 200`, followed by `office-api /api/v1/admin/actor-context = 401` and a return to `/login`.
+- Actual serving API service accounts have no effective `firebaseauth.users.get` grant at project or organization level. The exact underlying Firebase Admin exception is not logged because current code collapses it to `REAUTH_REQUIRED`; this limitation is recorded rather than inferred away.
+- Read-only Cloud SQL evidence: 11 `AppUser` rows, 0 external identities, 0 active external identities and no bootstrap state.
+- Created on-demand insurance backup `1785001724586`; status `SUCCESSFUL`.
+- Verified both July migrations are additive and prepared a matched rollback matrix covering all three App Hosting builds plus both API revisions and image digests.
+- Full evidence and Stage 1 gate: `docs/property-identity-v4/AUTH-INCIDENT-STAGE-0.md`.
