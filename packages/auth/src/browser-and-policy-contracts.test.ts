@@ -6,6 +6,11 @@ const root = resolve(process.cwd(), "../..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("browser session source contracts", () => {
+  const originVariables: Record<string, string> = {
+    "partner-admin": "PARTNER_ADMIN_ORIGIN",
+    "platform-admin": "PLATFORM_ADMIN_ORIGIN",
+    "kvartal-admin": "KVARTAL_ADMIN_ORIGIN",
+  };
   for (const app of ["partner-admin", "platform-admin", "kvartal-admin"]) {
     it(`${app} uses memory popup, session-only redirect, sign-out and CSRF`, () => {
       const source = read(`apps/${app}/src/app/login/LoginClient.tsx`);
@@ -19,6 +24,10 @@ describe("browser session source contracts", () => {
       expect(session).toContain("assertRecentLogin"); expect(session).toContain("createSessionCookie");
       expect(logout).toContain("export async function POST"); expect(logout).toContain("validateCsrf");
       expect(read(`apps/${app}/src/app/logout/page.tsx`)).not.toContain("clearAdminSession");
+    });
+    it(`${app} declares its exact production origin`, () => {
+      expect(read(`apps/${app}/apphosting.yaml`)).toContain(`variable: ${originVariables[app]}`);
+      expect(read(`apps/${app}/apphosting.yaml`)).toContain(`${app === "platform-admin" ? "fixer-platform-admin" : app}-dev--kvartal-dev.europe-west4.hosted.app`);
     });
   }
 });
