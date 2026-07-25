@@ -681,4 +681,12 @@
 - Preserved exact App Hosting origin variables, including `KVARTAL_ADMIN_ORIGIN`.
 - Added source-contract coverage requiring popup Auth, memory-only Firebase persistence, the compatible COOP header, CSRF exchange and Firebase browser sign-out.
 - Local verification passed: 18 auth tests and production Next.js builds for all three admin apps.
-- Deployment details are recorded after the corrective App Hosting rollout completes.
+- Corrective deployment:
+  - source commit `5a18c6b47918857f3979f2f60f66af4bca7f83a8`;
+  - build `build-auth-popup-001` is `READY` on all three admin backends;
+  - rollout `rollout-auth-popup-001` is `SUCCEEDED` on all three admin backends.
+- Live verification on every admin `/login` page:
+  - HTTP status `200`;
+  - `Cross-Origin-Opener-Policy: same-origin-allow-popups` is present;
+  - exact application origin is configured;
+  - a session request without a Firebase credential returns the expected `401`, not `DEPLOYMENT_PREREQUISITE_MISSING`.
