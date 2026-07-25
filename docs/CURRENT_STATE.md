@@ -660,10 +660,10 @@
 - Remaining acceptance check: sign in with an authorised Firebase user and perform the first end-to-end author workflow after a test authority policy and test organisation rollout are explicitly approved.
 - SSOT merge remains blocked until the dirty main-worktree documentation edits are reconciled with this feature branch; see the external conflict report.
 
-## Hosted admin Google Auth dev correction (2026-07-25)
+## Hosted admin Google Auth dev correction attempt (2026-07-25, superseded)
 
 - Corrected the missing exact `KVARTAL_ADMIN_ORIGIN` App Hosting variable that caused `DEPLOYMENT_PREREQUISITE_MISSING` on the KVARTAL Admin login page.
-- Replaced popup-first Firebase Google Auth with redirect-first Auth in `partner-admin`, `kvartal-admin` and `platform-admin`. This removes the cross-window dependency that Chrome reported through `Cross-Origin-Opener-Policy` warnings.
+- A redirect-first Auth change was deployed in `partner-admin`, `kvartal-admin` and `platform-admin` but failed in the live `hosted.app` environment because no same-origin Firebase auth helper/proxy was configured. This approach is superseded and must not be reused as deployed.
 - Verified Firebase Auth authorized domains include all three dev `hosted.app` domains.
 - Verification passed:
   - `@kvartal/auth`: 18 tests;
@@ -672,4 +672,13 @@
   - App Hosting rollout `rollout-auth-redirect-001` is `SUCCEEDED` on all three backends;
   - all three live `/login` pages return `200`;
   - effective environment contains each backend's exact origin variable.
-- The deployed login flow is now: full-page Google redirect, return to the admin app, server session exchange, Firebase browser sign-out and in-memory persistence reset.
+- This rollout is superseded by the subsequent popup Auth correction recorded below.
+
+## Hosted admin Google Auth popup correction (2026-07-25)
+
+- Restored Firebase `signInWithPopup` for `partner-admin`, `kvartal-admin` and `platform-admin`; removed redirect processing and browser session persistence from all three login clients.
+- Added `Cross-Origin-Opener-Policy: same-origin-allow-popups` to every admin `/login` response so Firebase can monitor the Google popup without the Chrome COOP conflict.
+- Preserved exact App Hosting origin variables, including `KVARTAL_ADMIN_ORIGIN`.
+- Added source-contract coverage requiring popup Auth, memory-only Firebase persistence, the compatible COOP header, CSRF exchange and Firebase browser sign-out.
+- Local verification passed: 18 auth tests and production Next.js builds for all three admin apps.
+- Deployment details are recorded after the corrective App Hosting rollout completes.

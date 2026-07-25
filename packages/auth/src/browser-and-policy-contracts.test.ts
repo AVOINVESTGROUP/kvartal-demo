@@ -12,11 +12,12 @@ describe("browser session source contracts", () => {
     "kvartal-admin": "KVARTAL_ADMIN_ORIGIN",
   };
   for (const app of ["partner-admin", "platform-admin", "kvartal-admin"]) {
-    it(`${app} uses redirect auth, session-only persistence, sign-out and CSRF`, () => {
+    it(`${app} uses popup auth, memory-only persistence, sign-out and CSRF`, () => {
       const source = read(`apps/${app}/src/app/login/LoginClient.tsx`);
-      expect(source).toContain("inMemoryPersistence"); expect(source).toContain("browserSessionPersistence");
-      expect(source).toContain("signInWithRedirect"); expect(source).not.toContain("signInWithPopup");
+      expect(source).toContain("inMemoryPersistence"); expect(source).not.toContain("browserSessionPersistence");
+      expect(source).toContain("signInWithPopup"); expect(source).not.toContain("signInWithRedirect");
       expect(source).toContain("signOut("); expect(source).toContain('"x-csrf-token"'); expect(source).not.toContain("browserLocalPersistence");
+      expect(read(`apps/${app}/next.config.ts`)).toContain('Cross-Origin-Opener-Policy", value: "same-origin-allow-popups"');
     });
     it(`${app} session and logout routes enforce strict cookies and POST`, () => {
       const session = read(`apps/${app}/src/app/api/auth/firebase/session/route.ts`);

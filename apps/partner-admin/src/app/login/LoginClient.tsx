@@ -1,8 +1,8 @@
 "use client";
 
-import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
+import { inMemoryPersistence, setPersistence, signInWithPopup, signOut, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
 export default function LoginClient({ error, organizationSlug }: { error?: string; organizationSlug?: string }) {
@@ -25,60 +25,17 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
     }
   }, [organizationSlug]);
 
-  useEffect(() => {
-    if (!configured) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function finishRedirectSignIn() {
-      setBusy(true);
-      setClientError(null);
-
-      try {
-        const credential = await getRedirectResult(getFirebaseAuth());
-
-        if (!credential) {
-          return;
-        }
-
-        await createServerSession(credential);
-        await signOut(getFirebaseAuth());
-        await setPersistence(getFirebaseAuth(), inMemoryPersistence);
-        sessionStorage.removeItem("kvartal-auth-redirect");
-
-        if (!cancelled) {
-          router.replace("/");
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
-        }
-      } finally {
-        if (!cancelled) {
-          setBusy(false);
-        }
-      }
-    }
-
-    void finishRedirectSignIn();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [configured, createServerSession, router]);
-
   async function signIn() {
     setBusy(true);
     setClientError(null);
 
     try {
       const auth = getFirebaseAuth();
-
-      await setPersistence(auth, browserSessionPersistence);
-      sessionStorage.setItem("kvartal-auth-redirect", "1");
-      await signInWithRedirect(auth, googleProvider);
+      await setPersistence(auth, inMemoryPersistence);
+      const credential = await signInWithPopup(auth, googleProvider);
+      await createServerSession(credential);
+      await signOut(auth);
+      router.replace("/");
     } catch (caught) {
       setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
     } finally {
