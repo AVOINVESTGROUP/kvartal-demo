@@ -5,7 +5,7 @@ import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
 import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
-import { handlePropertyIdentityRequest } from "./property-identity.js";
+import { handlePropertyIdentityRequest, readEffectivePropertyIdentityRollout } from "./property-identity.js";
 
 export const serviceName = "office-api";
 
@@ -5674,6 +5674,28 @@ const server = createServer(async (request, response) => {
     const driveFolderUrl = body.driveFolderUrl ?? "";
     const targetObjectId = optionalString(body.objectId);
 
+    const organization = await prisma.organization.findUnique({
+      where: { slug: organizationSlug },
+      include: { offices: { take: 1 } },
+    });
+    if (!organization || !organization.offices[0]) {
+      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
+      return;
+    }
+    const office = organization.offices[0];
+    const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
+    if (!market) {
+      sendError(response, 400, "market_not_found", "An active market is required.");
+      return;
+    }
+    if (!targetObjectId) {
+      const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
+      if (rollout.registryEnabled) {
+        sendError(response, 409, "property_identity_submission_required", "Create the property through a Property Identity registration submission; Drive files can be attached to that submission.");
+        return;
+      }
+    }
+
     // Extract folder ID from Drive URL
     const folderIdMatch = driveFolderUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
     if (!folderIdMatch) {
@@ -5796,18 +5818,6 @@ Schema:
         if (parsed && typeof parsed === "object") extracted = parsed as Record<string, unknown>;
       } catch { /* use empty extracted */ }
     }
-
-    // Find organization and office
-    const organization = await prisma.organization.findUnique({
-      where: { slug: organizationSlug },
-      include: { offices: { take: 1 } },
-    });
-    if (!organization || !organization.offices[0]) {
-      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
-      return;
-    }
-    const office = organization.offices[0];
-    const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
 
     const existingObject = targetObjectId
       ? await prisma.propertyObject.findFirst({
@@ -6233,6 +6243,12 @@ Schema:
 
     if (!market) {
       sendError(response, 400, "market_not_found", "Market is required.");
+      return;
+    }
+
+    const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
+    if (rollout.registryEnabled) {
+      sendError(response, 409, "property_identity_submission_required", "Create the property through a Property Identity registration submission.");
       return;
     }
 
@@ -6743,6 +6759,9 @@ Schema:
         ownerOffice: true,
         market: true,
         localizations: true,
+        identityProfile: {
+          include: { canonicalVersions: { where: { isCurrent: true }, select: { id: true } } },
+        },
       },
     });
 
@@ -6758,6 +6777,13 @@ Schema:
     const status = action === "publish" ? "published" : action === "archive" ? "archived" : action === "unpublish" ? "draft" : optionalString(body.status);
     const visibility = action === "publish" ? "public" : action === "unpublish" ? "private" : optionalString(body.visibility);
     const mediaUrl = optionalString(body.mediaUrl);
+    if (status === "published") {
+      const rollout = await readEffectivePropertyIdentityRollout(prisma, existing.ownerOrganizationId, (market ?? existing.market).id);
+      if (rollout.publishGateEnabled && (existing.identityProfile?.status !== "VERIFIED_INTERNAL" || existing.identityProfile.canonicalVersions.length !== 1)) {
+        sendError(response, 409, "property_identity_verification_required", "The property must have one verified Property Identity profile and one current canonical version before publication.");
+        return;
+      }
+    }
 
     const updated = await prisma.propertyObject.update({
       where: { id: existing.id },

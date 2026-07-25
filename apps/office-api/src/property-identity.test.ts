@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActorContext } from "@kvartal/auth";
-import { resolvePartnerScope } from "./property-identity.js";
+import { resolvePartnerScope, selectEffectivePropertyIdentityRollout } from "./property-identity.js";
 
 const actor: ActorContext = Object.freeze({
   actorType: "USER",
@@ -28,5 +28,33 @@ describe("Property Identity partner scope", () => {
   it("rejects body selectors outside active write memberships", () => {
     expect(() => resolvePartnerScope(actor, { organizationId: "org-2", officeId: "office-2" })).toThrowError(/not permitted/i);
     expect(() => resolvePartnerScope(actor, { organizationId: "org-3", officeId: "office-3" })).toThrowError(/not permitted/i);
+  });
+});
+
+describe("Property Identity rollout policy", () => {
+  const base = {
+    mode: "STRICT" as const,
+    registryEnabled: true,
+    publishGateEnabled: true,
+    activationAt: null,
+    version: 1,
+    updatedAt: new Date("2026-07-25T00:00:00Z"),
+  };
+
+  it("uses the most specific active policy and normalises disabled mode", () => {
+    const effective = selectEffectivePropertyIdentityRollout([
+      { ...base, id: "global", scope: "GLOBAL", organizationId: null, marketId: null },
+      { ...base, id: "market", scope: "MARKET", organizationId: null, marketId: "market-1" },
+      { ...base, id: "org", scope: "ORGANISATION", organizationId: "org-1", marketId: null, mode: "DISABLED", version: 2 },
+    ], "org-1", "market-1", new Date("2026-07-25T01:00:00Z"));
+    expect(effective).toEqual({ policyId: "org", mode: "DISABLED", registryEnabled: false, publishGateEnabled: false });
+  });
+
+  it("ignores future and wrongly scoped policies and fails closed to disabled", () => {
+    const effective = selectEffectivePropertyIdentityRollout([
+      { ...base, id: "future", scope: "ORGANISATION", organizationId: "org-1", marketId: null, activationAt: new Date("2026-07-26T00:00:00Z") },
+      { ...base, id: "other", scope: "MARKET", organizationId: null, marketId: "market-2" },
+    ], "org-1", "market-1", new Date("2026-07-25T01:00:00Z"));
+    expect(effective).toEqual({ policyId: null, mode: "DISABLED", registryEnabled: false, publishGateEnabled: false });
   });
 });

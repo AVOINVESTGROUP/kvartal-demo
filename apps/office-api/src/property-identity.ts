@@ -23,6 +23,77 @@ import {
 type JsonObject = Record<string, unknown>;
 type PartnerScope = Readonly<{ organizationId: string; officeId: string }>;
 
+export type EffectivePropertyIdentityRollout = Readonly<{
+  policyId: string | null;
+  mode: "DISABLED" | "NEW_SUBMISSIONS_ONLY" | "STRICT";
+  registryEnabled: boolean;
+  publishGateEnabled: boolean;
+}>;
+
+type RolloutPolicyCandidate = Readonly<{
+  id: string;
+  scope: "GLOBAL" | "MARKET" | "ORGANISATION";
+  organizationId: string | null;
+  marketId: string | null;
+  mode: "DISABLED" | "NEW_SUBMISSIONS_ONLY" | "STRICT";
+  registryEnabled: boolean;
+  publishGateEnabled: boolean;
+  activationAt: Date | null;
+  version: number;
+  updatedAt: Date;
+}>;
+
+const disabledRollout: EffectivePropertyIdentityRollout = Object.freeze({
+  policyId: null,
+  mode: "DISABLED",
+  registryEnabled: false,
+  publishGateEnabled: false,
+});
+
+export function selectEffectivePropertyIdentityRollout(
+  candidates: readonly RolloutPolicyCandidate[],
+  organizationId: string,
+  marketId: string,
+  now = new Date(),
+): EffectivePropertyIdentityRollout {
+  const specificity = (candidate: RolloutPolicyCandidate) => {
+    if (candidate.scope === "ORGANISATION" && candidate.organizationId === organizationId && candidate.marketId === null) return 3;
+    if (candidate.scope === "MARKET" && candidate.marketId === marketId && candidate.organizationId === null) return 2;
+    if (candidate.scope === "GLOBAL" && candidate.organizationId === null && candidate.marketId === null) return 1;
+    return 0;
+  };
+  const selected = candidates
+    .filter((candidate) => specificity(candidate) > 0 && (!candidate.activationAt || candidate.activationAt <= now))
+    .sort((left, right) => specificity(right) - specificity(left) || right.version - left.version || right.updatedAt.getTime() - left.updatedAt.getTime())[0];
+  return selected ? {
+    policyId: selected.id,
+    mode: selected.mode,
+    registryEnabled: selected.registryEnabled && selected.mode !== "DISABLED",
+    publishGateEnabled: selected.publishGateEnabled && selected.mode !== "DISABLED",
+  } : disabledRollout;
+}
+
+export async function readEffectivePropertyIdentityRollout(
+  prisma: PrismaClient,
+  organizationId: string,
+  marketId: string,
+  now = new Date(),
+) {
+  const candidates = await prisma.propertyIdentityRolloutPolicy.findMany({
+    where: {
+      AND: [
+        { OR: [
+          { scope: "GLOBAL", organizationId: null, marketId: null },
+          { scope: "ORGANISATION", organizationId, marketId: null },
+          { scope: "MARKET", organizationId: null, marketId },
+        ] },
+        { OR: [{ activationAt: null }, { activationAt: { lte: now } }] },
+      ],
+    },
+  });
+  return selectEffectivePropertyIdentityRollout(candidates, organizationId, marketId, now);
+}
+
 class PropertyIdentityHttpError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) {
     super(message);
