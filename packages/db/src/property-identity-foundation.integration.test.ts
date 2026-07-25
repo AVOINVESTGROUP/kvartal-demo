@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GenericContainer, Wait, type StartedTestContainer } from "testcontainers";
 import { PrismaClient } from "@prisma/client";
-import { handlePropertyIdentityRequest } from "../../../apps/office-api/src/property-identity.js";
+import { handlePropertyIdentityRequest, recordPropertyIdentityDriveDraft } from "../../../apps/office-api/src/property-identity.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 
@@ -498,6 +498,42 @@ describe("Property Identity v4 database invariants", () => {
       body: { reason: "cancelled_by_author" },
     });
     expect(cancelled.body.status).toBe("CANCELLED");
+
+    const aiCandidate = await callPropertyIdentityApi({
+      method: "POST",
+      path: "/api/v1/admin/property-identity/submissions",
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-create-0004" },
+      body: { marketId: fixture.market.id, jurisdiction: "ZZ", subjectScope: "UNIT", assetClass: "apartment", identityInput: {}, identifiers: [] },
+    });
+    const aiSubmissionId = String(aiCandidate.body.submissionId);
+    const aiRequest = Readable.from([]) as unknown as IncomingMessage;
+    Object.assign(aiRequest, { method: "POST", headers: { "idempotency-key": "identity-flow-drive-0001" } });
+    const recordedDraft = await recordPropertyIdentityDriveDraft({
+      prisma,
+      actor,
+      request: aiRequest,
+      submissionId: aiSubmissionId,
+      driveFolderUrl: "https://drive.google.com/drive/folders/synthetic-test-folder",
+      fileRefs: ["google-drive:synthetic-file"],
+      extracted: { title: "AI title", addressDisplay: "AI address", assetClass: "apartment", areaSqm: 77, cadastralNumber: "AI-UNTRUSTED" },
+      confidence: "high",
+      missingFields: [],
+    });
+    const appliedDraft = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${aiSubmissionId}/apply-ai-draft`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-apply-ai-0001", "if-match": `"${recordedDraft.payload.rowVersion}"` },
+      body: {},
+    });
+    expect(appliedDraft.body).toMatchObject({ status: "DRAFT", acceptedFields: expect.arrayContaining(["title", "addressDisplay", "areaSqm"]) });
+    const appliedSubmission = await prisma.propertyRegistrationSubmission.findUnique({ where: { id: aiSubmissionId }, include: { aiDraft: true } });
+    expect(appliedSubmission?.identityInput).toMatchObject({ title: "AI title", addressDisplay: "AI address", areaSqm: 77 });
+    expect(appliedSubmission?.identityInput).not.toHaveProperty("cadastralNumber");
+    expect(appliedSubmission?.aiDraft?.proposedPropertyObject).not.toHaveProperty("cadastralNumber");
+    expect(appliedSubmission?.aiDraft?.status).toBe("approved");
   });
 
   it("enforces one current canonical version per identity profile", async () => {

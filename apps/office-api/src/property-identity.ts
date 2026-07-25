@@ -890,6 +890,117 @@ async function cancelSubmission(input: { prisma: PrismaClient; actor: ActorConte
   });
 }
 
+export async function recordPropertyIdentityDriveDraft(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  request: IncomingMessage;
+  submissionId: string;
+  driveFolderUrl: string;
+  fileRefs: string[];
+  extracted: JsonObject;
+  confidence: "high" | "medium" | "low";
+  missingFields: string[];
+}) {
+  const scopeRecord = await input.prisma.propertyRegistrationSubmission.findUnique({
+    where: { id: input.submissionId },
+    select: { organizationId: true, officeId: true, createdByUserId: true },
+  });
+  if (!scopeRecord) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+  resolvePartnerScope(input.actor, scopeRecord);
+  assertSubmissionAuthor(input.actor, scopeRecord.createdByUserId);
+  const requestBody = { driveFolderUrl: input.driveFolderUrl, fileRefs: input.fileRefs };
+  return idempotentMutation({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    organizationId: scopeRecord.organizationId,
+    route: `/api/v1/admin/property-identity/submissions/${input.submissionId}/process-drive-folder`,
+    body: requestBody,
+    run: async (tx) => {
+      const submission = await tx.propertyRegistrationSubmission.findUnique({ where: { id: input.submissionId } });
+      if (!submission) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+      if (["CANCELLED", "CLOSED", "CONFIRMING", "CANONICAL_CREATED", "LINKED_EXISTING"].includes(submission.status)) {
+        throw new PropertyIdentityHttpError(409, "SUBMISSION_STATE_INVALID", "Drive intake cannot update this submission.");
+      }
+      const allowedDraftFields = ["title", "titleEn", "description", "descriptionEn", "addressDisplay", "addressDisplayEn", "assetClass", "assetSubtype", "areaSqm", "landAreaSqm", "buildingAreaSqm", "roomsCount", "bedroomsCount", "floorNumber", "floorsTotal", "priceAmount", "priceCurrency", "priceDisplay", "priceDisplayEn", "tags", "tagsEn", "confidence"];
+      const safeExtracted = Object.fromEntries(allowedDraftFields.filter((field) => input.extracted[field] !== undefined).map((field) => [field, input.extracted[field]])) as JsonObject;
+      const intake = await tx.propertyIntakeSubmission.create({
+        data: {
+          organizationId: submission.organizationId,
+          officeId: submission.officeId,
+          createdByUserId: input.actor.appUserId,
+          sourceType: "file",
+          fileRefs: input.fileRefs,
+          status: input.missingFields.length ? "needs_clarification" : "draft_ready",
+        },
+      });
+      const draft = await tx.propertyAIDraft.create({
+        data: {
+          intakeSubmissionId: intake.id,
+          organizationId: submission.organizationId,
+          officeId: submission.officeId,
+          createdByUserId: input.actor.appUserId,
+          proposedAssetClass: typeof safeExtracted.assetClass === "string" ? safeExtracted.assetClass as never : null,
+          proposedPropertyObject: safeExtracted as Prisma.InputJsonObject,
+          confidence: input.confidence,
+          fieldConfidence: { overall: safeExtracted.confidence ?? null },
+          missingFields: input.missingFields,
+          conflicts: [],
+          clarificationQuestions: input.missingFields.map((field) => `Confirm ${field}`),
+          verificationSummary: { source: "google_drive", driveFolderUrl: input.driveFolderUrl, fileCount: input.fileRefs.length },
+          status: input.missingFields.length ? "needs_clarification" : "draft",
+        },
+      });
+      const updated = await tx.propertyRegistrationSubmission.update({
+        where: { id: submission.id },
+        data: { intakeSubmissionId: intake.id, aiDraftId: draft.id, rowVersion: { increment: 1 } },
+      });
+      await tx.propertyAIExtractionEvent.create({
+        data: { intakeSubmissionId: intake.id, draftId: draft.id, organizationId: submission.organizationId, officeId: submission.officeId, actorUid: input.actor.subject, eventType: "PROPERTY_IDENTITY_DRIVE_DRAFT_CREATED", payload: { submissionId: submission.id, missingFields: input.missingFields, fileCount: input.fileRefs.length } },
+      });
+      await tx.propertyIdentityEvent.create({
+        data: { submissionId: submission.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "DRIVE_AI_DRAFT_CREATED", previousStatus: submission.status, nextStatus: submission.status, payload: { intakeSubmissionId: intake.id, aiDraftId: draft.id } },
+      });
+      return { status: 200, payload: { ok: true, submissionId: submission.id, aiDraftId: draft.id, rowVersion: updated.rowVersion, missingFields: input.missingFields } };
+    },
+  });
+}
+
+async function applyAiDraft(input: { prisma: PrismaClient; actor: ActorContext; request: IncomingMessage; submissionId: string; body: JsonObject }) {
+  const scopeRecord = await input.prisma.propertyRegistrationSubmission.findUnique({ where: { id: input.submissionId }, select: { organizationId: true, officeId: true, createdByUserId: true } });
+  if (!scopeRecord) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+  resolvePartnerScope(input.actor, scopeRecord);
+  assertSubmissionAuthor(input.actor, scopeRecord.createdByUserId);
+  const expectedVersion = parseIfMatch(input.request.headers["if-match"]);
+  if (expectedVersion === null) throw new PropertyIdentityHttpError(409, "SUBMISSION_VERSION_CONFLICT", "A current quoted If-Match version is required.");
+  return idempotentMutation({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    organizationId: scopeRecord.organizationId,
+    route: `/api/v1/admin/property-identity/submissions/${input.submissionId}/apply-ai-draft`,
+    body: input.body,
+    run: async (tx) => {
+      const submission = await tx.propertyRegistrationSubmission.findUnique({ where: { id: input.submissionId }, include: { aiDraft: true, observations: { include: { digests: true } } } });
+      if (!submission?.aiDraft || !submission.aiDraftId) throw new PropertyIdentityHttpError(409, "AI_DRAFT_NOT_FOUND", "No AI draft is available for this submission.");
+      if (submission.rowVersion !== expectedVersion) throw new PropertyIdentityHttpError(409, "SUBMISSION_VERSION_CONFLICT", "The registration submission version is stale.");
+      if (["CANCELLED", "CLOSED", "CONFIRMING", "CANONICAL_CREATED", "LINKED_EXISTING"].includes(submission.status)) throw new PropertyIdentityHttpError(409, "SUBMISSION_STATE_INVALID", "The AI draft cannot be applied in this state.");
+      const proposed = typeof submission.aiDraft.proposedPropertyObject === "object" && submission.aiDraft.proposedPropertyObject !== null && !Array.isArray(submission.aiDraft.proposedPropertyObject) ? submission.aiDraft.proposedPropertyObject as JsonObject : {};
+      const current = typeof submission.identityInput === "object" && submission.identityInput !== null && !Array.isArray(submission.identityInput) ? submission.identityInput as JsonObject : {};
+      const allowedFields = ["title", "titleEn", "description", "descriptionEn", "addressDisplay", "addressDisplayEn", "assetSubtype", "areaSqm", "landAreaSqm", "buildingAreaSqm", "roomsCount", "bedroomsCount", "floorNumber", "floorsTotal"];
+      const accepted = Object.fromEntries(allowedFields.filter((field) => proposed[field] !== null && proposed[field] !== undefined).map((field) => [field, proposed[field]]));
+      const identityInput = { ...current, ...accepted, ...(typeof proposed.addressDisplay === "string" ? { addressPrivate: proposed.addressDisplay } : {}) };
+      const identityHash = registrationIdentityHash({ identityInput, observations: submission.observations });
+      const needsCorrection = submission.observations.some((observation) => observation.status !== "READY");
+      const updated = await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { identityInput, lastIdentityInputHash: identityHash, status: needsCorrection ? "NEEDS_CORRECTION" : "DRAFT", rowVersion: { increment: 1 } } });
+      await tx.propertyAIDraft.update({ where: { id: submission.aiDraftId }, data: { status: "approved" } });
+      if (submission.intakeSubmissionId) await tx.propertyIntakeSubmission.update({ where: { id: submission.intakeSubmissionId }, data: { status: "confirmed" } });
+      await tx.propertyIdentityEvent.create({ data: { submissionId: submission.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "DRIVE_AI_DRAFT_APPLIED_BY_AUTHOR", previousStatus: submission.status, nextStatus: updated.status, payload: { aiDraftId: submission.aiDraftId, acceptedFields: Object.keys(accepted) } } });
+      return { status: 200, payload: { ok: true, submissionId: submission.id, status: updated.status, rowVersion: updated.rowVersion, acceptedFields: Object.keys(accepted) } };
+    },
+  });
+}
+
 async function listSubmissions(prisma: PrismaClient, actor: ActorContext, url: URL) {
   const scope = resolvePartnerScope(actor, { organizationId: url.searchParams.get("organizationId") ?? undefined, officeId: url.searchParams.get("officeId") ?? undefined });
   const submissions = await prisma.propertyRegistrationSubmission.findMany({
@@ -952,6 +1063,7 @@ async function getSubmission(prisma: PrismaClient, actor: ActorContext, submissi
       observations: { select: { id: true, scheme: true, subjectScope: true, jurisdiction: true, authorityNamespace: true, normalizerId: true, normalizerVersion: true, sourceType: true, status: true, correctionReason: true, createdAt: true } },
       checkRuns: { orderBy: { createdAt: "desc" }, take: 10, select: { id: true, status: true, outcome: true, redactedResult: true, startedAt: true, completedAt: true, createdAt: true } },
       confirmations: { select: { id: true, resolution: true, createdAt: true } },
+      aiDraft: { select: { id: true, proposedAssetClass: true, proposedPropertyObject: true, confidence: true, missingFields: true, conflicts: true, clarificationQuestions: true, status: true, createdAt: true } },
     },
   });
   if (!submission) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
@@ -984,7 +1096,7 @@ export async function handlePropertyIdentityRequest(input: {
       sendJson(input.response, 200, await listSubmissions(input.prisma, input.actor, input.url));
       return true;
     }
-    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check|confirm-create|confirm-link|cancel))?$/);
+    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check|confirm-create|confirm-link|cancel|apply-ai-draft))?$/);
     if (!match) return false;
     const submissionId = decodeURIComponent(match[1]);
     if (!match[2] && input.request.method === "GET") {
@@ -1014,6 +1126,13 @@ export async function handlePropertyIdentityRequest(input: {
       const body = await readJsonBody(input.request);
       const result = await cancelSubmission({ prisma: input.prisma, actor: input.actor, request: input.request, submissionId, body });
       sendJson(input.response, result.status, result.payload, result.replay ? { "idempotent-replay": "true" } : {});
+      return true;
+    }
+    if (match[2] === "apply-ai-draft" && input.request.method === "POST") {
+      const body = await readJsonBody(input.request);
+      const result = await applyAiDraft({ prisma: input.prisma, actor: input.actor, request: input.request, submissionId, body });
+      const rowVersion = typeof result.payload.rowVersion === "number" ? result.payload.rowVersion : null;
+      sendJson(input.response, result.status, result.payload, { ...(result.replay ? { "idempotent-replay": "true" } : {}), ...(rowVersion !== null ? { ETag: `"${rowVersion}"` } : {}) });
       return true;
     }
     throw new PropertyIdentityHttpError(405, "METHOD_NOT_ALLOWED", "The method is not allowed for this Property Identity resource.");

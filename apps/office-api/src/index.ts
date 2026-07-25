@@ -5,7 +5,7 @@ import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
 import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
-import { handlePropertyIdentityRequest, readEffectivePropertyIdentityRollout } from "./property-identity.js";
+import { handlePropertyIdentityRequest, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft } from "./property-identity.js";
 
 export const serviceName = "office-api";
 
@@ -5663,32 +5663,60 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v1/admin/intake/process-drive-folder" && request.method === "POST") {
-    if (!hasAdminWriteAccess(request)) {
+  const registryDriveMatch = url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)\/process-drive-folder$/);
+  if ((url.pathname === "/api/v1/admin/intake/process-drive-folder" || registryDriveMatch) && request.method === "POST") {
+    if (!registryDriveMatch && !hasAdminWriteAccess(request)) {
       sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
+      return;
+    }
+    if (registryDriveMatch && !actorContext) {
+      sendError(response, 401, "REAUTH_REQUIRED", "Sign in again.");
       return;
     }
 
     const body = await readJsonBody<{ organizationSlug?: string; driveFolderUrl?: string; objectId?: string }>(request);
-    const organizationSlug = body.organizationSlug ?? "kvartal-moscow";
     const driveFolderUrl = body.driveFolderUrl ?? "";
     const targetObjectId = optionalString(body.objectId);
+    let organizationSlug = body.organizationSlug ?? "kvartal-moscow";
+    let organization: { id: string; slug: string; offices?: Array<{ id: string }> };
+    let office: { id: string };
+    let market: Awaited<ReturnType<typeof prisma.market.findFirst>>;
+    const registrySubmissionId = registryDriveMatch ? decodeURIComponent(registryDriveMatch[1]) : null;
 
-    const organization = await prisma.organization.findUnique({
-      where: { slug: organizationSlug },
-      include: { offices: { take: 1 } },
-    });
-    if (!organization || !organization.offices[0]) {
-      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
-      return;
+    if (registrySubmissionId) {
+      const submission = await prisma.propertyRegistrationSubmission.findUnique({
+        where: { id: registrySubmissionId },
+        include: { organization: true, office: true, market: true },
+      });
+      const organisationAdmin = actorContext!.organizationMemberships.some((membership) => membership.organizationId === submission?.organizationId && membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"));
+      const officeWriter = actorContext!.officeMemberships.some((membership) => membership.organizationId === submission?.organizationId && membership.officeId === submission?.officeId && membership.roles.some((role) => role === "office_owner" || role === "office_admin" || role === "broker"));
+      if (!submission || submission.createdByUserId !== actorContext!.appUserId || (!organisationAdmin && !officeWriter)) {
+        sendError(response, 403, "FORBIDDEN", "Only the active submission author can run Drive intake.");
+        return;
+      }
+      if (["CANCELLED", "CLOSED", "CONFIRMING", "CANONICAL_CREATED", "LINKED_EXISTING"].includes(submission.status)) {
+        sendError(response, 409, "SUBMISSION_STATE_INVALID", "Drive intake cannot update this submission.");
+        return;
+      }
+      organization = { ...submission.organization, offices: [{ id: submission.office.id }] };
+      office = submission.office;
+      market = submission.market;
+      organizationSlug = submission.organization.slug;
+    } else {
+      const legacyOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, include: { offices: { take: 1 } } });
+      if (!legacyOrganization || !legacyOrganization.offices[0]) {
+        sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
+        return;
+      }
+      organization = legacyOrganization;
+      office = legacyOrganization.offices[0];
+      market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
+      if (!market) {
+        sendError(response, 400, "market_not_found", "An active market is required.");
+        return;
+      }
     }
-    const office = organization.offices[0];
-    const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
-    if (!market) {
-      sendError(response, 400, "market_not_found", "An active market is required.");
-      return;
-    }
-    if (!targetObjectId) {
+    if (!targetObjectId && !registrySubmissionId) {
       const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
       if (rollout.registryEnabled) {
         sendError(response, 409, "property_identity_submission_required", "Create the property through a Property Identity registration submission; Drive files can be attached to that submission.");
@@ -5817,6 +5845,31 @@ Schema:
         const parsed = parseGeminiJson(geminiResult);
         if (parsed && typeof parsed === "object") extracted = parsed as Record<string, unknown>;
       } catch { /* use empty extracted */ }
+    }
+
+    if (registrySubmissionId) {
+      const requiredFields = ["title", "addressDisplay", "assetClass"];
+      const missingFields = requiredFields.filter((field) => extracted[field] === null || extracted[field] === undefined || extracted[field] === "");
+      const confidenceValue = Number(extracted.confidence ?? 0);
+      const confidence = confidenceValue >= 0.8 ? "high" : confidenceValue >= 0.5 ? "medium" : "low";
+      try {
+        const result = await recordPropertyIdentityDriveDraft({
+          prisma,
+          actor: actorContext!,
+          request,
+          submissionId: registrySubmissionId,
+          driveFolderUrl,
+          fileRefs: driveFiles.map((file) => `google-drive:${file.id}`),
+          extracted,
+          confidence,
+          missingFields,
+        });
+        sendJson(response, result.status, { ...result.payload, driveFilesFound: driveFiles.length, idempotentReplay: result.replay });
+      } catch (caught) {
+        const error = caught as { status?: number; code?: string; message?: string };
+        sendJson(response, error.status ?? 500, { ok: false, error: { code: error.code ?? "DRIVE_INTAKE_FAILED", message: error.status && error.status < 500 ? error.message : "Drive intake failed.", correlationId: actorContext!.correlationId } });
+      }
+      return;
     }
 
     const existingObject = targetObjectId

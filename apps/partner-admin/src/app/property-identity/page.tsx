@@ -29,6 +29,7 @@ type Submission = {
   observations: Array<{ id: string; scheme: string; authorityNamespace: string; normalizerId: string; normalizerVersion: number; status: string; correctionReason: string | null }>;
   checkRuns: Array<{ id: string; status: string; outcome: string | null; redactedResult: unknown; createdAt: string }>;
   confirmations: Array<{ id: string; resolution: string; createdAt: string }>;
+  aiDraft: null | { id: string; proposedAssetClass: string | null; proposedPropertyObject: Record<string, unknown> | null; confidence: string; missingFields: string[]; conflicts: string[]; clarificationQuestions: string[]; status: string; createdAt: string };
 };
 
 const apiBase = () => process.env.OFFICE_API_BASE_URL ?? process.env.PARTNER_API_BASE_URL;
@@ -136,6 +137,28 @@ async function cancelSubmissionAction(data: FormData) {
   } catch (caught) { returnToRegistry(backendError(caught), submissionId); }
 }
 
+async function processDriveAction(data: FormData) {
+  "use server";
+  await requireAdminSession();
+  const submissionId = value(data, "submissionId");
+  try {
+    await writeSecureActorBackendJson(apiBase(), `/api/v1/admin/property-identity/submissions/${encodeURIComponent(submissionId)}/process-drive-folder`, "POST", { driveFolderUrl: value(data, "driveFolderUrl") }, { "idempotency-key": randomUUID() });
+    revalidatePath("/property-identity");
+    redirect(`/property-identity?submissionId=${encodeURIComponent(submissionId)}&message=${encodeURIComponent("Drive обработан. Проверьте AI-черновик перед применением.")}`);
+  } catch (caught) { returnToRegistry(backendError(caught), submissionId); }
+}
+
+async function applyAiDraftAction(data: FormData) {
+  "use server";
+  await requireAdminSession();
+  const submissionId = value(data, "submissionId");
+  try {
+    await writeSecureActorBackendJson(apiBase(), `/api/v1/admin/property-identity/submissions/${encodeURIComponent(submissionId)}/apply-ai-draft`, "POST", {}, { "idempotency-key": randomUUID(), "if-match": `"${value(data, "rowVersion")}"` });
+    revalidatePath("/property-identity");
+    redirect(`/property-identity?submissionId=${encodeURIComponent(submissionId)}&message=${encodeURIComponent("AI-черновик применён автором. Официальный идентификатор всё равно проверяется отдельно.")}`);
+  } catch (caught) { returnToRegistry(backendError(caught), submissionId); }
+}
+
 const statusLabels: Record<string, string> = {
   DRAFT: "Черновик — готов к проверке",
   NEEDS_CORRECTION: "Нужно исправить данные",
@@ -195,6 +218,8 @@ export default async function PropertyIdentityPage({ searchParams }: { searchPar
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black text-kv-navy">{String(selected.identityInput?.title ?? "Заявка")}</h2><p className="mt-1 text-sm text-kv-muted">{statusLabels[selected.status] ?? selected.status} · версия {selected.rowVersion}</p></div>{selected.canonicalPropertyObjectId ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">Object ID: {selected.canonicalPropertyObjectId}</span> : null}</div>
           <div className="grid gap-3 md:grid-cols-3"><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Юрисдикция</div><div className="font-black">{selected.jurisdiction}</div></div><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Уровень</div><div className="font-black">{selected.subjectScope}</div></div><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Класс</div><div className="font-black">{selected.assetClass}</div></div></div>
           <div><h3 className="font-black text-kv-navy">Идентификаторы</h3><div className="mt-2 space-y-2">{selected.observations.map((item) => <div key={item.id} className="rounded border border-kv-line p-3 text-sm"><div className="font-black">{item.scheme} · {item.authorityNamespace}</div><div className="mt-1 text-kv-muted">{item.status}{item.correctionReason ? ` — ${item.correctionReason}` : ""}</div></div>)}</div></div>
+          {!['CLOSED','CANCELLED'].includes(selected.status) ? <form action={processDriveAction} className="rounded border border-blue-200 bg-blue-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><div className="font-black text-blue-900">Заполнить черновик из Google Drive</div><p className="mt-1 text-sm text-blue-700">AI только предложит поля. Ничего не применяется и не подтверждается без вашего отдельного действия.</p><div className="mt-3 flex gap-2"><input name="driveFolderUrl" type="url" required placeholder="https://drive.google.com/drive/folders/..." className="h-10 flex-1 rounded border border-blue-200 px-3"/><button className="rounded-full bg-blue-700 px-4 py-2 text-sm font-black text-white">Распознать</button></div></form> : null}
+          {selected.aiDraft ? <div className="rounded border border-violet-200 bg-violet-50 p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div className="font-black text-violet-900">AI-черновик · уверенность {selected.aiDraft.confidence}</div><span className="text-xs font-bold text-violet-700">{selected.aiDraft.status}</span></div><div className="mt-3 grid gap-2 text-sm md:grid-cols-2">{Object.entries(selected.aiDraft.proposedPropertyObject ?? {}).filter(([key]) => ["title","addressDisplay","assetClass","areaSqm","landAreaSqm","roomsCount","floorNumber"].includes(key)).map(([key, draftValue]) => <div key={key} className="rounded bg-white p-2"><span className="text-violet-600">{key}:</span> <b>{String(draftValue ?? "—")}</b></div>)}</div>{selected.aiDraft.missingFields.length ? <p className="mt-3 text-sm text-amber-700">Нужно уточнить: {selected.aiDraft.missingFields.join(", ")}</p> : null}{selected.aiDraft.status !== "approved" ? <form action={applyAiDraftAction} className="mt-3"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="rowVersion" value={selected.rowVersion}/><button className="rounded-full bg-violet-700 px-5 py-2.5 text-sm font-black text-white">Применить предложенные поля</button></form> : null}<p className="mt-2 text-xs text-violet-700">Официальные идентификаторы никогда не принимаются из AI автоматически: их вводит и подтверждает автор через зашифрованный registry flow.</p></div> : null}
           {!['CLOSED','CANCELLED'].includes(selected.status) ? <form action={correctSubmissionAction} className="grid gap-2 rounded border border-amber-200 bg-amber-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="rowVersion" value={selected.rowVersion}/><div className="font-black text-amber-800">{selected.status === "NEEDS_CORRECTION" || selected.status === "STRONG_IDENTIFIER_CONFLICT" ? "Исправить идентификатор" : "Изменить идентификатор и проверить заново"}</div><input name="scheme" required placeholder="Схема" className="h-10 rounded border border-amber-200 px-3"/><input name="namespace" required placeholder="Namespace" className="h-10 rounded border border-amber-200 px-3"/><input name="identifier" required placeholder="Значение" className="h-10 rounded border border-amber-200 px-3"/><button className="rounded-full bg-amber-600 px-4 py-2 text-sm font-black text-white">Сохранить изменение</button></form> : null}
           {!['CLOSED','CANCELLED'].includes(selected.status) && selected.status !== "NEEDS_CORRECTION" ? <form action={checkSubmissionAction}><input type="hidden" name="submissionId" value={selected.id}/><button className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Проверить совпадения</button></form> : null}
           {latestRun ? <div className="rounded border border-kv-line bg-kv-bg p-4"><div className="font-black text-kv-navy">Последняя проверка: {latestRun.outcome}</div><p className="mt-1 text-sm text-kv-muted">Результат не раскрывает чужие конфиденциальные данные.</p></div> : null}
