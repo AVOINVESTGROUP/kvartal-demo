@@ -7,11 +7,15 @@ import {
   type ActorContext,
 } from "@kvartal/auth";
 import {
+  assertAuthorConfirmation,
+  createStablePropertyIdentityId,
   digestIdentifier,
   encryptIdentifier,
   identifierAad,
   identityInputHash,
   normalizeIdentifierValue,
+  PropertyIdentityDomainError,
+  sortedAdvisoryLockKeys,
   type IdentifierTuple,
   type PropertyIdentitySubjectScope,
 } from "@kvartal/property-identity";
@@ -113,7 +117,7 @@ async function idempotentMutation(input: {
   if (!validateIdempotencyKey(key)) throw new PropertyIdentityHttpError(400, "IDEMPOTENCY_KEY_INVALID", "A valid Idempotency-Key is required.");
   const hash = requestHash(input.body);
   const scope = `${input.actor.appUserId}:${input.organizationId}:${input.request.method}:${input.route}:${key}`;
-  return input.prisma.$transaction(async (tx) => {
+  const execute = () => input.prisma.$transaction(async (tx) => {
     const existing = await tx.mutationIdempotency.findUnique({ where: { scope } });
     if (existing) {
       if (existing.requestHash !== hash) throw new PropertyIdentityHttpError(409, "IDEMPOTENCY_KEY_REUSED", "The idempotency key was reused with a different payload.");
@@ -128,6 +132,14 @@ async function idempotentMutation(input: {
     });
     return { ...result, replay: false };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      return await execute();
+    } catch (caught) {
+      if (!(caught instanceof Prisma.PrismaClientKnownRequestError) || caught.code !== "P2034" || attempt === 5) throw caught;
+    }
+  }
+  throw new PropertyIdentityHttpError(503, "IDENTITY_TRANSACTION_RETRY_EXHAUSTED", "Property Identity transaction retry limit was reached.");
 }
 
 async function createSubmission(input: {
@@ -320,6 +332,202 @@ async function runExactCheck(input: { prisma: PrismaClient; actor: ActorContext;
   });
 }
 
+function optionalNumber(value: unknown, field: string) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new PropertyIdentityHttpError(400, "NUMBER_INVALID", `${field} must be a finite number.`);
+  return number;
+}
+
+function optionalInteger(value: unknown, field: string) {
+  const number = optionalNumber(value, field);
+  if (number !== undefined && !Number.isSafeInteger(number)) throw new PropertyIdentityHttpError(400, "INTEGER_INVALID", `${field} must be an integer.`);
+  return number;
+}
+
+async function confirmSubmission(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  request: IncomingMessage;
+  submissionId: string;
+  body: JsonObject;
+  resolution: "CREATE_NEW" | "LINK_EXISTING";
+}) {
+  const scopeRecord = await input.prisma.propertyRegistrationSubmission.findUnique({
+    where: { id: input.submissionId },
+    select: { organizationId: true, officeId: true },
+  });
+  if (!scopeRecord) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+  resolvePartnerScope(input.actor, scopeRecord);
+  const checkRunId = requiredString(input.body.checkRunId, "checkRunId", 128);
+  return idempotentMutation({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    organizationId: scopeRecord.organizationId,
+    route: `/api/v1/admin/property-identity/submissions/${input.submissionId}/${input.resolution === "CREATE_NEW" ? "confirm-create" : "confirm-link"}`,
+    body: input.body,
+    run: async (tx) => {
+      const submission = await tx.propertyRegistrationSubmission.findUnique({
+        where: { id: input.submissionId },
+        include: {
+          observations: { where: { status: "READY" }, include: { digests: true } },
+          checkRuns: { where: { id: checkRunId }, take: 1 },
+        },
+      });
+      if (!submission) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+      const checkRun = submission.checkRuns[0];
+      if (!checkRun) throw new PropertyIdentityHttpError(409, "CHECK_RUN_NOT_FOUND", "The selected identity check was not found.");
+      const latestCheckRun = await tx.propertyIdentityCheckRun.findFirst({
+        where: { submissionId: submission.id },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: { id: true },
+      });
+      if (latestCheckRun?.id !== checkRun.id) throw new PropertyIdentityHttpError(409, "CHECK_RUN_STALE", "A newer identity check exists. Confirm the latest check result.");
+      const currentHash = identityInputHash(submission.identityInput);
+      assertAuthorConfirmation({
+        registrationStatus: submission.status,
+        runStatus: checkRun.status,
+        outcome: checkRun.outcome,
+        resolution: input.resolution,
+        currentIdentityInputHash: currentHash,
+        checkedIdentityInputHash: checkRun.identityInputHash,
+      });
+      const observationDigests = submission.observations.flatMap((observation) => observation.digests);
+      if (!observationDigests.length) throw new PropertyIdentityHttpError(409, "IDENTIFIERS_REQUIRED", "At least one checked authoritative identifier is required.");
+      for (const lockKey of sortedAdvisoryLockKeys(observationDigests.map((digest) => digest.digest))) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+      }
+      const aliases = await tx.propertyIdentifierClaimDigest.findMany({
+        where: { active: true, OR: observationDigests.map((digest) => ({ digestKeyVersion: digest.digestKeyVersion, digest: digest.digest })) },
+        include: { claim: { include: { identityProfile: true } } },
+      });
+      const matchedProfileIds = [...new Set(aliases.map((alias) => alias.claim.identityProfileId))];
+
+      if (input.resolution === "CREATE_NEW") {
+        if (matchedProfileIds.length) throw new PropertyIdentityHttpError(409, "IDENTITY_CHANGED_RECHECK_REQUIRED", "An existing identity was found during finalisation. Run the check again.");
+        const physical = submission.identityInput as JsonObject;
+        const propertyObject = await tx.propertyObject.create({
+          data: {
+            ownerOrganizationId: submission.organizationId,
+            ownerOfficeId: submission.officeId,
+            informationOwnerOrganizationId: submission.organizationId,
+            informationOwnerOfficeId: submission.officeId,
+            createdByUserId: input.actor.appUserId,
+            marketId: submission.marketId,
+            status: "draft",
+            visibility: "private",
+            assetClass: submission.assetClass,
+            assetSubtype: typeof physical.assetSubtype === "string" ? physical.assetSubtype : null,
+            addressPrivate: typeof physical.addressPrivate === "string" ? physical.addressPrivate : null,
+            areaSqm: optionalNumber(physical.areaSqm, "identityInput.areaSqm"),
+            landAreaSqm: optionalNumber(physical.landAreaSqm, "identityInput.landAreaSqm"),
+            buildingAreaSqm: optionalNumber(physical.buildingAreaSqm, "identityInput.buildingAreaSqm"),
+            rentableAreaSqm: optionalNumber(physical.rentableAreaSqm, "identityInput.rentableAreaSqm"),
+            floorNumber: optionalInteger(physical.floorNumber, "identityInput.floorNumber"),
+            floorsTotal: optionalInteger(physical.floorsTotal, "identityInput.floorsTotal"),
+            roomsCount: optionalInteger(physical.roomsCount, "identityInput.roomsCount"),
+            bedroomsCount: optionalInteger(physical.bedroomsCount, "identityInput.bedroomsCount"),
+            bathroomsCount: optionalInteger(physical.bathroomsCount, "identityInput.bathroomsCount"),
+            representationSide: "originator",
+            exclusivity: "unknown",
+            canBeShownByOtherOffices: false,
+          },
+        });
+        const profile = await tx.propertyIdentityProfile.create({
+          data: {
+            stableId: createStablePropertyIdentityId(),
+            propertyObjectId: propertyObject.id,
+            createdFromSubmissionId: submission.id,
+            subjectScope: submission.subjectScope,
+            jurisdiction: submission.jurisdiction,
+            status: "PROVISIONAL",
+          },
+        });
+        const confirmation = await tx.propertyIdentityAuthorConfirmation.create({
+          data: {
+            submissionId: submission.id,
+            checkRunId: checkRun.id,
+            identityProfileId: profile.id,
+            confirmedByUserId: input.actor.appUserId,
+            resolution: "CREATE_NEW",
+            identityInputHash: currentHash,
+            reason: typeof input.body.reason === "string" ? input.body.reason.trim() || null : null,
+          },
+        });
+        const canonicalSnapshot: Prisma.InputJsonObject = {
+          subjectScope: submission.subjectScope,
+          jurisdiction: submission.jurisdiction,
+          assetClass: submission.assetClass,
+          physical: physical as Prisma.InputJsonObject,
+          observations: submission.observations.map((observation) => ({ id: observation.id, scheme: observation.scheme, authorityNamespace: observation.authorityNamespace, normalizerId: observation.normalizerId, normalizerVersion: observation.normalizerVersion })),
+        };
+        await tx.propertyCanonicalVersion.create({
+          data: {
+            identityProfileId: profile.id,
+            versionNumber: 1,
+            snapshotSchemaVersion: 1,
+            snapshotJson: canonicalSnapshot,
+            snapshotHash: identityInputHash(canonicalSnapshot),
+            authorConfirmationId: confirmation.id,
+            createdByUserId: input.actor.appUserId,
+          },
+        });
+        for (const observation of submission.observations) {
+          await tx.propertyIdentifierClaim.create({
+            data: {
+              identityProfileId: profile.id,
+              originObservationId: observation.id,
+              scheme: observation.scheme,
+              subjectScope: observation.subjectScope,
+              jurisdiction: observation.jurisdiction,
+              authorityNamespace: observation.authorityNamespace,
+              normalizedValueCiphertext: observation.normalizedValueCiphertext,
+              normalizedValueNonce: observation.normalizedValueNonce,
+              normalizedValueAuthTag: observation.normalizedValueAuthTag,
+              normalizerId: observation.normalizerId,
+              normalizerVersion: observation.normalizerVersion,
+              digests: { create: observation.digests.map((digest) => ({ digestKeyVersion: digest.digestKeyVersion, digest: digest.digest, active: true })) },
+            },
+          });
+        }
+        await tx.propertyIdentifierObservation.updateMany({ where: { submissionId: submission.id, status: "READY" }, data: { status: "ACCEPTED" } });
+        await tx.propertyIdentityProfile.update({ where: { id: profile.id }, data: { status: "VERIFIED_INTERNAL" } });
+        await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { status: "CLOSED", canonicalPropertyObjectId: propertyObject.id, closedAt: new Date(), rowVersion: { increment: 1 } } });
+        await tx.propertyIdentityEvent.create({
+          data: { submissionId: submission.id, identityProfileId: profile.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "AUTHOR_CONFIRMED_CREATE", previousStatus: submission.status, nextStatus: "CLOSED", payload: { checkRunId: checkRun.id, propertyObjectId: propertyObject.id } },
+        });
+        return { status: 201, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "CREATE_NEW", propertyObjectId: propertyObject.id, propertyIdentityId: profile.stableId } };
+      }
+
+      if (matchedProfileIds.length !== 1) throw new PropertyIdentityHttpError(409, "IDENTITY_CHANGED_RECHECK_REQUIRED", "The exact identity result changed. Run the check again.");
+      const matchedKeys = new Set(aliases.map((alias) => `${alias.digestKeyVersion}:${alias.digest}`));
+      if (observationDigests.some((digest) => !matchedKeys.has(`${digest.digestKeyVersion}:${digest.digest}`))) {
+        throw new PropertyIdentityHttpError(409, "IDENTITY_CHANGED_RECHECK_REQUIRED", "Not all authoritative identifiers resolve to the same identity.");
+      }
+      const profile = await tx.propertyIdentityProfile.findUnique({ where: { id: matchedProfileIds[0] } });
+      if (!profile || profile.status !== "VERIFIED_INTERNAL") throw new PropertyIdentityHttpError(409, "IDENTITY_LINK_UNAVAILABLE", "The existing identity is not available for linking.");
+      await tx.propertyIdentityAuthorConfirmation.create({
+        data: {
+          submissionId: submission.id,
+          checkRunId: checkRun.id,
+          identityProfileId: profile.id,
+          confirmedByUserId: input.actor.appUserId,
+          resolution: "LINK_EXISTING",
+          identityInputHash: currentHash,
+          reason: typeof input.body.reason === "string" ? input.body.reason.trim() || null : null,
+        },
+      });
+      await tx.propertyIdentifierObservation.updateMany({ where: { submissionId: submission.id, status: "READY" }, data: { status: "ACCEPTED" } });
+      await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { status: "CLOSED", canonicalPropertyObjectId: profile.propertyObjectId, closedAt: new Date(), rowVersion: { increment: 1 } } });
+      await tx.propertyIdentityEvent.create({
+        data: { submissionId: submission.id, identityProfileId: profile.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "AUTHOR_CONFIRMED_LINK", previousStatus: submission.status, nextStatus: "CLOSED", payload: { checkRunId: checkRun.id, propertyObjectId: profile.propertyObjectId } },
+      });
+      return { status: 200, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: profile.propertyObjectId, propertyIdentityId: profile.stableId } };
+    },
+  });
+}
+
 async function listSubmissions(prisma: PrismaClient, actor: ActorContext, url: URL) {
   const scope = resolvePartnerScope(actor, { organizationId: url.searchParams.get("organizationId") ?? undefined, officeId: url.searchParams.get("officeId") ?? undefined });
   const submissions = await prisma.propertyRegistrationSubmission.findMany({
@@ -365,7 +573,7 @@ export async function handlePropertyIdentityRequest(input: {
       sendJson(input.response, 200, await listSubmissions(input.prisma, input.actor, input.url));
       return true;
     }
-    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check))?$/);
+    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check|confirm-create|confirm-link))?$/);
     if (!match) return false;
     const submissionId = decodeURIComponent(match[1]);
     if (!match[2] && input.request.method === "GET") {
@@ -378,8 +586,19 @@ export async function handlePropertyIdentityRequest(input: {
       sendJson(input.response, result.status, result.payload, result.replay ? { "idempotent-replay": "true" } : {});
       return true;
     }
+    if ((match[2] === "confirm-create" || match[2] === "confirm-link") && input.request.method === "POST") {
+      const body = await readJsonBody(input.request);
+      const result = await confirmSubmission({ prisma: input.prisma, actor: input.actor, request: input.request, submissionId, body, resolution: match[2] === "confirm-create" ? "CREATE_NEW" : "LINK_EXISTING" });
+      sendJson(input.response, result.status, result.payload, result.replay ? { "idempotent-replay": "true" } : {});
+      return true;
+    }
     throw new PropertyIdentityHttpError(405, "METHOD_NOT_ALLOWED", "The method is not allowed for this Property Identity resource.");
   } catch (caught) {
+    if (caught instanceof PropertyIdentityDomainError) {
+      const status = caught.code.startsWith("IDENTIFIER_") || caught.code.startsWith("ENCRYPTION_") || caught.code === "CANONICAL_VALUE_INVALID" ? 400 : 409;
+      sendJson(input.response, status, { ok: false, error: { code: caught.code, message: caught.message, correlationId: input.actor.correlationId } });
+      return true;
+    }
     const error = caught as { status?: number; code?: string; message?: string };
     sendJson(input.response, error.status ?? 500, { ok: false, error: { code: error.code ?? "PROPERTY_IDENTITY_INTERNAL_ERROR", message: error.status && error.status < 500 ? error.message : "Property Identity operation failed.", correlationId: input.actor.correlationId } });
     return true;

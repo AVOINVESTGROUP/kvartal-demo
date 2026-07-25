@@ -207,6 +207,102 @@ describe("Property Identity v4 database invariants", () => {
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
   });
 
+  it("serializes competing finalisations so only one canonical object is created", async () => {
+    const fixture = await createFoundationFixture();
+    const ciphertext = Buffer.from("canonical-race-ciphertext");
+    const nonce = Buffer.alloc(12, 3);
+    const tag = Buffer.alloc(16, 4);
+    const digest = "a".repeat(64);
+    const submissions = await Promise.all(["a", "b"].map((suffix) => prisma.propertyRegistrationSubmission.create({
+      data: {
+        organizationId: fixture.organization.id,
+        officeId: fixture.office.id,
+        marketId: fixture.market.id,
+        createdByUserId: fixture.user.id,
+        subjectScope: "UNIT",
+        jurisdiction: "ZZ",
+        assetClass: "apartment",
+        status: "UNIQUE_CANDIDATE",
+        identityInput: { race: suffix },
+        lastIdentityInputHash: `race-${suffix}`,
+        observations: {
+          create: {
+            createdByUserId: fixture.user.id,
+            scheme: "SYNTHETIC_RACE_ID",
+            subjectScope: "UNIT",
+            jurisdiction: "ZZ",
+            authorityNamespace: "TEST:RACE",
+            rawValueCiphertext: ciphertext,
+            rawValueNonce: nonce,
+            rawValueAuthTag: tag,
+            normalizedValueCiphertext: ciphertext,
+            normalizedValueNonce: nonce,
+            normalizedValueAuthTag: tag,
+            normalizerId: "synthetic-race",
+            normalizerVersion: 1,
+            sourceType: "synthetic_test",
+            status: "READY",
+          },
+        },
+      },
+      include: { observations: true },
+    })));
+
+    const finalise = (submission: typeof submissions[number], suffix: string) => prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${11n})`;
+      const existing = await tx.propertyIdentifierClaimDigest.findFirst({
+        where: { digestKeyVersion: fixture.cryptoKeyVersion.version, digest, active: true },
+      });
+      if (existing) throw new Error("IDENTITY_CHANGED_RECHECK_REQUIRED");
+      const object = await tx.propertyObject.create({
+        data: {
+          ownerOrganizationId: fixture.organization.id,
+          ownerOfficeId: fixture.office.id,
+          informationOwnerOrganizationId: fixture.organization.id,
+          informationOwnerOfficeId: fixture.office.id,
+          createdByUserId: fixture.user.id,
+          marketId: fixture.market.id,
+          assetClass: "apartment",
+        },
+      });
+      const profile = await tx.propertyIdentityProfile.create({
+        data: {
+          stableId: `IREPN-RACE-${suffix}`,
+          propertyObjectId: object.id,
+          createdFromSubmissionId: submission.id,
+          subjectScope: "UNIT",
+          jurisdiction: "ZZ",
+          status: "VERIFIED_INTERNAL",
+        },
+      });
+      await tx.propertyIdentifierClaim.create({
+        data: {
+          identityProfileId: profile.id,
+          originObservationId: submission.observations[0].id,
+          scheme: "SYNTHETIC_RACE_ID",
+          subjectScope: "UNIT",
+          jurisdiction: "ZZ",
+          authorityNamespace: "TEST:RACE",
+          normalizedValueCiphertext: ciphertext,
+          normalizedValueNonce: nonce,
+          normalizedValueAuthTag: tag,
+          normalizerId: "synthetic-race",
+          normalizerVersion: 1,
+          digests: { create: { digestKeyVersion: fixture.cryptoKeyVersion.version, digest } },
+        },
+      });
+      return object.id;
+    }, { isolationLevel: "Serializable" });
+
+    const results = await Promise.allSettled([
+      finalise(submissions[0], "A"),
+      finalise(submissions[1], "B"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(await prisma.propertyIdentityProfile.count({ where: { stableId: { startsWith: "IREPN-RACE-" } } })).toBe(1);
+  });
+
   it("enforces one current canonical version per identity profile", async () => {
     const fixture = await createFoundationFixture();
     await prisma.propertyCanonicalVersion.create({
