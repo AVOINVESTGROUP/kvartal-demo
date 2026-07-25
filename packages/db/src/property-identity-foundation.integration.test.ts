@@ -77,6 +77,7 @@ async function createFoundationFixture() {
     data: {
       organizationId: organization.id,
       officeId: office.id,
+      marketId: market.id,
       createdByUserId: user.id,
       subjectScope: "UNIT",
       jurisdiction: "ZZ",

@@ -29,5 +29,10 @@ describe("API policy registry source contracts", () => {
     expect(platform).toContain('policy: "ACTOR_AUTH_REQUIRED"'); expect(platform).toContain("external-identit");
     expect(office).toContain('policy: "ACTOR_AUTH_REQUIRED"'); expect(read("packages/auth/src/index.ts")).toContain('"SYSTEM_SERVICE_ONLY"');
     expect(platform).toContain("provider_subject"); expect(platform).not.toMatch(/where:\s*\{\s*firebaseUid/);
+    expect(office).toContain('path.startsWith("/api/v1/admin/property-identity/")');
+    expect(office.indexOf('path.startsWith("/api/v1/admin/property-identity/")')).toBeLessThan(office.indexOf('path.startsWith("/api/v1/admin/")'));
+    const identityHandler = read("apps/office-api/src/property-identity.ts");
+    expect(identityHandler).toContain("resolvePartnerScope");
+    expect(identityHandler).not.toContain("hasAdminWriteAccess");
   });
 });

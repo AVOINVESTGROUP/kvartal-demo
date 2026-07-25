@@ -39,6 +39,7 @@ CREATE TABLE "PropertyRegistrationSubmission" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "officeId" TEXT NOT NULL,
+    "marketId" TEXT NOT NULL,
     "createdByUserId" TEXT NOT NULL,
     "intakeSubmissionId" TEXT,
     "aiDraftId" TEXT,
@@ -86,6 +87,17 @@ CREATE TABLE "PropertyIdentifierObservation" (
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "PropertyIdentifierObservation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PropertyIdentifierObservationDigest" (
+    "id" TEXT NOT NULL,
+    "observationId" TEXT NOT NULL,
+    "digestKeyVersion" TEXT NOT NULL,
+    "digest" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "PropertyIdentifierObservationDigest_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -306,6 +318,9 @@ CREATE INDEX "PropertyRegistrationSubmission_organizationId_status_update_idx" O
 CREATE INDEX "PropertyRegistrationSubmission_officeId_status_updatedAt_idx" ON "PropertyRegistrationSubmission"("officeId", "status", "updatedAt");
 
 -- CreateIndex
+CREATE INDEX "PropertyRegistrationSubmission_marketId_status_updatedAt_idx" ON "PropertyRegistrationSubmission"("marketId", "status", "updatedAt");
+
+-- CreateIndex
 CREATE INDEX "PropertyRegistrationSubmission_createdByUserId_status_updat_idx" ON "PropertyRegistrationSubmission"("createdByUserId", "status", "updatedAt");
 
 -- CreateIndex
@@ -316,6 +331,12 @@ CREATE INDEX "PropertyIdentifierObservation_submissionId_status_idx" ON "Propert
 
 -- CreateIndex
 CREATE INDEX "PropertyIdentifierObservation_scheme_jurisdiction_authority_idx" ON "PropertyIdentifierObservation"("scheme", "jurisdiction", "authorityNamespace", "subjectScope");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PropertyIdentifierObservationDigest_observationId_digestKeyVersion_key" ON "PropertyIdentifierObservationDigest"("observationId", "digestKeyVersion");
+
+-- CreateIndex
+CREATE INDEX "PropertyIdentifierObservationDigest_digestKeyVersion_digest_idx" ON "PropertyIdentifierObservationDigest"("digestKeyVersion", "digest");
 
 -- CreateIndex
 CREATE INDEX "PropertyIdentityCheckRun_submissionId_createdAt_idx" ON "PropertyIdentityCheckRun"("submissionId", "createdAt");
@@ -417,6 +438,9 @@ ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistratio
 ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistrationSubmission_officeId_fkey" FOREIGN KEY ("officeId") REFERENCES "Office"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistrationSubmission_marketId_fkey" FOREIGN KEY ("marketId") REFERENCES "Market"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistrationSubmission_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "AppUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -433,6 +457,12 @@ ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierOb
 
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierObservation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "AppUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PropertyIdentifierObservationDigest" ADD CONSTRAINT "PropertyIdentifierObservationDigest_observationId_fkey" FOREIGN KEY ("observationId") REFERENCES "PropertyIdentifierObservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PropertyIdentifierObservationDigest" ADD CONSTRAINT "PropertyIdentifierObservationDigest_digestKeyVersion_fkey" FOREIGN KEY ("digestKeyVersion") REFERENCES "PropertyIdentityCryptoKeyVersion"("version") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PropertyIdentityCheckRun" ADD CONSTRAINT "PropertyIdentityCheckRun_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "PropertyRegistrationSubmission"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

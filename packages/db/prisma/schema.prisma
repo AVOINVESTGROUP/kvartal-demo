@@ -644,6 +644,7 @@ model Market {
   insights                          MarketInsight[]
   propertyIdentityAuthorityPolicies PropertyIdentityAuthorityPolicy[]
   propertyIdentityRolloutPolicies   PropertyIdentityRolloutPolicy[]
+  propertyRegistrationSubmissions   PropertyRegistrationSubmission[]
 }
 
 model AppUser {
@@ -970,6 +971,7 @@ model PropertyRegistrationSubmission {
   id                        String                               @id @default(cuid())
   organizationId            String
   officeId                  String
+  marketId                  String
   createdByUserId           String
   intakeSubmissionId        String?
   aiDraftId                 String?
@@ -988,6 +990,7 @@ model PropertyRegistrationSubmission {
   updatedAt                 DateTime                             @updatedAt
   organization              Organization                         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   office                    Office                               @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  market                    Market                               @relation(fields: [marketId], references: [id], onDelete: Restrict)
   createdByUser             AppUser                              @relation("PropertyRegistrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   intakeSubmission          PropertyIntakeSubmission?            @relation(fields: [intakeSubmissionId], references: [id], onDelete: SetNull)
   aiDraft                   PropertyAIDraft?                     @relation(fields: [aiDraftId], references: [id], onDelete: SetNull)
@@ -1001,12 +1004,13 @@ model PropertyRegistrationSubmission {
 
   @@index([organizationId, status, updatedAt])
   @@index([officeId, status, updatedAt])
+  @@index([marketId, status, updatedAt])
   @@index([createdByUserId, status, updatedAt])
   @@index([canonicalPropertyObjectId])
 }
 
 model PropertyIdentifierObservation {
-  id                        String                              @id @default(cuid())
+  id                        String                                @id @default(cuid())
   submissionId              String
   createdByUserId           String
   scheme                    String
@@ -1025,16 +1029,30 @@ model PropertyIdentifierObservation {
   sourceType                String
   sourceDocumentId          String?
   sourceUrl                 String?
-  status                    PropertyIdentifierObservationStatus @default(DRAFT)
-  correctionReason          String?                             @db.Text
-  createdAt                 DateTime                            @default(now())
-  updatedAt                 DateTime                            @updatedAt
-  submission                PropertyRegistrationSubmission      @relation(fields: [submissionId], references: [id], onDelete: Restrict)
-  createdByUser             AppUser                             @relation("PropertyIdentifierObservationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  originClaims              PropertyIdentifierClaim[]           @relation("PropertyIdentifierClaimOrigin")
+  status                    PropertyIdentifierObservationStatus   @default(DRAFT)
+  correctionReason          String?                               @db.Text
+  createdAt                 DateTime                              @default(now())
+  updatedAt                 DateTime                              @updatedAt
+  submission                PropertyRegistrationSubmission        @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  createdByUser             AppUser                               @relation("PropertyIdentifierObservationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  originClaims              PropertyIdentifierClaim[]             @relation("PropertyIdentifierClaimOrigin")
+  digests                   PropertyIdentifierObservationDigest[]
 
   @@index([submissionId, status])
   @@index([scheme, jurisdiction, authorityNamespace, subjectScope])
+}
+
+model PropertyIdentifierObservationDigest {
+  id               String                           @id @default(cuid())
+  observationId    String
+  digestKeyVersion String
+  digest           String
+  createdAt        DateTime                         @default(now())
+  observation      PropertyIdentifierObservation    @relation(fields: [observationId], references: [id], onDelete: Restrict)
+  cryptoKeyVersion PropertyIdentityCryptoKeyVersion @relation(fields: [digestKeyVersion], references: [version], onDelete: Restrict)
+
+  @@unique([observationId, digestKeyVersion])
+  @@index([digestKeyVersion, digest])
 }
 
 model PropertyIdentityCheckRun {
@@ -1272,13 +1290,14 @@ model PropertyIdentityJob {
 }
 
 model PropertyIdentityCryptoKeyVersion {
-  version     String                          @id
-  status      PropertyIdentityCryptoKeyStatus
-  activatedAt DateTime
-  retiringAt  DateTime?
-  retiredAt   DateTime?
-  createdAt   DateTime                        @default(now())
-  digests     PropertyIdentifierClaimDigest[]
+  version            String                                @id
+  status             PropertyIdentityCryptoKeyStatus
+  activatedAt        DateTime
+  retiringAt         DateTime?
+  retiredAt          DateTime?
+  createdAt          DateTime                              @default(now())
+  digests            PropertyIdentifierClaimDigest[]
+  observationDigests PropertyIdentifierObservationDigest[]
 
   @@index([status, activatedAt])
 }

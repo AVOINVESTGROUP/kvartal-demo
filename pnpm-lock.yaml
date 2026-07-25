@@ -75,6 +75,9 @@ importers:
       '@kvartal/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@kvartal/property-identity':
+        specifier: workspace:*
+        version: link:../../packages/property-identity
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
@@ -94,6 +97,9 @@ importers:
       typescript:
         specifier: ^5.0.0
         version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@20.19.41)(tsx@4.22.3)
 
   apps/partner-admin:
     dependencies:

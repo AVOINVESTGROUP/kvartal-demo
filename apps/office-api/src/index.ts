@@ -3,8 +3,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
-import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ApiAuthPolicy } from "@kvartal/auth";
+import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
+import { handlePropertyIdentityRequest } from "./property-identity.js";
 
 export const serviceName = "office-api";
 
@@ -31,6 +32,7 @@ export const ownedRoutes = [
   "/api/v1/admin/partner-object-visibility",
   "/api/v1/admin/members",
   "/api/v1/admin/property-intakes",
+  "/api/v1/admin/property-identity/submissions",
   "/api/v1/admin/client-intents",
   "/api/v1/admin/cobroker-requests",
   "/api/v1/admin/deal-rooms",
@@ -40,6 +42,7 @@ export const ownedRoutes = [
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz" || path.startsWith("/api/v1/public/"), policy: "PUBLIC" },
   { matches: (path) => path === "/api/v1/admin/actor-context", policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path.startsWith("/api/v1/admin/property-identity/"), policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path === "/api/v1/platform/market-insights/refresh", policy: "LEGACY_SERVICE_AUTH" },
   { matches: (path) => path.startsWith("/api/v1/admin/"), policy: "LEGACY_SERVICE_AUTH" },
 ];
@@ -1863,6 +1866,7 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const correlationId = typeof request.headers["x-correlation-id"] === "string" ? request.headers["x-correlation-id"] : authRandomUUID();
   const policy = authPolicyForPath(url.pathname);
+  let actorContext: ActorContext | null = null;
   if (!policy) { sendError(response, 500, "DEPLOYMENT_PREREQUISITE_MISSING", "Route authentication policy is missing."); return; }
   if (policy === "ACTOR_AUTH_REQUIRED") {
     try {
@@ -1874,11 +1878,17 @@ const server = createServer(async (request, response) => {
           include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } },
         }),
       });
+      actorContext = actor;
       if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
       sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId)); return;
     }
+  }
+
+  if (url.pathname.startsWith("/api/v1/admin/property-identity/")) {
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
+    if (await handlePropertyIdentityRequest({ request, response, url, prisma, actor: actorContext })) return;
   }
 
   if (url.pathname === "/healthz") {
