@@ -1023,8 +1023,10 @@ model PropertyIdentifierObservation {
   normalizedValueCiphertext Bytes
   normalizedValueNonce      Bytes
   normalizedValueAuthTag    Bytes
+  encryptionKeyVersion      String
   normalizerId              String
   normalizerVersion         Int
+  authorityPolicyVersion    Int                                   @default(0)
   structuredComponents      Json?
   sourceType                String
   sourceDocumentId          String?
@@ -1037,6 +1039,7 @@ model PropertyIdentifierObservation {
   createdByUser             AppUser                               @relation("PropertyIdentifierObservationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
   originClaims              PropertyIdentifierClaim[]             @relation("PropertyIdentifierClaimOrigin")
   digests                   PropertyIdentifierObservationDigest[]
+  encryptionKey             PropertyIdentityCryptoKeyVersion      @relation("PropertyIdentifierObservationEncryptionKey", fields: [encryptionKeyVersion], references: [version], onDelete: Restrict)
 
   @@index([submissionId, status])
   @@index([scheme, jurisdiction, authorityNamespace, subjectScope])
@@ -1116,7 +1119,7 @@ model PropertyIdentityProfile {
 }
 
 model PropertyIdentifierClaim {
-  id                        String                          @id @default(cuid())
+  id                        String                           @id @default(cuid())
   identityProfileId         String
   originObservationId       String?
   scheme                    String
@@ -1126,17 +1129,19 @@ model PropertyIdentifierClaim {
   normalizedValueCiphertext Bytes
   normalizedValueNonce      Bytes
   normalizedValueAuthTag    Bytes
+  encryptionKeyVersion      String
   normalizerId              String
   normalizerVersion         Int
-  status                    PropertyIdentifierClaimStatus   @default(ACTIVE)
-  activatedAt               DateTime                        @default(now())
+  status                    PropertyIdentifierClaimStatus    @default(ACTIVE)
+  activatedAt               DateTime                         @default(now())
   revokedAt                 DateTime?
-  revocationReason          String?                         @db.Text
-  createdAt                 DateTime                        @default(now())
-  updatedAt                 DateTime                        @updatedAt
-  identityProfile           PropertyIdentityProfile         @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
-  originObservation         PropertyIdentifierObservation?  @relation("PropertyIdentifierClaimOrigin", fields: [originObservationId], references: [id], onDelete: Restrict)
+  revocationReason          String?                          @db.Text
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  identityProfile           PropertyIdentityProfile          @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  originObservation         PropertyIdentifierObservation?   @relation("PropertyIdentifierClaimOrigin", fields: [originObservationId], references: [id], onDelete: Restrict)
   digests                   PropertyIdentifierClaimDigest[]
+  encryptionKey             PropertyIdentityCryptoKeyVersion @relation("PropertyIdentifierClaimEncryptionKey", fields: [encryptionKeyVersion], references: [version], onDelete: Restrict)
 
   @@index([identityProfileId, status])
   @@index([scheme, jurisdiction, authorityNamespace, subjectScope, status])
@@ -1290,14 +1295,16 @@ model PropertyIdentityJob {
 }
 
 model PropertyIdentityCryptoKeyVersion {
-  version            String                                @id
-  status             PropertyIdentityCryptoKeyStatus
-  activatedAt        DateTime
-  retiringAt         DateTime?
-  retiredAt          DateTime?
-  createdAt          DateTime                              @default(now())
-  digests            PropertyIdentifierClaimDigest[]
-  observationDigests PropertyIdentifierObservationDigest[]
+  version               String                                @id
+  status                PropertyIdentityCryptoKeyStatus
+  activatedAt           DateTime
+  retiringAt            DateTime?
+  retiredAt             DateTime?
+  createdAt             DateTime                              @default(now())
+  digests               PropertyIdentifierClaimDigest[]
+  observationDigests    PropertyIdentifierObservationDigest[]
+  encryptedObservations PropertyIdentifierObservation[]       @relation("PropertyIdentifierObservationEncryptionKey")
+  encryptedClaims       PropertyIdentifierClaim[]             @relation("PropertyIdentifierClaimEncryptionKey")
 
   @@index([status, activatedAt])
 }

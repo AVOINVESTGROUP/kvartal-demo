@@ -3,11 +3,37 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GenericContainer, Wait, type StartedTestContainer } from "testcontainers";
 import { PrismaClient } from "@prisma/client";
+import type { ActorContext } from "@kvartal/auth";
+import { handlePropertyIdentityRequest } from "../../../apps/office-api/src/property-identity.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
 
 const run = promisify(exec);
 let container: StartedTestContainer;
 let prisma: PrismaClient;
 let fixtureSequence = 0;
+
+async function callPropertyIdentityApi(input: {
+  method: string;
+  path: string;
+  body?: Record<string, unknown>;
+  actor: ActorContext;
+  headers?: Record<string, string>;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const request = Readable.from(input.body ? [JSON.stringify(input.body)] : []) as unknown as IncomingMessage;
+  Object.assign(request, { method: input.method, headers: input.headers ?? {} });
+  let status = 0;
+  let responseHeaders: Record<string, string> = {};
+  let responseBody = "";
+  const response = {
+    writeHead(nextStatus: number, headers: Record<string, string>) { status = nextStatus; responseHeaders = headers; },
+    end(chunk?: string) { responseBody = chunk ?? ""; },
+  } as unknown as ServerResponse;
+  const url = new URL(input.path, "http://localhost");
+  await handlePropertyIdentityRequest({ request, response, url, prisma, actor: input.actor, env: input.env });
+  return { status, headers: responseHeaders, body: JSON.parse(responseBody) as Record<string, unknown> };
+}
 
 async function createFoundationFixture() {
   fixtureSequence += 1;
@@ -170,6 +196,7 @@ describe("Property Identity v4 database invariants", () => {
         normalizedValueCiphertext: ciphertext,
         normalizedValueNonce: nonce,
         normalizedValueAuthTag: tag,
+        encryptionKeyVersion: fixture.cryptoKeyVersion.version,
         normalizerId: "synthetic-unit",
         normalizerVersion: 1,
         sourceType: "synthetic_test",
@@ -189,6 +216,7 @@ describe("Property Identity v4 database invariants", () => {
           normalizedValueCiphertext: ciphertext,
           normalizedValueNonce: nonce,
           normalizedValueAuthTag: tag,
+          encryptionKeyVersion: fixture.cryptoKeyVersion.version,
           normalizerId: "synthetic-unit",
           normalizerVersion: 1,
         },
@@ -238,6 +266,7 @@ describe("Property Identity v4 database invariants", () => {
             normalizedValueCiphertext: ciphertext,
             normalizedValueNonce: nonce,
             normalizedValueAuthTag: tag,
+            encryptionKeyVersion: fixture.cryptoKeyVersion.version,
             normalizerId: "synthetic-race",
             normalizerVersion: 1,
             sourceType: "synthetic_test",
@@ -286,6 +315,7 @@ describe("Property Identity v4 database invariants", () => {
           normalizedValueCiphertext: ciphertext,
           normalizedValueNonce: nonce,
           normalizedValueAuthTag: tag,
+          encryptionKeyVersion: fixture.cryptoKeyVersion.version,
           normalizerId: "synthetic-race",
           normalizerVersion: 1,
           digests: { create: { digestKeyVersion: fixture.cryptoKeyVersion.version, digest } },
@@ -301,6 +331,156 @@ describe("Property Identity v4 database invariants", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
     expect(await prisma.propertyIdentityProfile.count({ where: { stableId: { startsWith: "IREPN-RACE-" } } })).toBe(1);
+  });
+
+  it("runs the author-owned create, check and confirm flow and preserves incomplete observations", async () => {
+    const fixture = await createFoundationFixture();
+    await prisma.propertyIdentityCryptoKeyVersion.updateMany({
+      where: { version: { not: fixture.cryptoKeyVersion.version }, status: { in: ["ACTIVE", "RETIRING"] } },
+      data: { status: "RETIRED", retiredAt: new Date() },
+    });
+    await prisma.propertyIdentityRolloutPolicy.create({
+      data: {
+        scope: "ORGANISATION",
+        organizationId: fixture.organization.id,
+        mode: "STRICT",
+        registryEnabled: true,
+        publishGateEnabled: true,
+        activationAt: new Date(0),
+        configuredByUserId: fixture.user.id,
+      },
+    });
+    await prisma.propertyIdentityAuthorityPolicy.create({
+      data: {
+        organizationId: fixture.organization.id,
+        marketId: fixture.market.id,
+        jurisdiction: "ZZ",
+        assetClass: "apartment",
+        subjectScope: "UNIT",
+        identifierScheme: "SYNTHETIC_UNIT_ID",
+        authorityNamespacePattern: "TEST:UNIT:*",
+        normalizerId: "alphanumeric-v1",
+        normalizerVersion: 3,
+        automaticExactMatchAllowed: true,
+        active: true,
+        effectiveFrom: new Date(0),
+        version: 7,
+        configuredByUserId: fixture.user.id,
+      },
+    });
+    const actor: ActorContext = Object.freeze({
+      actorType: "USER",
+      appUserId: fixture.user.id,
+      externalIdentityId: "test-external-identity",
+      provider: "FIREBASE",
+      subject: "test-firebase-subject",
+      platformRoles: Object.freeze([]),
+      organizationMemberships: Object.freeze([{ organizationId: fixture.organization.id, roles: Object.freeze(["organization_admin" as const]) }]),
+      officeMemberships: Object.freeze([{ organizationId: fixture.organization.id, officeId: fixture.office.id, roles: Object.freeze(["office_admin" as const]) }]),
+      correlationId: "property-identity-flow-test",
+    });
+    const encryptionKey = Buffer.alloc(32, 5);
+    const digestKey = Buffer.alloc(32, 6);
+    const env = {
+      PROPERTY_IDENTITY_ENCRYPTION_KEY_BASE64: encryptionKey.toString("base64"),
+      PROPERTY_IDENTITY_ENCRYPTION_KEY_VERSION: fixture.cryptoKeyVersion.version,
+      PROPERTY_IDENTITY_DIGEST_KEYS_JSON: JSON.stringify([{ version: fixture.cryptoKeyVersion.version, keyBase64: digestKey.toString("base64") }]),
+    } as NodeJS.ProcessEnv;
+
+    const created = await callPropertyIdentityApi({
+      method: "POST",
+      path: "/api/v1/admin/property-identity/submissions",
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-create-0001" },
+      body: {
+        organizationId: fixture.organization.id,
+        officeId: fixture.office.id,
+        marketId: fixture.market.id,
+        jurisdiction: "ZZ",
+        subjectScope: "UNIT",
+        assetClass: "apartment",
+        identityInput: { areaSqm: 50, floorNumber: 4 },
+        identifiers: [{ scheme: "SYNTHETIC_UNIT_ID", authorityNamespace: "TEST:UNIT:CITY", rawValue: "unit-42" }],
+      },
+    });
+    expect(created.status).toBe(201);
+    const submissionId = String(created.body.submissionId);
+
+    const checked = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${submissionId}/check`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-check-0001" },
+      body: {},
+    });
+    expect(checked.body).toMatchObject({ outcome: "UNIQUE_CANDIDATE", status: "UNIQUE_CANDIDATE" });
+
+    const confirmed = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${submissionId}/confirm-create`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-confirm-0001" },
+      body: { checkRunId: checked.body.checkRunId },
+    });
+    expect(confirmed.status).toBe(201);
+    expect(confirmed.body).toMatchObject({ status: "CLOSED", resolution: "CREATE_NEW" });
+    expect(await prisma.propertyIdentityProfile.count({ where: { createdFromSubmissionId: submissionId, status: "VERIFIED_INTERNAL" } })).toBe(1);
+
+    const incomplete = await callPropertyIdentityApi({
+      method: "POST",
+      path: "/api/v1/admin/property-identity/submissions",
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-create-0002" },
+      body: {
+        marketId: fixture.market.id,
+        jurisdiction: "ZZ",
+        subjectScope: "UNIT",
+        assetClass: "apartment",
+        identityInput: { areaSqm: 60 },
+        identifiers: [{ rawValue: "unclassified-raw-value" }],
+      },
+    });
+    expect(incomplete.body.status).toBe("NEEDS_CORRECTION");
+    const storedObservation = await prisma.propertyIdentifierObservation.findFirst({ where: { submissionId: String(incomplete.body.submissionId) } });
+    expect(storedObservation).toMatchObject({ status: "NEEDS_CORRECTION", correctionReason: "IDENTIFIER_NAMESPACE_REQUIRED", encryptionKeyVersion: fixture.cryptoKeyVersion.version });
+    expect(storedObservation?.rawValueCiphertext.toString("utf8")).not.toContain("unclassified-raw-value");
+
+    const incompleteId = String(incomplete.body.submissionId);
+    const detail = await callPropertyIdentityApi({ method: "GET", path: `/api/v1/admin/property-identity/submissions/${incompleteId}`, actor });
+    const detailSubmission = detail.body.submission as Record<string, unknown>;
+    const corrected = await callPropertyIdentityApi({
+      method: "PATCH",
+      path: `/api/v1/admin/property-identity/submissions/${incompleteId}`,
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-correct-0001", "if-match": `"${detailSubmission.rowVersion}"` },
+      body: { identifiers: [{ scheme: "SYNTHETIC_UNIT_ID", authorityNamespace: "TEST:UNIT:CITY", rawValue: "unit-42" }] },
+    });
+    expect(corrected.body.status).toBe("DRAFT");
+    expect(corrected.headers.ETag).toBe(`"${corrected.body.rowVersion}"`);
+
+    const exact = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${incompleteId}/check`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-check-0002" },
+      body: {},
+    });
+    expect(exact.body.outcome).toBe("EXACT_EXISTING");
+    const linked = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${incompleteId}/confirm-link`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-link-0001" },
+      body: { checkRunId: exact.body.checkRunId },
+    });
+    expect(linked.body).toMatchObject({ status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: confirmed.body.propertyObjectId });
+
+    const otherActor = { ...actor, appUserId: "another-user", correlationId: "other-actor" } as ActorContext;
+    const forbidden = await callPropertyIdentityApi({ method: "GET", path: `/api/v1/admin/property-identity/submissions/${submissionId}`, actor: otherActor });
+    expect(forbidden.status).toBe(403);
   });
 
   it("enforces one current canonical version per identity profile", async () => {
@@ -343,6 +523,7 @@ describe("Property Identity v4 database invariants", () => {
         normalizedValueCiphertext: Buffer.from("ciphertext"),
         normalizedValueNonce: Buffer.alloc(12),
         normalizedValueAuthTag: Buffer.alloc(16),
+        encryptionKeyVersion: fixture.cryptoKeyVersion.version,
         normalizerId: "synthetic-unit",
         normalizerVersion: 1,
         sourceType: "synthetic_test",

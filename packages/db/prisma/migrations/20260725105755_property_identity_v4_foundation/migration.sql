@@ -75,8 +75,10 @@ CREATE TABLE "PropertyIdentifierObservation" (
     "normalizedValueCiphertext" BYTEA NOT NULL,
     "normalizedValueNonce" BYTEA NOT NULL,
     "normalizedValueAuthTag" BYTEA NOT NULL,
+    "encryptionKeyVersion" TEXT NOT NULL,
     "normalizerId" TEXT NOT NULL,
     "normalizerVersion" INTEGER NOT NULL,
+    "authorityPolicyVersion" INTEGER NOT NULL DEFAULT 0,
     "structuredComponents" JSONB,
     "sourceType" TEXT NOT NULL,
     "sourceDocumentId" TEXT,
@@ -161,6 +163,7 @@ CREATE TABLE "PropertyIdentifierClaim" (
     "normalizedValueCiphertext" BYTEA NOT NULL,
     "normalizedValueNonce" BYTEA NOT NULL,
     "normalizedValueAuthTag" BYTEA NOT NULL,
+    "encryptionKeyVersion" TEXT NOT NULL,
     "normalizerId" TEXT NOT NULL,
     "normalizerVersion" INTEGER NOT NULL,
     "status" "PropertyIdentifierClaimStatus" NOT NULL DEFAULT 'ACTIVE',
@@ -458,6 +461,8 @@ ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierOb
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierObservation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "AppUser"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
+ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierObservation_encryptionKeyVersion_fkey" FOREIGN KEY ("encryptionKeyVersion") REFERENCES "PropertyIdentityCryptoKeyVersion"("version") ON DELETE RESTRICT ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierObservationDigest" ADD CONSTRAINT "PropertyIdentifierObservationDigest_observationId_fkey" FOREIGN KEY ("observationId") REFERENCES "PropertyIdentifierObservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -484,6 +489,8 @@ ALTER TABLE "PropertyIdentifierClaim" ADD CONSTRAINT "PropertyIdentifierClaim_id
 
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierClaim" ADD CONSTRAINT "PropertyIdentifierClaim_originObservationId_fkey" FOREIGN KEY ("originObservationId") REFERENCES "PropertyIdentifierObservation"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "PropertyIdentifierClaim" ADD CONSTRAINT "PropertyIdentifierClaim_encryptionKeyVersion_fkey" FOREIGN KEY ("encryptionKeyVersion") REFERENCES "PropertyIdentityCryptoKeyVersion"("version") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierClaimDigest" ADD CONSTRAINT "PropertyIdentifierClaimDigest_claimId_fkey" FOREIGN KEY ("claimId") REFERENCES "PropertyIdentifierClaim"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActorContext } from "@kvartal/auth";
-import { resolvePartnerScope, selectEffectivePropertyIdentityRollout } from "./property-identity.js";
+import { resolvePartnerScope, selectAuthorityPolicy, selectEffectivePropertyIdentityRollout } from "./property-identity.js";
 
 const actor: ActorContext = Object.freeze({
   actorType: "USER",
@@ -56,5 +56,45 @@ describe("Property Identity rollout policy", () => {
       { ...base, id: "other", scope: "MARKET", organizationId: null, marketId: "market-2" },
     ], "org-1", "market-1", new Date("2026-07-25T01:00:00Z"));
     expect(effective).toEqual({ policyId: null, mode: "DISABLED", registryEnabled: false, publishGateEnabled: false });
+  });
+});
+
+describe("Property Identity authority policy", () => {
+  const base = {
+    assetClass: null,
+    identifierScheme: "CADASTRAL_ID",
+    authorityNamespacePattern: "ZZ:CADASTRE:*",
+    normalizerId: "alphanumeric-v1",
+    normalizerVersion: 1,
+    automaticExactMatchAllowed: true,
+    version: 1,
+  };
+
+  it("prefers organisation, market and asset-specific authority rules deterministically", () => {
+    const selected = selectAuthorityPolicy({
+      candidates: [
+        { ...base, id: "global", organizationId: null, marketId: null },
+        { ...base, id: "market", organizationId: null, marketId: "market-1", version: 2 },
+        { ...base, id: "org-asset", organizationId: "org-1", marketId: "market-1", assetClass: "apartment", version: 1 },
+      ],
+      organizationId: "org-1",
+      marketId: "market-1",
+      assetClass: "apartment",
+      scheme: "CADASTRAL_ID",
+      authorityNamespace: "ZZ:CADASTRE:CITY-1",
+    });
+    expect(selected?.id).toBe("org-asset");
+  });
+
+  it("does not use a policy from another tenant or namespace", () => {
+    const selected = selectAuthorityPolicy({
+      candidates: [{ ...base, id: "other", organizationId: "org-2", marketId: null }],
+      organizationId: "org-1",
+      marketId: "market-1",
+      assetClass: "apartment",
+      scheme: "CADASTRAL_ID",
+      authorityNamespace: "ZZ:CADASTRE:CITY-1",
+    });
+    expect(selected).toBeUndefined();
   });
 });
