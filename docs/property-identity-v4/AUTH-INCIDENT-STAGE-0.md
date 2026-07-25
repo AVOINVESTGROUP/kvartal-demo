@@ -1,7 +1,9 @@
 # Auth Foundation incident: Stage 0 evidence and rollback preparation
 
-Date: 2026-07-25  
-Environment: `kvartal-dev` only  
+Date: 2026-07-25
+
+Environment: `kvartal-dev` only
+
 Status: Stage 0 completed with one explicitly recorded evidence limitation. No IAM grant, bootstrap, code rollout, traffic change or Firebase user mutation was performed.
 
 ## 1. Confirmed request chain
