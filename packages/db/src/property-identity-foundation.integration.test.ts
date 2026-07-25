@@ -3,7 +3,6 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { GenericContainer, Wait, type StartedTestContainer } from "testcontainers";
 import { PrismaClient } from "@prisma/client";
-import type { ActorContext } from "@kvartal/auth";
 import { handlePropertyIdentityRequest } from "../../../apps/office-api/src/property-identity.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
@@ -12,12 +11,13 @@ const run = promisify(exec);
 let container: StartedTestContainer;
 let prisma: PrismaClient;
 let fixtureSequence = 0;
+type PropertyIdentityActor = Parameters<typeof handlePropertyIdentityRequest>[0]["actor"];
 
 async function callPropertyIdentityApi(input: {
   method: string;
   path: string;
   body?: Record<string, unknown>;
-  actor: ActorContext;
+  actor: PropertyIdentityActor;
   headers?: Record<string, string>;
   env?: NodeJS.ProcessEnv;
 }) {
@@ -368,7 +368,7 @@ describe("Property Identity v4 database invariants", () => {
         configuredByUserId: fixture.user.id,
       },
     });
-    const actor: ActorContext = Object.freeze({
+    const actor: PropertyIdentityActor = Object.freeze({
       actorType: "USER",
       appUserId: fixture.user.id,
       externalIdentityId: "test-external-identity",
@@ -478,7 +478,7 @@ describe("Property Identity v4 database invariants", () => {
     });
     expect(linked.body).toMatchObject({ status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: confirmed.body.propertyObjectId });
 
-    const otherActor = { ...actor, appUserId: "another-user", correlationId: "other-actor" } as ActorContext;
+    const otherActor = { ...actor, appUserId: "another-user", correlationId: "other-actor" } as PropertyIdentityActor;
     const forbidden = await callPropertyIdentityApi({ method: "GET", path: `/api/v1/admin/property-identity/submissions/${submissionId}`, actor: otherActor });
     expect(forbidden.status).toBe(403);
   });
