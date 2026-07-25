@@ -59,6 +59,8 @@ Required runtime secret/configuration names are:
 
 Values must come from the approved secret-management path and must never be committed. The configured encryption version and every active/retiring digest version must exist in `PropertyIdentityCryptoKeyVersion`.
 
+The foundation migration registers the initial `v1` metadata row only. It contains no key material and does not enable registry rollout; the matching encryption and digest keys must be provisioned independently in Secret Manager before the API is deployed.
+
 ## Authority and rollout policy
 
 Authority rules are selected deterministically by organisation, market, asset class and policy version. A rule may use an exact namespace or a trailing-wildcard namespace. Rules that do not permit automatic exact matching are retained as correction-required observations rather than silently accepted.

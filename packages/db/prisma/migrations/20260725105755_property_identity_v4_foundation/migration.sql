@@ -315,6 +315,10 @@ CREATE TABLE "PropertyIdentityCryptoKeyVersion" (
     CONSTRAINT "PropertyIdentityCryptoKeyVersion_pkey" PRIMARY KEY ("version")
 );
 
+-- Register only the initial key metadata. Key material is provided separately by Secret Manager.
+INSERT INTO "PropertyIdentityCryptoKeyVersion" ("version", "status", "activatedAt")
+VALUES ('v1', 'ACTIVE', CURRENT_TIMESTAMP);
+
 -- CreateIndex
 CREATE INDEX "PropertyRegistrationSubmission_organizationId_status_update_idx" ON "PropertyRegistrationSubmission"("organizationId", "status", "updatedAt");
 
