@@ -1,8 +1,8 @@
 "use client";
 
-import { signInWithPopup } from "firebase/auth";
+import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithPopup, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
 export default function LoginClient({ error }: { error?: string }) {
@@ -11,53 +11,77 @@ export default function LoginClient({ error }: { error?: string }) {
   const [busy, setBusy] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
 
+  const createServerSession = useCallback(async (credential: UserCredential) => {
+    const csrf = await fetch("/api/auth/csrf", { cache: "no-store" }).then((response) => response.json()) as { csrfToken: string };
+    const idToken = await credential.user.getIdToken();
+    const response = await fetch("/api/auth/firebase/session", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-csrf-token": csrf.csrfToken },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+  }, []);
+
+  const mobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile|FBAN|FBAV|Instagram|Line|WhatsApp|WA Business/i.test(navigator.userAgent);
+  const popupBlocked = (caught: unknown) => {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    return message.includes("auth/popup-blocked") || message.includes("auth/cancelled-popup-request");
+  };
+
+  useEffect(() => {
+    if (!configured) return;
+    let cancelled = false;
+    void (async () => {
+      setBusy(true);
+      try {
+        const credential = await getRedirectResult(getFirebaseAuth());
+        if (!credential) return;
+        await createServerSession(credential);
+        await signOut(getFirebaseAuth());
+        await setPersistence(getFirebaseAuth(), inMemoryPersistence);
+        sessionStorage.removeItem("kvartal-auth-redirect");
+        if (!cancelled) router.replace("/");
+      } catch (caught) {
+        if (!cancelled) setClientError(caught instanceof Error ? caught.message : "Вход не завершён.");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [configured, createServerSession, router]);
+
   async function signIn() {
     setBusy(true);
     setClientError(null);
-
     try {
-      const credential = await signInWithPopup(getFirebaseAuth(), googleProvider);
-      const idToken = await credential.user.getIdToken();
-      const response = await fetch("/api/auth/firebase/session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ idToken }),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
+      const auth = getFirebaseAuth();
+      if (mobile()) {
+        await setPersistence(auth, browserSessionPersistence);
+        sessionStorage.setItem("kvartal-auth-redirect", "1");
+        await signInWithRedirect(auth, googleProvider);
+        return;
       }
-
+      await setPersistence(auth, inMemoryPersistence);
+      const credential = await signInWithPopup(auth, googleProvider);
+      await createServerSession(credential);
+      await signOut(auth);
       router.replace("/");
     } catch (caught) {
-      setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
-    } finally {
-      setBusy(false);
-    }
+      if (popupBlocked(caught)) {
+        const auth = getFirebaseAuth();
+        await setPersistence(auth, browserSessionPersistence);
+        sessionStorage.setItem("kvartal-auth-redirect", "1");
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+      setClientError(caught instanceof Error ? caught.message : "Вход не завершён.");
+    } finally { setBusy(false); }
   }
 
-  return (
-    <main className="grid min-h-screen place-items-center bg-kv-bg px-5 text-kv-ink">
-      <section className="w-full max-w-[460px] rounded-md border border-kv-line bg-white p-6 shadow-sm">
-        <div className="text-[12px] font-black uppercase tracking-[0.18em] text-kv-red">KVARTAL ADMIN</div>
-        <h1 className="mt-2 text-2xl font-black text-kv-navy">Вход в админку организации</h1>
-        <p className="mt-3 text-[14px] leading-6 text-kv-muted">
-          Вход только через Google аккаунт. Доступ получают собственники и администраторы организации, назначенные через Fixer.guru.
-        </p>
-        {error ? <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">Вход не завершен. Попробуйте еще раз.</p> : null}
-        {clientError ? <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">{clientError}</p> : null}
-        {!configured ? (
-          <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm font-bold text-amber-700">Firebase Auth не настроен в окружении App Hosting.</p>
-        ) : null}
-        <button
-          type="button"
-          onClick={signIn}
-          disabled={!configured || busy}
-          className="mt-5 inline-flex w-full justify-center rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white disabled:pointer-events-none disabled:bg-kv-muted"
-        >
-          {busy ? "Проверяем доступ..." : "Войти через Google"}
-        </button>
-      </section>
-    </main>
-  );
+  return <main className="grid min-h-screen place-items-center bg-kv-bg px-5 text-kv-ink"><section className="w-full max-w-[460px] rounded-md border border-kv-line bg-white p-6 shadow-sm">
+    <div className="text-[12px] font-black uppercase tracking-[0.18em] text-kv-red">KVARTAL ADMIN</div>
+    <h1 className="mt-2 text-2xl font-black text-kv-navy">Безопасный вход в кабинет</h1>
+    <p className="mt-3 text-[14px] leading-6 text-kv-muted">Войдите через привязанный Google-аккаунт. Права организации и офиса загружаются из PostgreSQL.</p>
+    {error || clientError ? <p className="mt-4 rounded-md bg-red-50 p-3 text-sm font-bold text-kv-red">{clientError ?? "Вход не завершён. Попробуйте ещё раз."}</p> : null}
+    {!configured ? <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm font-bold text-amber-700">Firebase Auth не настроен в окружении App Hosting.</p> : null}
+    <button type="button" onClick={signIn} disabled={!configured || busy} className="mt-5 inline-flex w-full justify-center rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white disabled:pointer-events-none disabled:bg-kv-muted">{busy ? "Проверяем доступ..." : "Войти через Google"}</button>
+  </section></main>;
 }

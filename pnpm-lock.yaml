@@ -20,6 +20,9 @@ importers:
 
   apps/kvartal-admin:
     dependencies:
+      '@kvartal/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       firebase:
         specifier: ^12.14.0
         version: 12.14.0

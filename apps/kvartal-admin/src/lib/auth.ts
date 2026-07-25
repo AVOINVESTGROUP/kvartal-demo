@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createHmac, createVerify, timingSafeEqual } from "node:crypto";
-import { fetchBackendJson } from "./server-api";
+import { fetchBackendJson, fetchSecureActorBackendJson } from "./server-api";
+import { FIREBASE_SESSION_COOKIE, firebaseAdminAuth, type ActorContext } from "@kvartal/auth";
 
 export type AdminSession = {
   email: string;
@@ -205,12 +206,20 @@ export async function setAdminSession(session: AdminSession) {
 
 export async function getAdminSession() {
   const cookieStore = await cookies();
-  return decodeSession(cookieStore.get(sessionCookieName)?.value);
+  const value = cookieStore.get(FIREBASE_SESSION_COOKIE)?.value;
+  if (!value) return null;
+  try {
+    const decoded = await firebaseAdminAuth().verifySessionCookie(value, true);
+    const actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(process.env.OFFICE_API_BASE_URL ?? process.env.PARTNER_API_BASE_URL, "/api/v1/admin/actor-context")).actor;
+    const roles = [...actor.platformRoles, ...actor.organizationMemberships.flatMap((item) => item.roles), ...actor.officeMemberships.flatMap((item) => item.roles)];
+    return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture, organizationSlug: process.env.PARTNER_ORGANIZATION_SLUG ?? "kvartal-moscow", roles };
+  } catch { return null; }
 }
 
 export async function clearAdminSession() {
   const cookieStore = await cookies();
   cookieStore.delete(sessionCookieName);
+  cookieStore.delete(FIREBASE_SESSION_COOKIE);
 }
 
 export async function requireAdminSession() {

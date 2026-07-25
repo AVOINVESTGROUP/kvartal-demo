@@ -6,7 +6,7 @@ const root = resolve(process.cwd(), "../..");
 const read = (path: string) => readFileSync(resolve(root, path), "utf8");
 
 describe("browser session source contracts", () => {
-  for (const app of ["partner-admin", "platform-admin"]) {
+  for (const app of ["partner-admin", "platform-admin", "kvartal-admin"]) {
     it(`${app} uses memory popup, session-only redirect, sign-out and CSRF`, () => {
       const source = read(`apps/${app}/src/app/login/LoginClient.tsx`);
       expect(source).toContain("inMemoryPersistence"); expect(source).toContain("browserSessionPersistence");
