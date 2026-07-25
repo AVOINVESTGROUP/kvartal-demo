@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createHmac, createVerify, timingSafeEqual } from "node:crypto";
+import { createHmac, createVerify } from "node:crypto";
 import { fetchBackendJson } from "./server-api";
+import { fetchSecureActorBackendJson } from "./server-api";
+import { FIREBASE_SESSION_COOKIE, firebaseAdminAuth, type ActorContext } from "@kvartal/auth";
 
 export type AdminSession = {
   email: string;
@@ -85,32 +87,6 @@ async function sign(payload: string) {
 async function encodeSession(session: AdminSession) {
   const payload = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
   return `${payload}.${await sign(payload)}`;
-}
-
-async function decodeSession(value: string | undefined) {
-  if (!value || !(await authSecret())) {
-    return null;
-  }
-
-  const [payload, signature] = value.split(".");
-
-  if (!payload || !signature) {
-    return null;
-  }
-
-  const expected = await sign(payload);
-  const actualBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-
-  if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as AdminSession;
-  } catch {
-    return null;
-  }
 }
 
 function decodeBase64Url(value: string) {
@@ -206,7 +182,14 @@ export async function setAdminSession(session: AdminSession) {
 
 export async function getAdminSession() {
   const cookieStore = await cookies();
-  return decodeSession(cookieStore.get(sessionCookieName)?.value);
+  const value = cookieStore.get(FIREBASE_SESSION_COOKIE)?.value;
+  if (!value) return null;
+  try {
+    const decoded = await firebaseAdminAuth().verifySessionCookie(value, true);
+    const actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(process.env.OFFICE_API_BASE_URL ?? process.env.PARTNER_API_BASE_URL, "/api/v1/admin/actor-context")).actor;
+    const roles = [...actor.platformRoles, ...actor.organizationMemberships.flatMap((item) => item.roles), ...actor.officeMemberships.flatMap((item) => item.roles)];
+    return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture, organizationSlug: process.env.PARTNER_ORGANIZATION_SLUG ?? "", roles };
+  } catch { return null; }
 }
 
 export async function clearAdminSession() {
@@ -217,7 +200,7 @@ export async function clearAdminSession() {
 export async function requireAdminSession() {
   const session = await getAdminSession();
 
-  if (!session) {
+  if (!session || !session.roles.some((role) => ["platform_owner", "platform_admin", "organization_owner", "organization_admin"].includes(role))) {
     redirect("/login");
   }
 

@@ -11,13 +11,16 @@
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
     "prisma:format": "prisma format --schema prisma/schema.prisma"
+    ,"test": "vitest run"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
   },
   "devDependencies": {
     "prisma": "^5.22.0",
+    "testcontainers": "^10.28.0",
     "tsx": "^4.19.2",
+    "vitest": "^3.2.4",
     "typescript": "^5.0.0"
   }
 }

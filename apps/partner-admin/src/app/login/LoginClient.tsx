@@ -1,8 +1,8 @@
 "use client";
 
-import { getRedirectResult, signInWithPopup, signInWithRedirect, type UserCredential } from "firebase/auth";
+import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithPopup, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
 export default function LoginClient({ error, organizationSlug }: { error?: string; organizationSlug?: string }) {
@@ -11,18 +11,19 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
   const [busy, setBusy] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
 
-  async function createServerSession(credential: UserCredential) {
+  const createServerSession = useCallback(async (credential: UserCredential) => {
+    const csrf = await fetch("/api/auth/csrf", { cache: "no-store" }).then((response) => response.json()) as { csrfToken: string };
     const idToken = await credential.user.getIdToken();
     const response = await fetch("/api/auth/firebase/session", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "x-csrf-token": csrf.csrfToken },
       body: JSON.stringify({ idToken, organizationSlug }),
     });
 
     if (!response.ok) {
       throw new Error(await response.text());
     }
-  }
+  }, [organizationSlug]);
 
   function shouldUseRedirectFirst() {
     if (typeof navigator === "undefined") {
@@ -56,6 +57,9 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
         }
 
         await createServerSession(credential);
+        await signOut(getFirebaseAuth());
+        await setPersistence(getFirebaseAuth(), inMemoryPersistence);
+        sessionStorage.removeItem("kvartal-auth-redirect");
 
         if (!cancelled) {
           router.replace("/");
@@ -76,7 +80,7 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
     return () => {
       cancelled = true;
     };
-  }, [configured, router]);
+  }, [configured, createServerSession, router]);
 
   async function signIn() {
     setBusy(true);
@@ -86,16 +90,23 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
       const auth = getFirebaseAuth();
 
       if (shouldUseRedirectFirst()) {
+        await setPersistence(auth, browserSessionPersistence);
+        sessionStorage.setItem("kvartal-auth-redirect", "1");
         await signInWithRedirect(auth, googleProvider);
         return;
       }
 
+      await setPersistence(auth, inMemoryPersistence);
       const credential = await signInWithPopup(auth, googleProvider);
       await createServerSession(credential);
+      await signOut(auth);
       router.replace("/");
     } catch (caught) {
       if (isPopupBlocked(caught)) {
-        await signInWithRedirect(getFirebaseAuth(), googleProvider);
+        const auth = getFirebaseAuth();
+        await setPersistence(auth, browserSessionPersistence);
+        sessionStorage.setItem("kvartal-auth-redirect", "1");
+        await signInWithRedirect(auth, googleProvider);
         return;
       }
 

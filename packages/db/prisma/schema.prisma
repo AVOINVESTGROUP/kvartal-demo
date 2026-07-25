@@ -32,6 +32,63 @@ enum PlatformRole {
   platform_viewer
 }
 
+enum ExternalIdentityProvider {
+  FIREBASE
+}
+
+enum ExternalIdentityStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ExternalIdentityBindingRequestType {
+  BIND
+  REACTIVATE
+}
+
+enum ExternalIdentityBindingRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ExternalIdentityBindingEventType {
+  REQUESTED
+  CANDIDATE_SELECTED
+  CANDIDATE_USER_CREATED
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  IDENTITY_REVOKED
+  REACTIVATION_REQUESTED
+  IDENTITY_REACTIVATED
+  LOGIN_BLOCKED
+  ACTION_DENIED
+  BOOTSTRAP_COMPLETED
+}
+
+enum ExternalIdentityAuditActorType {
+  USER
+  SYSTEM_SERVICE
+  BOOTSTRAP_SYSTEM
+}
+
+enum ExternalIdentityBootstrapStatus {
+  AVAILABLE
+  COMPLETED
+  DISABLED
+}
+
+enum MutationIdempotencyStatus {
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
 enum OrganizationRole {
   organization_owner
   organization_admin
@@ -486,29 +543,154 @@ model Market {
 }
 
 model AppUser {
-  id                             String                          @id @default(cuid())
-  firebaseUid                    String                          @unique
-  email                          String                          @unique
+  id                             String                           @id @default(cuid())
+  firebaseUid                    String                           @unique
+  email                          String                           @unique
   displayName                    String?
-  active                         Boolean                         @default(true)
-  createdAt                      DateTime                        @default(now())
-  updatedAt                      DateTime                        @updatedAt
+  active                         Boolean                          @default(true)
+  createdAt                      DateTime                         @default(now())
+  updatedAt                      DateTime                         @updatedAt
   platformRoleAssignments        PlatformRoleAssignment[]
   organizationMemberships        OrganizationMembership[]
   officeMemberships              OfficeMembership[]
   createdPropertyObjects         PropertyObject[]
   createdIntakeSubmissions       PropertyIntakeSubmission[]
   createdAIDrafts                PropertyAIDraft[]
-  uploadedLegalDocuments         LegalDocument[]                 @relation("LegalDocumentUploadedBy")
-  uploadedPropertyMedia          PropertyMedia[]                 @relation("PropertyMediaUploadedBy")
-  uploadedPropertyDocuments      PropertyDocument[]              @relation("PropertyDocumentUploadedBy")
-  createdPartnerInteractions     PartnerInteraction[]            @relation("PartnerInteractionCreatedBy")
-  sentInteractionMessages        InteractionMessage[]            @relation("InteractionMessageSender")
-  uploadedInteractionAttachments InteractionAttachment[]         @relation("InteractionAttachmentUploadedBy")
+  uploadedLegalDocuments         LegalDocument[]                  @relation("LegalDocumentUploadedBy")
+  uploadedPropertyMedia          PropertyMedia[]                  @relation("PropertyMediaUploadedBy")
+  uploadedPropertyDocuments      PropertyDocument[]               @relation("PropertyDocumentUploadedBy")
+  createdPartnerInteractions     PartnerInteraction[]             @relation("PartnerInteractionCreatedBy")
+  sentInteractionMessages        InteractionMessage[]             @relation("InteractionMessageSender")
+  uploadedInteractionAttachments InteractionAttachment[]          @relation("InteractionAttachmentUploadedBy")
   decidedPropertyAIProposals     PropertyObjectAIFieldProposal[]
-  reviewedPartners               PartnerReview[]                 @relation("PartnerReviewReviewer")
+  reviewedPartners               PartnerReview[]                  @relation("PartnerReviewReviewer")
   reviewedLegalDocuments         LegalDocumentReview[]
   auditLogs                      AuditLog[]
+  externalIdentities             AppUserExternalIdentity[]        @relation("ExternalIdentityUser")
+  boundExternalIdentities        AppUserExternalIdentity[]        @relation("ExternalIdentityBoundBy")
+  revokedExternalIdentities      AppUserExternalIdentity[]        @relation("ExternalIdentityRevokedBy")
+  reactivatedExternalIdentities  AppUserExternalIdentity[]        @relation("ExternalIdentityReactivatedBy")
+  requestedIdentityBindings      ExternalIdentityBindingRequest[] @relation("BindingRequestedByUser")
+  candidateIdentityBindings      ExternalIdentityBindingRequest[] @relation("BindingCandidateUser")
+  reviewedIdentityBindings       ExternalIdentityBindingRequest[] @relation("BindingReviewedByUser")
+  externalIdentityEvents         ExternalIdentityBindingEvent[]   @relation("BindingEventActorUser")
+  bootstrapStates                ExternalIdentityBootstrapState[] @relation("BootstrapTargetUser")
+}
+
+model AppUserExternalIdentity {
+  id                    String                           @id @default(cuid())
+  appUserId             String
+  provider              ExternalIdentityProvider
+  subject               String
+  status                ExternalIdentityStatus           @default(ACTIVE)
+  boundAt               DateTime                         @default(now())
+  boundByUserId         String?
+  revokedAt             DateTime?
+  revokedByUserId       String?
+  revocationReason      String?                          @db.Text
+  reactivatedAt         DateTime?
+  reactivatedByUserId   String?
+  rowVersion            Int                              @default(1)
+  createdAt             DateTime                         @default(now())
+  updatedAt             DateTime                         @updatedAt
+  appUser               AppUser                          @relation("ExternalIdentityUser", fields: [appUserId], references: [id])
+  boundByUser           AppUser?                         @relation("ExternalIdentityBoundBy", fields: [boundByUserId], references: [id], onDelete: SetNull)
+  revokedByUser         AppUser?                         @relation("ExternalIdentityRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  reactivatedByUser     AppUser?                         @relation("ExternalIdentityReactivatedBy", fields: [reactivatedByUserId], references: [id], onDelete: SetNull)
+  targetBindingRequests ExternalIdentityBindingRequest[]
+  events                ExternalIdentityBindingEvent[]
+  bootstrapStates       ExternalIdentityBootstrapState[]
+
+  @@unique([provider, subject])
+  @@index([appUserId, status])
+  @@index([updatedAt, id])
+}
+
+model ExternalIdentityBindingRequest {
+  id                       String                               @id @default(cuid())
+  requestType              ExternalIdentityBindingRequestType
+  provider                 ExternalIdentityProvider
+  subject                  String
+  subjectDigest            String
+  verifiedEmail            String?
+  emailVerified            Boolean                              @default(false)
+  candidateAppUserId       String?
+  targetExternalIdentityId String?
+  requestedByProvider      ExternalIdentityProvider
+  requestedBySubject       String
+  requestedBySubjectDigest String
+  requestedByAppUserId     String?
+  requestedAt              DateTime                             @default(now())
+  status                   ExternalIdentityBindingRequestStatus @default(PENDING)
+  rowVersion               Int                                  @default(1)
+  reviewedByUserId         String?
+  reviewedBySubject        String?
+  reviewedAt               DateTime?
+  reason                   String?                              @db.Text
+  expiresAt                DateTime
+  createdAt                DateTime                             @default(now())
+  updatedAt                DateTime                             @updatedAt
+  candidateAppUser         AppUser?                             @relation("BindingCandidateUser", fields: [candidateAppUserId], references: [id], onDelete: SetNull)
+  targetExternalIdentity   AppUserExternalIdentity?             @relation(fields: [targetExternalIdentityId], references: [id])
+  requestedByAppUser       AppUser?                             @relation("BindingRequestedByUser", fields: [requestedByAppUserId], references: [id], onDelete: SetNull)
+  reviewedByUser           AppUser?                             @relation("BindingReviewedByUser", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  events                   ExternalIdentityBindingEvent[]
+
+  @@index([requestType, provider, subject, status])
+  @@index([requestedAt, id])
+  @@index([expiresAt, status])
+}
+
+model ExternalIdentityBindingEvent {
+  id                 String                           @id @default(cuid())
+  eventType          ExternalIdentityBindingEventType
+  requestId          String?
+  externalIdentityId String?
+  actorType          ExternalIdentityAuditActorType
+  actorAppUserId     String?
+  actorProvider      ExternalIdentityProvider?
+  actorSubjectDigest String?
+  previousStatus     String?
+  nextStatus         String?
+  reasonCode         String?
+  metadata           Json?
+  createdAt          DateTime                         @default(now())
+  request            ExternalIdentityBindingRequest?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  externalIdentity   AppUserExternalIdentity?         @relation(fields: [externalIdentityId], references: [id])
+  actorAppUser       AppUser?                         @relation("BindingEventActorUser", fields: [actorAppUserId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([externalIdentityId, createdAt])
+  @@index([createdAt])
+}
+
+model ExternalIdentityBootstrapState {
+  key                String                          @id
+  status             ExternalIdentityBootstrapStatus @default(AVAILABLE)
+  targetAppUserId    String?
+  externalIdentityId String?
+  completedAt        DateTime?
+  auditEventId       String?
+  rowVersion         Int                             @default(1)
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
+  targetAppUser      AppUser?                        @relation("BootstrapTargetUser", fields: [targetAppUserId], references: [id])
+  externalIdentity   AppUserExternalIdentity?        @relation(fields: [externalIdentityId], references: [id])
+}
+
+model MutationIdempotency {
+  id              String                    @id @default(cuid())
+  scope           String                    @unique
+  requestHash     String
+  status          MutationIdempotencyStatus @default(IN_PROGRESS)
+  responseStatus  Int?
+  responseBody    Json?
+  responseHeaders Json?
+  terminalAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([status, terminalAt])
 }
 
 model PlatformRoleAssignment {

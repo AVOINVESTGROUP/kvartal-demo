@@ -3,6 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
+import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ApiAuthPolicy } from "@kvartal/auth";
+import { randomUUID as authRandomUUID } from "node:crypto";
 
 export const serviceName = "office-api";
 
@@ -32,7 +34,17 @@ export const ownedRoutes = [
   "/api/v1/admin/client-intents",
   "/api/v1/admin/cobroker-requests",
   "/api/v1/admin/deal-rooms",
+  "/api/v1/admin/actor-context",
 ] as const;
+
+export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
+  { matches: (path) => path === "/healthz" || path === "/readyz" || path.startsWith("/api/v1/public/"), policy: "PUBLIC" },
+  { matches: (path) => path === "/api/v1/admin/actor-context", policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path === "/api/v1/platform/market-insights/refresh", policy: "LEGACY_SERVICE_AUTH" },
+  { matches: (path) => path.startsWith("/api/v1/admin/"), policy: "LEGACY_SERVICE_AUTH" },
+];
+
+export function authPolicyForPath(path: string) { return routeAuthPolicies.find((entry) => entry.matches(path))?.policy; }
 
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
@@ -1849,6 +1861,25 @@ async function getExchangeRates(): Promise<Record<string, number>> {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const correlationId = typeof request.headers["x-correlation-id"] === "string" ? request.headers["x-correlation-id"] : authRandomUUID();
+  const policy = authPolicyForPath(url.pathname);
+  if (!policy) { sendError(response, 500, "DEPLOYMENT_PREREQUISITE_MISSING", "Route authentication policy is missing."); return; }
+  if (policy === "ACTOR_AUTH_REQUIRED") {
+    try {
+      const actor = await resolveUserActor({
+        authorization: request.headers.authorization, correlationId,
+        verifySession: (token, checkRevoked) => firebaseAdminAuth().verifySessionCookie(token, checkRevoked),
+        findIdentity: async (provider, subject) => prisma.appUserExternalIdentity.findUnique({
+          where: { provider_subject: { provider, subject } },
+          include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } },
+        }),
+      });
+      if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
+    } catch (caught) {
+      const error = caught as { code?: string; status?: number; message?: string };
+      sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId)); return;
+    }
+  }
 
   if (url.pathname === "/healthz") {
     sendJson(response, 200, { ok: true, service: serviceName });

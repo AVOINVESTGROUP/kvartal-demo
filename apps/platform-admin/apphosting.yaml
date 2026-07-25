@@ -13,6 +13,8 @@ env:
     value: "https://kvartal-platform-api-544286782827.europe-west4.run.app"
   - variable: PARTNER_API_BASE_URL
     value: "https://kvartal-office-api-qslxzoismq-ez.a.run.app"
+  - variable: PLATFORM_ADMIN_ORIGIN
+    value: "https://fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app"
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY
     value: "AIzaSyDQfT2oRZWT6FoJPXXNbb5U2sOg1dXED3M"
   - variable: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN

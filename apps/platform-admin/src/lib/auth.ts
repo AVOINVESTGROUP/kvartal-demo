@@ -1,7 +1,8 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createHmac, createVerify, timingSafeEqual } from "node:crypto";
-import { fetchBackendJson } from "./server-api";
+import { createHmac, createVerify } from "node:crypto";
+import { fetchSecureActorBackendJson } from "./server-api";
+import { FIREBASE_SESSION_COOKIE, firebaseAdminAuth, type ActorContext } from "@kvartal/auth";
 
 export type PlatformSession = {
   email: string;
@@ -85,35 +86,14 @@ async function encodeSession(session: PlatformSession) {
   return `${payload}.${await sign(payload)}`;
 }
 
-async function decodeSession(value: string | undefined) {
-  if (!value || !(await authSecret())) {
-    return null;
-  }
-
-  const [payload, signature] = value.split(".");
-
-  if (!payload || !signature) {
-    return null;
-  }
-
-  const expected = await sign(payload);
-  const actualBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-
-  if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as PlatformSession;
-  } catch {
-    return null;
-  }
-}
-
 export async function getPlatformSession() {
   const cookieStore = await cookies();
-  return decodeSession(cookieStore.get(sessionCookieName)?.value);
+  const value = cookieStore.get(FIREBASE_SESSION_COOKIE)?.value;
+  if (!value) return null;
+  try {
+    const decoded = await firebaseAdminAuth().verifySessionCookie(value, true);
+    return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture };
+  } catch { return null; }
 }
 
 export async function setPlatformSession(session: PlatformSession) {
@@ -221,30 +201,23 @@ export async function requirePlatformOwner() {
     redirect("/login");
   }
 
-  const access = await fetchBackendJson<PlatformAccessResponse>(
-    process.env.PLATFORM_API_BASE_URL,
-    `/api/v1/platform/access?email=${encodeURIComponent(session.email)}&displayName=${encodeURIComponent(session.name ?? "")}`,
-  );
+  let actor: ActorContext;
+  try { actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/actor-context")).actor; }
+  catch { redirect("/unauthorized"); }
 
-  if (!access?.authorized) {
+  if (!actor.platformRoles.includes("platform_owner")) {
     redirect("/unauthorized");
   }
 
   return {
     session,
     access: {
-      authorized: access.authorized,
-      platformRoles: access.platformRoles,
-      organizationMemberships: access.organizationMemberships,
+      authorized: true,
+      platformRoles: [...actor.platformRoles],
+      organizationMemberships: [],
     },
   };
 }
-
-type PlatformAccessResponse = PlatformAccess & {
-  ok: boolean;
-  email: string;
-  displayName?: string | null;
-};
 
 export async function currentOrigin() {
   const headerStore = await headers();

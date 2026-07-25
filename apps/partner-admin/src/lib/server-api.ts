@@ -1,3 +1,5 @@
+import { secureActorHeaders } from "@kvartal/auth";
+
 export async function getIdentityToken(audience: string) {
   try {
     const response = await fetch(
@@ -13,6 +15,28 @@ export async function getIdentityToken(audience: string) {
   } catch {
     return null;
   }
+}
+
+export async function fetchSecureActorBackendJson<T>(baseUrl: string | undefined, path: string, init: RequestInit = {}): Promise<T> {
+  if (!baseUrl) throw new Error("Secure backend URL is not configured.");
+  const [{ cookies }, serviceToken] = await Promise.all([import("next/headers"), getIdentityToken(baseUrl)]);
+  const session = (await cookies()).get("__Host-kvartal_session")?.value;
+  if (!session) throw new Error("REAUTH_REQUIRED");
+  const response = await fetch(`${baseUrl}${path}`, {
+    ...init, cache: "no-store",
+    headers: {
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...secureActorHeaders(serviceToken, session),
+      ...(init.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? `Backend request failed with ${response.status}`), { status: response.status, payload });
+  return payload as T;
+}
+
+export function writeSecureActorBackendJson<T>(baseUrl: string | undefined, path: string, method: "POST" | "PATCH", body: unknown, headers: Record<string, string>) {
+  return fetchSecureActorBackendJson<T>(baseUrl, path, { method, headers, body: JSON.stringify(body) });
 }
 
 async function getAccessToken() {
