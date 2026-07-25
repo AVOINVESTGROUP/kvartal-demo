@@ -700,3 +700,14 @@
 - Created on-demand insurance backup `1785001724586`; status `SUCCESSFUL`.
 - Verified both July migrations are additive and prepared a matched rollback matrix covering all three App Hosting builds plus both API revisions and image digests.
 - Full evidence and Stage 1 gate: `docs/property-identity-v4/AUTH-INCIDENT-STAGE-0.md`.
+
+## Auth Foundation incident resolved in dev (2026-07-25)
+
+- Permanently granted the minimal read-only `roles/firebaseauth.viewer` role to the actual `kvartal-office-api` and `kvartal-platform-api` runtime service accounts.
+- Completed the controlled one-time Firebase platform-owner bootstrap for the existing `abtiurin@gmail.com` application user.
+- Verified the database contains one `ACTIVE` Firebase external identity, a `COMPLETED` bootstrap state and its `BOOTSTRAP_COMPLETED` audit event.
+- Verified authenticated readiness for both APIs and `200` responses from all three hosted login pages.
+- Synthetic end-to-end Firebase session verification passed twice against the currently serving office and platform `/actor-context` routes: both returned `200`, `platform_owner`, two organization memberships and one office membership.
+- Deleted temporary Cloud Run jobs, removed temporary operator and signing permissions, disabled the one-time bootstrap secret versions and stopped the local Cloud SQL proxy.
+- No application code deployment, traffic switch, rollback or migration reversal was required.
+- Resolution report: `docs/property-identity-v4/AUTH-INCIDENT-RESOLUTION.md`.
