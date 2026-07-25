@@ -744,6 +744,24 @@ async function confirmSubmission(input: {
             representationSide: "originator",
             exclusivity: "unknown",
             canBeShownByOtherOffices: false,
+            ...(typeof physical.title === "string" && physical.title.trim() && typeof physical.addressDisplay === "string" && physical.addressDisplay.trim() ? {
+              localizations: {
+                create: [
+                  {
+                    language: "ru",
+                    title: physical.title.trim(),
+                    description: typeof physical.description === "string" ? physical.description.trim() || null : null,
+                    addressDisplay: physical.addressDisplay.trim(),
+                  },
+                  ...(typeof physical.titleEn === "string" && physical.titleEn.trim() ? [{
+                    language: "en" as const,
+                    title: physical.titleEn.trim(),
+                    description: typeof physical.descriptionEn === "string" ? physical.descriptionEn.trim() || null : null,
+                    addressDisplay: typeof physical.addressDisplayEn === "string" ? physical.addressDisplayEn.trim() || physical.addressDisplay.trim() : physical.addressDisplay.trim(),
+                  }] : []),
+                ],
+              },
+            } : {}),
           },
         });
         const profile = await tx.propertyIdentityProfile.create({
@@ -852,6 +870,50 @@ async function listSubmissions(prisma: PrismaClient, actor: ActorContext, url: U
   return { ok: true, submissions };
 }
 
+async function getPropertyIdentityContext(prisma: PrismaClient, actor: ActorContext) {
+  const organisationAdminIds = new Set(actor.organizationMemberships
+    .filter((membership) => membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"))
+    .map((membership) => membership.organizationId));
+  const scopeKeys = new Set<string>();
+  const scopes = actor.officeMemberships
+    .filter((membership) => organisationAdminIds.has(membership.organizationId) || membership.roles.some((role) => role === "office_owner" || role === "office_admin" || role === "broker"))
+    .filter((membership) => {
+      const key = `${membership.organizationId}:${membership.officeId}`;
+      if (scopeKeys.has(key)) return false;
+      scopeKeys.add(key);
+      return true;
+    });
+  if (!scopes.length) throw new ActorAuthError("FORBIDDEN", 403, "No writable partner office is available.");
+  const [offices, markets, rolloutCandidates, authorityPolicies] = await Promise.all([
+    prisma.office.findMany({
+      where: { OR: scopes.map((scope) => ({ id: scope.officeId, organizationId: scope.organizationId })), status: "active" },
+      select: { id: true, organizationId: true, legalName: true, city: true, country: true, defaultMarketId: true, organization: { select: { legalName: true } } },
+      orderBy: [{ organizationId: "asc" }, { legalName: "asc" }],
+    }),
+    prisma.market.findMany({ where: { active: true }, select: { id: true, slug: true, city: true, country: true, assetClasses: true, defaultCurrency: true }, orderBy: [{ country: "asc" }, { city: "asc" }] }),
+    prisma.propertyIdentityRolloutPolicy.findMany(),
+    prisma.propertyIdentityAuthorityPolicy.findMany({
+      where: { active: true, effectiveFrom: { lte: new Date() }, OR: [{ effectiveUntil: null }, { effectiveUntil: { gt: new Date() } }] },
+      select: { id: true, organizationId: true, marketId: true, jurisdiction: true, assetClass: true, subjectScope: true, identifierScheme: true, authorityNamespacePattern: true, normalizerId: true, normalizerVersion: true, automaticExactMatchAllowed: true, version: true },
+    }),
+  ]);
+  const enabledScopes = offices.flatMap((office) => markets.map((market) => ({
+    organizationId: office.organizationId,
+    officeId: office.id,
+    marketId: market.id,
+    rollout: selectEffectivePropertyIdentityRollout(rolloutCandidates, office.organizationId, market.id),
+  })));
+  return {
+    ok: true,
+    offices: offices.map((office) => ({ ...office, organizationName: office.organization.legalName, organization: undefined })),
+    markets,
+    rollout: enabledScopes,
+    authorityPolicies: authorityPolicies.filter((policy) =>
+      (!policy.organizationId || scopes.some((scope) => scope.organizationId === policy.organizationId)) &&
+      (!policy.marketId || markets.some((market) => market.id === policy.marketId))),
+  };
+}
+
 async function getSubmission(prisma: PrismaClient, actor: ActorContext, submissionId: string) {
   const submission = await prisma.propertyRegistrationSubmission.findUnique({
     where: { id: submissionId },
@@ -877,6 +939,10 @@ export async function handlePropertyIdentityRequest(input: {
 }) {
   const base = "/api/v1/admin/property-identity/submissions";
   try {
+    if (input.url.pathname === "/api/v1/admin/property-identity/context" && input.request.method === "GET") {
+      sendJson(input.response, 200, await getPropertyIdentityContext(input.prisma, input.actor));
+      return true;
+    }
     if (input.url.pathname === base && input.request.method === "POST") {
       const body = await readJsonBody(input.request);
       const result = await createSubmission({ prisma: input.prisma, actor: input.actor, request: input.request, body, env: input.env ?? process.env });
