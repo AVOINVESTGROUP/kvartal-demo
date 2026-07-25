@@ -1,6 +1,6 @@
 "use client";
 
-import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithPopup, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
+import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
@@ -19,8 +19,6 @@ export default function LoginClient({ error }: { error?: string }) {
     });
     if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message ?? "Вход не завершён.");
   }
-
-  function mobile() { return typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile|FBAN|FBAV|Instagram|Line|WhatsApp/i.test(navigator.userAgent); }
 
   useEffect(() => {
     if (!configured) return;
@@ -44,20 +42,8 @@ export default function LoginClient({ error }: { error?: string }) {
     setBusy(true); setClientError(null);
     try {
       const auth = getFirebaseAuth();
-      if (mobile()) {
-        await setPersistence(auth, browserSessionPersistence); sessionStorage.setItem("kvartal-auth-redirect", "1");
-        await signInWithRedirect(auth, googleProvider); return;
-      }
-      await setPersistence(auth, inMemoryPersistence);
-      try {
-        const credential = await signInWithPopup(auth, googleProvider);
-        await exchange(credential); await signOut(auth); router.replace("/");
-      } catch (caught) {
-        const message = caught instanceof Error ? caught.message : String(caught);
-        if (!message.includes("auth/popup-blocked") && !message.includes("auth/cancelled-popup-request")) throw caught;
-        await setPersistence(auth, browserSessionPersistence); sessionStorage.setItem("kvartal-auth-redirect", "1");
-        await signInWithRedirect(auth, googleProvider);
-      }
+      await setPersistence(auth, browserSessionPersistence); sessionStorage.setItem("kvartal-auth-redirect", "1");
+      await signInWithRedirect(auth, googleProvider);
     } catch (caught) { setClientError(caught instanceof Error ? caught.message : "Вход не завершён."); }
     finally { setBusy(false); }
   }

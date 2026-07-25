@@ -12,9 +12,10 @@ describe("browser session source contracts", () => {
     "kvartal-admin": "KVARTAL_ADMIN_ORIGIN",
   };
   for (const app of ["partner-admin", "platform-admin", "kvartal-admin"]) {
-    it(`${app} uses memory popup, session-only redirect, sign-out and CSRF`, () => {
+    it(`${app} uses redirect auth, session-only persistence, sign-out and CSRF`, () => {
       const source = read(`apps/${app}/src/app/login/LoginClient.tsx`);
       expect(source).toContain("inMemoryPersistence"); expect(source).toContain("browserSessionPersistence");
+      expect(source).toContain("signInWithRedirect"); expect(source).not.toContain("signInWithPopup");
       expect(source).toContain("signOut("); expect(source).toContain('"x-csrf-token"'); expect(source).not.toContain("browserLocalPersistence");
     });
     it(`${app} session and logout routes enforce strict cookies and POST`, () => {

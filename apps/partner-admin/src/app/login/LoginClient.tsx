@@ -1,6 +1,6 @@
 "use client";
 
-import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithPopup, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
+import { browserSessionPersistence, getRedirectResult, inMemoryPersistence, setPersistence, signInWithRedirect, signOut, type UserCredential } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
@@ -24,19 +24,6 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
       throw new Error(await response.text());
     }
   }, [organizationSlug]);
-
-  function shouldUseRedirectFirst() {
-    if (typeof navigator === "undefined") {
-      return false;
-    }
-
-    return /Android|iPhone|iPad|iPod|Mobile|FBAN|FBAV|Instagram|Line|WhatsApp|WA Business/i.test(navigator.userAgent);
-  }
-
-  function isPopupBlocked(caught: unknown) {
-    const message = caught instanceof Error ? caught.message : String(caught);
-    return message.includes("auth/popup-blocked") || message.includes("auth/cancelled-popup-request");
-  }
 
   useEffect(() => {
     if (!configured) {
@@ -89,27 +76,10 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
     try {
       const auth = getFirebaseAuth();
 
-      if (shouldUseRedirectFirst()) {
-        await setPersistence(auth, browserSessionPersistence);
-        sessionStorage.setItem("kvartal-auth-redirect", "1");
-        await signInWithRedirect(auth, googleProvider);
-        return;
-      }
-
-      await setPersistence(auth, inMemoryPersistence);
-      const credential = await signInWithPopup(auth, googleProvider);
-      await createServerSession(credential);
-      await signOut(auth);
-      router.replace("/");
+      await setPersistence(auth, browserSessionPersistence);
+      sessionStorage.setItem("kvartal-auth-redirect", "1");
+      await signInWithRedirect(auth, googleProvider);
     } catch (caught) {
-      if (isPopupBlocked(caught)) {
-        const auth = getFirebaseAuth();
-        await setPersistence(auth, browserSessionPersistence);
-        sessionStorage.setItem("kvartal-auth-redirect", "1");
-        await signInWithRedirect(auth, googleProvider);
-        return;
-      }
-
       setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
     } finally {
       setBusy(false);
