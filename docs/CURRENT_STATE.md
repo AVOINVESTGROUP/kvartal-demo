@@ -711,3 +711,16 @@
 - Deleted temporary Cloud Run jobs, removed temporary operator and signing permissions, disabled the one-time bootstrap secret versions and stopped the local Cloud SQL proxy.
 - No application code deployment, traffic switch, rollback or migration reversal was required.
 - Resolution report: `docs/property-identity-v4/AUTH-INCIDENT-RESOLUTION.md`.
+
+## Property Identity Moscow usability activation (2026-07-25)
+
+- Recovered the primary `office@integrayachtsuae.com` account through an audited external-identity request approved by the already bound platform owner; both actor APIs return `200` for the primary account.
+- Added an explicit `organization_owner` membership for the primary account in `kvartal-moscow`; platform-wide role alone remains insufficient for implicit private organization-data access.
+- Corrected Property Identity office scoping so organization owners can use active offices in their organization and the dedicated KVARTAL cabinet cannot fall through to another organization.
+- Replaced ambiguous request-oriented screen copy with an explicit three-step author workflow and useful defaults for Russian cadastral registration.
+- Deployed office API revision `kvartal-office-api-piuse-a4d5bb5` from source commit `a4d5bb5`; authenticated readiness returned `200` with database ready.
+- App Hosting build `build-pi-usability-a4d5bb5` and rollout `rollout-pi-usability-a4d5bb5` completed successfully on `partner-admin-dev` and `kvartal-admin-dev`.
+- Activated only the `moscow-commercial` market in `NEW_SUBMISSIONS_ONLY`; publication gating remains off.
+- Activated reviewed `RU / CADASTRAL_ID / ROSREESTR` policies for land parcel, building, premise and unit scopes. Other markets remain disabled.
+- Full hosted-page Firebase-session checks returned `200` and rendered the working create-registration form for both `abtiurin@gmail.com` and `office@integrayachtsuae.com`.
+- Full report: `docs/property-identity-v4/DEV-USABILITY-ACTIVATION.md`.

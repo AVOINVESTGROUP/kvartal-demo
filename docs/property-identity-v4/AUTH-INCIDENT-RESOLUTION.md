@@ -48,3 +48,11 @@ Status: resolved and verified end to end.
 ## User verification
 
 Open any of the three dev admin URLs, refresh the page, and sign in as `abtiurin@gmail.com`. Existing valid sessions can start working after refresh; if the browser retained a failed login state, use the Google login button once to create a fresh session.
+
+## Primary account recovery
+
+- Bound the verified Firebase identity for `office@integrayachtsuae.com` through an audited recovery request approved by the already bound `abtiurin@gmail.com` platform owner.
+- The binding request finished as `APPROVED` and the resulting identity is `ACTIVE`.
+- Real Firebase-session checks for the primary account returned `200` from both office and platform actor-context endpoints with `platform_owner`.
+- Added an explicit active `organization_owner` membership for `office@integrayachtsuae.com` in `kvartal-moscow`; the global platform role was not used as implicit private partner-data access.
+- A full hosted-page test for the primary account returned `200` from KVARTAL Property Identity and rendered the create-registration control.
