@@ -481,6 +481,23 @@ describe("Property Identity v4 database invariants", () => {
     const otherActor = { ...actor, appUserId: "another-user", correlationId: "other-actor" } as PropertyIdentityActor;
     const forbidden = await callPropertyIdentityApi({ method: "GET", path: `/api/v1/admin/property-identity/submissions/${submissionId}`, actor: otherActor });
     expect(forbidden.status).toBe(403);
+
+    const cancellable = await callPropertyIdentityApi({
+      method: "POST",
+      path: "/api/v1/admin/property-identity/submissions",
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-create-0003" },
+      body: { marketId: fixture.market.id, jurisdiction: "ZZ", subjectScope: "UNIT", assetClass: "apartment", identityInput: {}, identifiers: [] },
+    });
+    const cancelled = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${String(cancellable.body.submissionId)}/cancel`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-cancel-0001" },
+      body: { reason: "cancelled_by_author" },
+    });
+    expect(cancelled.body.status).toBe("CANCELLED");
   });
 
   it("enforces one current canonical version per identity profile", async () => {

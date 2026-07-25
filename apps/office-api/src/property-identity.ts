@@ -859,6 +859,37 @@ async function confirmSubmission(input: {
   });
 }
 
+async function cancelSubmission(input: { prisma: PrismaClient; actor: ActorContext; request: IncomingMessage; submissionId: string; body: JsonObject }) {
+  const scopeRecord = await input.prisma.propertyRegistrationSubmission.findUnique({
+    where: { id: input.submissionId },
+    select: { organizationId: true, officeId: true, createdByUserId: true },
+  });
+  if (!scopeRecord) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+  resolvePartnerScope(input.actor, scopeRecord);
+  assertSubmissionAuthor(input.actor, scopeRecord.createdByUserId);
+  return idempotentMutation({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    organizationId: scopeRecord.organizationId,
+    route: `/api/v1/admin/property-identity/submissions/${input.submissionId}/cancel`,
+    body: input.body,
+    run: async (tx) => {
+      const submission = await tx.propertyRegistrationSubmission.findUnique({ where: { id: input.submissionId } });
+      if (!submission) throw new PropertyIdentityHttpError(404, "SUBMISSION_NOT_FOUND", "The submission was not found.");
+      if (submission.status === "CANCELLED") return { status: 200, payload: { ok: true, submissionId: submission.id, status: "CANCELLED" } };
+      if (["CLOSED", "CONFIRMING", "CANONICAL_CREATED", "LINKED_EXISTING"].includes(submission.status)) {
+        throw new PropertyIdentityHttpError(409, "SUBMISSION_STATE_INVALID", "The submission can no longer be cancelled.");
+      }
+      const updated = await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { status: "CANCELLED", cancelledAt: new Date(), rowVersion: { increment: 1 } } });
+      await tx.propertyIdentityEvent.create({
+        data: { submissionId: submission.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "SUBMISSION_CANCELLED", previousStatus: submission.status, nextStatus: "CANCELLED", reasonCode: typeof input.body.reason === "string" ? input.body.reason.trim().slice(0, 128) || null : null },
+      });
+      return { status: 200, payload: { ok: true, submissionId: submission.id, status: updated.status, rowVersion: updated.rowVersion } };
+    },
+  });
+}
+
 async function listSubmissions(prisma: PrismaClient, actor: ActorContext, url: URL) {
   const scope = resolvePartnerScope(actor, { organizationId: url.searchParams.get("organizationId") ?? undefined, officeId: url.searchParams.get("officeId") ?? undefined });
   const submissions = await prisma.propertyRegistrationSubmission.findMany({
@@ -953,7 +984,7 @@ export async function handlePropertyIdentityRequest(input: {
       sendJson(input.response, 200, await listSubmissions(input.prisma, input.actor, input.url));
       return true;
     }
-    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check|confirm-create|confirm-link))?$/);
+    const match = input.url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)(?:\/(check|confirm-create|confirm-link|cancel))?$/);
     if (!match) return false;
     const submissionId = decodeURIComponent(match[1]);
     if (!match[2] && input.request.method === "GET") {
@@ -976,6 +1007,12 @@ export async function handlePropertyIdentityRequest(input: {
     if ((match[2] === "confirm-create" || match[2] === "confirm-link") && input.request.method === "POST") {
       const body = await readJsonBody(input.request);
       const result = await confirmSubmission({ prisma: input.prisma, actor: input.actor, request: input.request, submissionId, body, resolution: match[2] === "confirm-create" ? "CREATE_NEW" : "LINK_EXISTING" });
+      sendJson(input.response, result.status, result.payload, result.replay ? { "idempotent-replay": "true" } : {});
+      return true;
+    }
+    if (match[2] === "cancel" && input.request.method === "POST") {
+      const body = await readJsonBody(input.request);
+      const result = await cancelSubmission({ prisma: input.prisma, actor: input.actor, request: input.request, submissionId, body });
       sendJson(input.response, result.status, result.payload, result.replay ? { "idempotent-replay": "true" } : {});
       return true;
     }

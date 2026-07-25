@@ -125,6 +125,17 @@ async function confirmSubmissionAction(data: FormData) {
   } catch (caught) { returnToRegistry(backendError(caught), submissionId); }
 }
 
+async function cancelSubmissionAction(data: FormData) {
+  "use server";
+  await requireAdminSession();
+  const submissionId = value(data, "submissionId");
+  try {
+    await writeSecureActorBackendJson(apiBase(), `/api/v1/admin/property-identity/submissions/${encodeURIComponent(submissionId)}/cancel`, "POST", { reason: value(data, "reason") || "cancelled_by_author" }, { "idempotency-key": randomUUID() });
+    revalidatePath("/property-identity");
+    redirect(`/property-identity?submissionId=${encodeURIComponent(submissionId)}&message=${encodeURIComponent("Заявка отменена автором.")}`);
+  } catch (caught) { returnToRegistry(backendError(caught), submissionId); }
+}
+
 const statusLabels: Record<string, string> = {
   DRAFT: "Черновик — готов к проверке",
   NEEDS_CORRECTION: "Нужно исправить данные",
@@ -132,6 +143,7 @@ const statusLabels: Record<string, string> = {
   EXACT_EXISTING: "Найден существующий объект — можно связать",
   STRONG_IDENTIFIER_CONFLICT: "Конфликт сильных идентификаторов",
   CLOSED: "Завершено",
+  CANCELLED: "Отменено автором",
 };
 
 export default async function PropertyIdentityPage({ searchParams }: { searchParams?: Promise<{ submissionId?: string; officeId?: string; error?: string; message?: string }> }) {
@@ -183,10 +195,11 @@ export default async function PropertyIdentityPage({ searchParams }: { searchPar
           <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-black text-kv-navy">{String(selected.identityInput?.title ?? "Заявка")}</h2><p className="mt-1 text-sm text-kv-muted">{statusLabels[selected.status] ?? selected.status} · версия {selected.rowVersion}</p></div>{selected.canonicalPropertyObjectId ? <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">Object ID: {selected.canonicalPropertyObjectId}</span> : null}</div>
           <div className="grid gap-3 md:grid-cols-3"><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Юрисдикция</div><div className="font-black">{selected.jurisdiction}</div></div><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Уровень</div><div className="font-black">{selected.subjectScope}</div></div><div className="rounded border border-kv-line p-3"><div className="text-xs text-kv-muted">Класс</div><div className="font-black">{selected.assetClass}</div></div></div>
           <div><h3 className="font-black text-kv-navy">Идентификаторы</h3><div className="mt-2 space-y-2">{selected.observations.map((item) => <div key={item.id} className="rounded border border-kv-line p-3 text-sm"><div className="font-black">{item.scheme} · {item.authorityNamespace}</div><div className="mt-1 text-kv-muted">{item.status}{item.correctionReason ? ` — ${item.correctionReason}` : ""}</div></div>)}</div></div>
-          {selected.status === "NEEDS_CORRECTION" ? <form action={correctSubmissionAction} className="grid gap-2 rounded border border-amber-200 bg-amber-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="rowVersion" value={selected.rowVersion}/><div className="font-black text-amber-800">Исправить идентификатор</div><input name="scheme" required placeholder="Схема" className="h-10 rounded border border-amber-200 px-3"/><input name="namespace" required placeholder="Namespace" className="h-10 rounded border border-amber-200 px-3"/><input name="identifier" required placeholder="Значение" className="h-10 rounded border border-amber-200 px-3"/><button className="rounded-full bg-amber-600 px-4 py-2 text-sm font-black text-white">Сохранить исправление</button></form> : null}
+          {!['CLOSED','CANCELLED'].includes(selected.status) ? <form action={correctSubmissionAction} className="grid gap-2 rounded border border-amber-200 bg-amber-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="rowVersion" value={selected.rowVersion}/><div className="font-black text-amber-800">{selected.status === "NEEDS_CORRECTION" || selected.status === "STRONG_IDENTIFIER_CONFLICT" ? "Исправить идентификатор" : "Изменить идентификатор и проверить заново"}</div><input name="scheme" required placeholder="Схема" className="h-10 rounded border border-amber-200 px-3"/><input name="namespace" required placeholder="Namespace" className="h-10 rounded border border-amber-200 px-3"/><input name="identifier" required placeholder="Значение" className="h-10 rounded border border-amber-200 px-3"/><button className="rounded-full bg-amber-600 px-4 py-2 text-sm font-black text-white">Сохранить изменение</button></form> : null}
           {!['CLOSED','CANCELLED'].includes(selected.status) && selected.status !== "NEEDS_CORRECTION" ? <form action={checkSubmissionAction}><input type="hidden" name="submissionId" value={selected.id}/><button className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Проверить совпадения</button></form> : null}
           {latestRun ? <div className="rounded border border-kv-line bg-kv-bg p-4"><div className="font-black text-kv-navy">Последняя проверка: {latestRun.outcome}</div><p className="mt-1 text-sm text-kv-muted">Результат не раскрывает чужие конфиденциальные данные.</p></div> : null}
           {(selected.status === "UNIQUE_CANDIDATE" || selected.status === "EXACT_EXISTING") && latestRun ? <form action={confirmSubmissionAction} className="rounded border border-emerald-200 bg-emerald-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="checkRunId" value={latestRun.id}/><input type="hidden" name="resolution" value={selected.status === "EXACT_EXISTING" ? "LINK_EXISTING" : "CREATE_NEW"}/><div className="font-black text-emerald-800">{selected.status === "EXACT_EXISTING" ? "Связать с найденным физическим объектом" : "Создать новый канонический объект"}</div><p className="mt-2 text-sm text-emerald-700">Этим действием автор подтверждает актуальность введённых данных.</p><input name="reason" placeholder="Комментарий (необязательно)" className="mt-3 h-10 w-full rounded border border-emerald-200 px-3"/><button className="mt-3 rounded-full bg-emerald-700 px-5 py-3 text-sm font-black text-white">Подтвердить и завершить</button></form> : null}
+          {!['CLOSED','CANCELLED'].includes(selected.status) ? <form action={cancelSubmissionAction} className="flex items-center justify-between gap-3 rounded border border-red-200 bg-red-50 p-4"><input type="hidden" name="submissionId" value={selected.id}/><input type="hidden" name="reason" value="cancelled_by_author"/><span className="text-sm text-red-700">Отмена не удаляет аудит заявки.</span><button className="rounded-full border border-red-300 px-4 py-2 text-sm font-black text-red-700">Отменить заявку</button></form> : null}
           {selected.checkRuns.length ? <details><summary className="cursor-pointer font-black text-kv-navy">История проверок</summary><div className="mt-2 space-y-2">{selected.checkRuns.map((run) => <div key={run.id} className="rounded border border-kv-line p-2 text-sm">{new Date(run.createdAt).toLocaleString("ru-RU")} · {run.outcome ?? run.status}</div>)}</div></details> : null}
         </div> : <p className="text-kv-muted">Выберите заявку слева или создайте новую.</p>}</div>
       </section>
