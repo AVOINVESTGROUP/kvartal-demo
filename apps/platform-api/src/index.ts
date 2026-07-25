@@ -20,6 +20,7 @@ export const ownedRoutes = [
   "/api/v1/platform/actor-context",
   "/api/v1/platform/external-identity-binding-requests",
   "/api/v1/platform/external-identities",
+  "/api/v1/platform/external-identity-candidates",
 ] as const;
 
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
