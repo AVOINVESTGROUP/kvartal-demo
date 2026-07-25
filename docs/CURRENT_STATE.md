@@ -611,3 +611,11 @@
 - Verified live URLs:
   - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/` -> `200`
   - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u` -> `200`
+# Local feature state: Auth Foundation Increment 1A (2026-07-25)
+
+- Feature worktree: `C:\Dev\_worktrees\Kvartal-property-identity-i1a-auth-v2`.
+- Branch: `feature/property-identity-i1a-auth-v2`, base `f8a96f97bd1b37408d4cb57bf5887c87d0a28f66`.
+- Implemented locally only: Firebase session-cookie BFF flow, strict CSRF/recent-login/logout, two-header Cloud Run client, external identity SSOT/migration, actor middleware/policy registries, owner binding API/UI, one-time bootstrap CLI, idempotency/concurrency, retention helpers and tests.
+- No production database migration, IAM edit, deployment, Firebase mutation or bootstrap execution was performed.
+- Production prerequisites remain: reauthenticate GCP operator; verify App Hosting/Cloud Run runtime IAM and ADC; configure retention, digest pepper, exact origins and protected bootstrap settings; apply migration through the approved deployment process.
+- SSOT merge remains blocked until the dirty main-worktree documentation edits are reconciled with this feature branch; see the external conflict report.

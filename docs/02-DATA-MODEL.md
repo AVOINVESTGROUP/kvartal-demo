@@ -916,3 +916,13 @@ Any significant schema change must update:
 - `docs/CURRENT_STATE.md`
 
 For high-impact changes, add an ADR before implementation.
+# External identity SSOT — Increment 1A
+
+- `AppUserExternalIdentity` owns the lifetime-unique Firebase provider/subject mapping. A partial PostgreSQL unique index permits only one ACTIVE Firebase identity per `AppUser`; rows are never hard-deleted or transferred.
+- `ExternalIdentityBindingRequest` separates `BIND` and same-user `REACTIVATE` workflows. Pending requests expire after seven days and use `rowVersion` for optimistic concurrency.
+- `ExternalIdentityBindingEvent` stores append-only public-safe audit metadata and subject digests, never bearer tokens or full Firebase claims.
+- `ExternalIdentityBootstrapState(FIREBASE_PLATFORM_OWNER_BOOTSTRAP)` makes first-owner bootstrap one-time.
+- `MutationIdempotency` stores scoped mutation state and replay responses. Nonterminal rows do not expire; successful replay data is retained for 30 days by policy.
+- `AppUser.firebaseUid` remains required and unique only for legacy compatibility. New candidate users receive `legacy:external-pending:<uuid>`; this value has no authentication authority.
+
+Retention: terminal binding-request verified email is eligible for redaction after the configured 30–365 day period. Identity subjects remain to enforce lifetime uniqueness. Audit retention is explicitly configured to 365–2555 days.

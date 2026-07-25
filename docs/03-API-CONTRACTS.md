@@ -627,3 +627,24 @@ Stage 3 may implement these contracts as:
 - shared Prisma/domain/auth packages used only on trusted backend sides.
 
 Do not implement Stage 3 backend contracts as Next.js route handlers. Public and admin components should call the relevant Cloud Run API through a frontend repository/client layer.
+# Auth and external identity API — Increment 1A
+
+All `/api/v1/platform/external-identity-*` resources require a verified Firebase session actor with the active `platform_owner` role. Shared legacy admin tokens cannot authenticate these routes. Mutations require `Idempotency-Key` and `If-Match: "<rowVersion>"`; responses return `ETag`.
+
+Resources:
+
+- binding requests: create/list/detail/events, select candidate, create narrow candidate user, approve, reject and cancel;
+- identities: list/detail/events, revoke and create reactivation request;
+- candidate lookup: read-only `AppUser` search;
+- actor context: `/api/v1/platform/actor-context` and `/api/v1/admin/actor-context`.
+
+BFF session endpoints are `GET /api/auth/csrf`, `POST /api/auth/firebase/session` and `POST /api/auth/logout`. Session creation/logout require exact configured `Origin` plus the `__Host-kvartal_csrf` double-submit token. The Firebase session cookie is `__Host-kvartal_session`, `Secure`, `HttpOnly`, `SameSite=Strict`, `Path=/`, five days.
+
+Cloud Run transport is exactly:
+
+```http
+X-Serverless-Authorization: Bearer <Google service ID token>
+Authorization: Bearer <Firebase session-cookie JWT>
+```
+
+Errors use `{ "error": { "code", "message", "correlationId" } }` and public-safe messages.

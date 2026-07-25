@@ -472,3 +472,8 @@ Near-term priorities:
 - Cloud Run APIs own backend writes.
 - Root `index.html` remains untouched.
 - Do not claim a file has broken encoding based only on terminal output; verify the file itself first.
+# Auth Foundation Increment 1A (2026-07-25)
+
+Secure human traffic uses Firebase browser sign-in only to mint a five-day HttpOnly Firebase session cookie at the relevant Next.js BFF. The BFF invokes private Cloud Run with infrastructure identity in `X-Serverless-Authorization` and the Firebase session JWT in `Authorization`. APIs verify revocation and resolve the Firebase `(provider, subject)` only through `AppUserExternalIdentity`; database memberships and active role assignments produce an immutable `ActorContext`.
+
+`AppUser.firebaseUid` is deprecated as an authentication source and remains non-authoritative compatibility data. External identity binding/recovery is a platform-owner-only audited workflow. The first active platform owner is established by a one-time local/admin CLI; there is no HTTP break-glass endpoint. Production activation requires verified IAM plus explicit retention, origin, digest-pepper and bootstrap configuration. See `docs/adr/property-identity-i1a-auth/`.
