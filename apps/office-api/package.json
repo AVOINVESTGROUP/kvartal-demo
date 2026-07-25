@@ -7,6 +7,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "property-identity:prepare-migration": "tsx src/prepare-property-identity-migration.ts",
     "lint": "tsc --noEmit",
     "test": "vitest run"
   },

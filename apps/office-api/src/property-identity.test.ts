@@ -47,7 +47,7 @@ describe("Property Identity rollout policy", () => {
       { ...base, id: "market", scope: "MARKET", organizationId: null, marketId: "market-1" },
       { ...base, id: "org", scope: "ORGANISATION", organizationId: "org-1", marketId: null, mode: "DISABLED", version: 2 },
     ], "org-1", "market-1", new Date("2026-07-25T01:00:00Z"));
-    expect(effective).toEqual({ policyId: "org", mode: "DISABLED", registryEnabled: false, publishGateEnabled: false });
+    expect(effective).toEqual({ policyId: "org", mode: "DISABLED", registryEnabled: false, publishGateEnabled: false, activationAt: null });
   });
 
   it("ignores future and wrongly scoped policies and fails closed to disabled", () => {
@@ -55,7 +55,7 @@ describe("Property Identity rollout policy", () => {
       { ...base, id: "future", scope: "ORGANISATION", organizationId: "org-1", marketId: null, activationAt: new Date("2026-07-26T00:00:00Z") },
       { ...base, id: "other", scope: "MARKET", organizationId: null, marketId: "market-2" },
     ], "org-1", "market-1", new Date("2026-07-25T01:00:00Z"));
-    expect(effective).toEqual({ policyId: null, mode: "DISABLED", registryEnabled: false, publishGateEnabled: false });
+    expect(effective).toEqual({ policyId: null, mode: "DISABLED", registryEnabled: false, publishGateEnabled: false, activationAt: null });
   });
 });
 

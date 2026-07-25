@@ -44,6 +44,7 @@ CREATE TABLE "PropertyRegistrationSubmission" (
     "intakeSubmissionId" TEXT,
     "aiDraftId" TEXT,
     "canonicalPropertyObjectId" TEXT,
+    "migrationSourcePropertyObjectId" TEXT,
     "subjectScope" "PropertyIdentitySubjectScope" NOT NULL,
     "jurisdiction" TEXT NOT NULL,
     "assetClass" "AssetClass" NOT NULL,
@@ -329,6 +330,8 @@ CREATE INDEX "PropertyRegistrationSubmission_createdByUserId_status_updat_idx" O
 -- CreateIndex
 CREATE INDEX "PropertyRegistrationSubmission_canonicalPropertyObjectId_idx" ON "PropertyRegistrationSubmission"("canonicalPropertyObjectId");
 
+CREATE UNIQUE INDEX "PropertyRegistrationSubmission_migrationSourcePropertyObjectId_key" ON "PropertyRegistrationSubmission"("migrationSourcePropertyObjectId");
+
 -- CreateIndex
 CREATE INDEX "PropertyIdentifierObservation_submissionId_status_idx" ON "PropertyIdentifierObservation"("submissionId", "status");
 
@@ -454,6 +457,8 @@ ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistratio
 
 -- AddForeignKey
 ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistrationSubmission_canonicalPropertyObjectId_fkey" FOREIGN KEY ("canonicalPropertyObjectId") REFERENCES "PropertyObject"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "PropertyRegistrationSubmission" ADD CONSTRAINT "PropertyRegistrationSubmission_migrationSourcePropertyObjectId_fkey" FOREIGN KEY ("migrationSourcePropertyObjectId") REFERENCES "PropertyObject"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "PropertyIdentifierObservation" ADD CONSTRAINT "PropertyIdentifierObservation_submissionId_fkey" FOREIGN KEY ("submissionId") REFERENCES "PropertyRegistrationSubmission"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

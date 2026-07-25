@@ -959,6 +959,7 @@ model PropertyObject {
   siteVisibilityOverrides            SiteObjectVisibilityOverride[]
   identityProfile                    PropertyIdentityProfile?
   linkedRegistrationSubmissions      PropertyRegistrationSubmission[]
+  migrationRegistrationSubmission    PropertyRegistrationSubmission?  @relation("PropertyIdentityMigrationSource")
 
   @@index([ownerOrganizationId])
   @@index([ownerOfficeId])
@@ -968,39 +969,41 @@ model PropertyObject {
 }
 
 model PropertyRegistrationSubmission {
-  id                        String                               @id @default(cuid())
-  organizationId            String
-  officeId                  String
-  marketId                  String
-  createdByUserId           String
-  intakeSubmissionId        String?
-  aiDraftId                 String?
-  canonicalPropertyObjectId String?
-  subjectScope              PropertyIdentitySubjectScope
-  jurisdiction              String
-  assetClass                AssetClass
-  status                    PropertyRegistrationStatus           @default(DRAFT)
-  identityInput             Json
-  lastIdentityInputHash     String?
-  rowVersion                Int                                  @default(1)
-  submittedAt               DateTime?
-  closedAt                  DateTime?
-  cancelledAt               DateTime?
-  createdAt                 DateTime                             @default(now())
-  updatedAt                 DateTime                             @updatedAt
-  organization              Organization                         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  office                    Office                               @relation(fields: [officeId], references: [id], onDelete: Restrict)
-  market                    Market                               @relation(fields: [marketId], references: [id], onDelete: Restrict)
-  createdByUser             AppUser                              @relation("PropertyRegistrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
-  intakeSubmission          PropertyIntakeSubmission?            @relation(fields: [intakeSubmissionId], references: [id], onDelete: SetNull)
-  aiDraft                   PropertyAIDraft?                     @relation(fields: [aiDraftId], references: [id], onDelete: SetNull)
-  canonicalPropertyObject   PropertyObject?                      @relation(fields: [canonicalPropertyObjectId], references: [id], onDelete: Restrict)
-  observations              PropertyIdentifierObservation[]
-  checkRuns                 PropertyIdentityCheckRun[]
-  confirmations             PropertyIdentityAuthorConfirmation[]
-  identityProfileCreated    PropertyIdentityProfile?             @relation("PropertyIdentityCreatedFromSubmission")
-  events                    PropertyIdentityEvent[]
-  jobs                      PropertyIdentityJob[]
+  id                              String                               @id @default(cuid())
+  organizationId                  String
+  officeId                        String
+  marketId                        String
+  createdByUserId                 String
+  intakeSubmissionId              String?
+  aiDraftId                       String?
+  canonicalPropertyObjectId       String?
+  migrationSourcePropertyObjectId String?                              @unique
+  subjectScope                    PropertyIdentitySubjectScope
+  jurisdiction                    String
+  assetClass                      AssetClass
+  status                          PropertyRegistrationStatus           @default(DRAFT)
+  identityInput                   Json
+  lastIdentityInputHash           String?
+  rowVersion                      Int                                  @default(1)
+  submittedAt                     DateTime?
+  closedAt                        DateTime?
+  cancelledAt                     DateTime?
+  createdAt                       DateTime                             @default(now())
+  updatedAt                       DateTime                             @updatedAt
+  organization                    Organization                         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office                          Office                               @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  market                          Market                               @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  createdByUser                   AppUser                              @relation("PropertyRegistrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  intakeSubmission                PropertyIntakeSubmission?            @relation(fields: [intakeSubmissionId], references: [id], onDelete: SetNull)
+  aiDraft                         PropertyAIDraft?                     @relation(fields: [aiDraftId], references: [id], onDelete: SetNull)
+  canonicalPropertyObject         PropertyObject?                      @relation(fields: [canonicalPropertyObjectId], references: [id], onDelete: Restrict)
+  migrationSourcePropertyObject   PropertyObject?                      @relation("PropertyIdentityMigrationSource", fields: [migrationSourcePropertyObjectId], references: [id], onDelete: Restrict)
+  observations                    PropertyIdentifierObservation[]
+  checkRuns                       PropertyIdentityCheckRun[]
+  confirmations                   PropertyIdentityAuthorConfirmation[]
+  identityProfileCreated          PropertyIdentityProfile?             @relation("PropertyIdentityCreatedFromSubmission")
+  events                          PropertyIdentityEvent[]
+  jobs                            PropertyIdentityJob[]
 
   @@index([organizationId, status, updatedAt])
   @@index([officeId, status, updatedAt])

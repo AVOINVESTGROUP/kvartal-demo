@@ -478,6 +478,61 @@ describe("Property Identity v4 database invariants", () => {
     });
     expect(linked.body).toMatchObject({ status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: confirmed.body.propertyObjectId });
 
+    const migrationSource = await prisma.propertyObject.create({
+      data: {
+        ownerOrganizationId: fixture.organization.id,
+        ownerOfficeId: fixture.office.id,
+        informationOwnerOrganizationId: fixture.organization.id,
+        informationOwnerOfficeId: fixture.office.id,
+        createdByUserId: fixture.user.id,
+        marketId: fixture.market.id,
+        assetClass: "apartment",
+        addressPrivate: "Legacy object address",
+      },
+    });
+    const objectCountBeforeMigrationConfirmation = await prisma.propertyObject.count();
+    const migrationSubmission = await prisma.propertyRegistrationSubmission.create({
+      data: {
+        organizationId: fixture.organization.id,
+        officeId: fixture.office.id,
+        marketId: fixture.market.id,
+        createdByUserId: fixture.user.id,
+        migrationSourcePropertyObjectId: migrationSource.id,
+        subjectScope: "UNIT",
+        jurisdiction: "ZZ",
+        assetClass: "apartment",
+        status: "DRAFT",
+        identityInput: { addressPrivate: "Legacy object address" },
+      },
+    });
+    const migrationCorrected = await callPropertyIdentityApi({
+      method: "PATCH",
+      path: `/api/v1/admin/property-identity/submissions/${migrationSubmission.id}`,
+      actor,
+      env,
+      headers: { "idempotency-key": "identity-flow-migration-correct-0001", "if-match": '"1"' },
+      body: { identifiers: [{ scheme: "SYNTHETIC_UNIT_ID", authorityNamespace: "TEST:UNIT:CITY", rawValue: "unit-99" }] },
+    });
+    expect(migrationCorrected.body.status).toBe("DRAFT");
+    const migrationChecked = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${migrationSubmission.id}/check`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-migration-check-0001" },
+      body: {},
+    });
+    expect(migrationChecked.body.outcome).toBe("UNIQUE_CANDIDATE");
+    const migrationConfirmed = await callPropertyIdentityApi({
+      method: "POST",
+      path: `/api/v1/admin/property-identity/submissions/${migrationSubmission.id}/confirm-create`,
+      actor,
+      headers: { "idempotency-key": "identity-flow-migration-confirm-0001" },
+      body: { checkRunId: migrationChecked.body.checkRunId },
+    });
+    expect(migrationConfirmed.body).toMatchObject({ status: "CLOSED", resolution: "CREATE_NEW", propertyObjectId: migrationSource.id });
+    expect(await prisma.propertyObject.count()).toBe(objectCountBeforeMigrationConfirmation);
+    expect(await prisma.propertyIdentityProfile.count({ where: { propertyObjectId: migrationSource.id, status: "VERIFIED_INTERNAL" } })).toBe(1);
+
     const otherActor = { ...actor, appUserId: "another-user", correlationId: "other-actor" } as PropertyIdentityActor;
     const forbidden = await callPropertyIdentityApi({ method: "GET", path: `/api/v1/admin/property-identity/submissions/${submissionId}`, actor: otherActor });
     expect(forbidden.status).toBe(403);

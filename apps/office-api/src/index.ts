@@ -6832,7 +6832,8 @@ Schema:
     const mediaUrl = optionalString(body.mediaUrl);
     if (status === "published") {
       const rollout = await readEffectivePropertyIdentityRollout(prisma, existing.ownerOrganizationId, (market ?? existing.market).id);
-      if (rollout.publishGateEnabled && (existing.identityProfile?.status !== "VERIFIED_INTERNAL" || existing.identityProfile.canonicalVersions.length !== 1)) {
+      const registryManagedPublication = rollout.mode === "STRICT" || !rollout.activationAt || existing.createdAt >= rollout.activationAt;
+      if (rollout.publishGateEnabled && registryManagedPublication && (existing.identityProfile?.status !== "VERIFIED_INTERNAL" || existing.identityProfile.canonicalVersions.length !== 1)) {
         sendError(response, 409, "property_identity_verification_required", "The property must have one verified Property Identity profile and one current canonical version before publication.");
         return;
       }

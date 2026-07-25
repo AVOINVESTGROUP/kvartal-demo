@@ -29,6 +29,7 @@ export type EffectivePropertyIdentityRollout = Readonly<{
   mode: "DISABLED" | "NEW_SUBMISSIONS_ONLY" | "STRICT";
   registryEnabled: boolean;
   publishGateEnabled: boolean;
+  activationAt: Date | null;
 }>;
 
 type RolloutPolicyCandidate = Readonly<{
@@ -49,6 +50,7 @@ const disabledRollout: EffectivePropertyIdentityRollout = Object.freeze({
   mode: "DISABLED",
   registryEnabled: false,
   publishGateEnabled: false,
+  activationAt: null,
 });
 
 export function selectEffectivePropertyIdentityRollout(
@@ -71,6 +73,7 @@ export function selectEffectivePropertyIdentityRollout(
     mode: selected.mode,
     registryEnabled: selected.registryEnabled && selected.mode !== "DISABLED",
     publishGateEnabled: selected.publishGateEnabled && selected.mode !== "DISABLED",
+    activationAt: selected.activationAt,
   } : disabledRollout;
 }
 
@@ -719,7 +722,18 @@ async function confirmSubmission(input: {
       if (input.resolution === "CREATE_NEW") {
         if (matchedProfileIds.length) throw new PropertyIdentityHttpError(409, "IDENTITY_CHANGED_RECHECK_REQUIRED", "An existing identity was found during finalisation. Run the check again.");
         const physical = submission.identityInput as JsonObject;
-        const propertyObject = await tx.propertyObject.create({
+        const migrationObject = submission.migrationSourcePropertyObjectId ? await tx.propertyObject.findFirst({
+          where: {
+            id: submission.migrationSourcePropertyObjectId,
+            ownerOrganizationId: submission.organizationId,
+            ownerOfficeId: submission.officeId,
+            identityProfile: null,
+          },
+        }) : null;
+        if (submission.migrationSourcePropertyObjectId && !migrationObject) {
+          throw new PropertyIdentityHttpError(409, "MIGRATION_SOURCE_UNAVAILABLE", "The migration source object is no longer eligible for registration.");
+        }
+        const propertyObject = migrationObject ?? await tx.propertyObject.create({
           data: {
             ownerOrganizationId: submission.organizationId,
             ownerOfficeId: submission.officeId,
