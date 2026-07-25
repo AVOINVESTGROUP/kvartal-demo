@@ -25,6 +25,10 @@ describe("Property Identity partner scope", () => {
     expect(resolvePartnerScope(actor, { organizationId: "org-1", officeId: "office-1" })).toEqual({ organizationId: "org-1", officeId: "office-1" });
   });
 
+  it("allows an organisation administrator to select another office in the same organisation", () => {
+    expect(resolvePartnerScope(actor, { organizationId: "org-1", officeId: "office-9" })).toEqual({ organizationId: "org-1", officeId: "office-9" });
+  });
+
   it("rejects body selectors outside active write memberships", () => {
     expect(() => resolvePartnerScope(actor, { organizationId: "org-2", officeId: "office-2" })).toThrowError(/not permitted/i);
     expect(() => resolvePartnerScope(actor, { organizationId: "org-3", officeId: "office-3" })).toThrowError(/not permitted/i);

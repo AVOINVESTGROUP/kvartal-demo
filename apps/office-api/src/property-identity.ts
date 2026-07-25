@@ -150,6 +150,9 @@ export function resolvePartnerScope(actor: ActorContext, requested: { organizati
     (!organizationId || membership.organizationId === organizationId) &&
     membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"),
   );
+  if (organizationId && officeId && organizationMemberships.some((membership) => membership.organizationId === organizationId)) {
+    return { organizationId, officeId };
+  }
   const candidate = officeMemberships[0] ?? actor.officeMemberships.find((membership) =>
     organizationMemberships.some((organization) => organization.organizationId === membership.organizationId),
   );
@@ -1031,7 +1034,7 @@ async function getPropertyIdentityContext(prisma: PrismaClient, actor: ActorCont
     .filter((membership) => membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"))
     .map((membership) => membership.organizationId));
   const scopeKeys = new Set<string>();
-  const scopes = actor.officeMemberships
+  const explicitScopes = actor.officeMemberships
     .filter((membership) => organisationAdminIds.has(membership.organizationId) || membership.roles.some((role) => role === "office_owner" || role === "office_admin" || role === "broker"))
     .filter((membership) => {
       const key = `${membership.organizationId}:${membership.officeId}`;
@@ -1039,11 +1042,17 @@ async function getPropertyIdentityContext(prisma: PrismaClient, actor: ActorCont
       scopeKeys.add(key);
       return true;
     });
-  if (!scopes.length) throw new ActorAuthError("FORBIDDEN", 403, "No writable partner office is available.");
+  if (!explicitScopes.length && !organisationAdminIds.size) throw new ActorAuthError("FORBIDDEN", 403, "No writable partner office is available.");
   const [offices, markets, rolloutCandidates, authorityPolicies] = await Promise.all([
     prisma.office.findMany({
-      where: { OR: scopes.map((scope) => ({ id: scope.officeId, organizationId: scope.organizationId })), status: "active" },
-      select: { id: true, organizationId: true, legalName: true, city: true, country: true, defaultMarketId: true, organization: { select: { legalName: true } } },
+      where: {
+        status: "active",
+        OR: [
+          ...(organisationAdminIds.size ? [{ organizationId: { in: [...organisationAdminIds] } }] : []),
+          ...explicitScopes.map((scope) => ({ id: scope.officeId, organizationId: scope.organizationId })),
+        ],
+      },
+      select: { id: true, organizationId: true, legalName: true, city: true, country: true, defaultMarketId: true, organization: { select: { legalName: true, slug: true } } },
       orderBy: [{ organizationId: "asc" }, { legalName: "asc" }],
     }),
     prisma.market.findMany({ where: { active: true }, select: { id: true, slug: true, city: true, country: true, assetClasses: true, defaultCurrency: true }, orderBy: [{ country: "asc" }, { city: "asc" }] }),
@@ -1061,11 +1070,11 @@ async function getPropertyIdentityContext(prisma: PrismaClient, actor: ActorCont
   })));
   return {
     ok: true,
-    offices: offices.map((office) => ({ ...office, organizationName: office.organization.legalName, organization: undefined })),
+    offices: offices.map((office) => ({ ...office, organizationName: office.organization.legalName, organizationSlug: office.organization.slug, organization: undefined })),
     markets,
     rollout: enabledScopes,
     authorityPolicies: authorityPolicies.filter((policy) =>
-      (!policy.organizationId || scopes.some((scope) => scope.organizationId === policy.organizationId)) &&
+      (!policy.organizationId || offices.some((office) => office.organizationId === policy.organizationId)) &&
       (!policy.marketId || markets.some((market) => market.id === policy.marketId))),
   };
 }
