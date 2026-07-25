@@ -618,4 +618,44 @@
 - Implemented locally only: Firebase session-cookie BFF flow, strict CSRF/recent-login/logout, two-header Cloud Run client, external identity SSOT/migration, actor middleware/policy registries, owner binding API/UI, one-time bootstrap CLI, idempotency/concurrency, retention helpers and tests.
 - No production database migration, IAM edit, deployment, Firebase mutation or bootstrap execution was performed.
 - Production prerequisites remain: reauthenticate GCP operator; verify App Hosting/Cloud Run runtime IAM and ADC; configure retention, digest pepper, exact origins and protected bootstrap settings; apply migration through the approved deployment process.
+
+## Property Identity Registry v4 dev deployment (2026-07-25)
+
+- Source branch: `feature/property-identity-v4`.
+- Draft PR: `https://github.com/AVOINVESTGROUP/kvartal-demo/pull/1`.
+- App Hosting source commit: `96ed283aa5a1b2871dcd175ea33fa81aec814dcf`.
+- Pre-migration Cloud SQL backup:
+  - backup id: `1784983345803`;
+  - operation: `396d0eaf-4a90-4b90-8f89-dd9100000036`;
+  - status: `DONE`.
+- Secret Manager configuration created without exposing key material:
+  - `property-identity-encryption-key-v1`;
+  - `property-identity-digest-keys-json`;
+  - `external-identity-subject-digest-pepper`.
+- Incorrect initial secret versions were disabled before they were attached to any service. Correct cryptographically random version `2` is enabled for all three secrets and is selected through `latest`.
+- Cloud Build results:
+  - migration image build `068e3e0c-0137-4ece-ae40-d8e9d781c370`: `SUCCESS`;
+  - office API build `999954a4-7b35-46a8-acba-f3ec95729e0d`: `SUCCESS`;
+  - platform API build `d9824998-ab4a-4535-aaf8-63aef389661c`: `SUCCESS`.
+- Database migration:
+  - Cloud Run execution `kvartal-db-migrate-w95lf`;
+  - status: succeeded;
+  - initial crypto metadata version `v1` registered;
+  - no authority or rollout policy was seeded.
+- Cloud Run API deployment:
+  - `kvartal-office-api-00027-tkx`, 100% dev traffic;
+  - `kvartal-platform-api-00012-n74`, 100% dev traffic;
+  - both `/readyz` checks returned `database=ready`.
+- Firebase App Hosting builds from the feature branch:
+  - build id `build-property-identity-v4-001` on `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`;
+  - all build states: `READY`;
+  - rollout id `rollout-pi-v4-001` on all three backends;
+  - all rollout states: `SUCCEEDED`.
+- Live verification:
+  - all three `/login` pages return `200`;
+  - unauthenticated `/property-identity` redirects to `/login`;
+  - actor-protected registry and monitoring API routes return structured `REAUTH_REQUIRED` without a Firebase user session;
+  - the existing public object inventory still responds successfully.
+- Effective feature state: Property Identity Registry remains `DISABLED` because no rollout policy exists. Existing object creation/publication behaviour therefore remains unchanged until an explicitly approved organisation or market policy is added.
+- Remaining acceptance check: sign in with an authorised Firebase user and perform the first end-to-end author workflow after a test authority policy and test organisation rollout are explicitly approved.
 - SSOT merge remains blocked until the dirty main-worktree documentation edits are reconciled with this feature branch; see the external conflict report.

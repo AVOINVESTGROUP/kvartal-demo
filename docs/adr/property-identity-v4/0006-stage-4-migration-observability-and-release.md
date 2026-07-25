@@ -1,7 +1,7 @@
 # ADR 0006: Property Identity v4 Stage 4 migration, observability and release safety
 
 Date: 2026-07-25
-Status: completed locally; rollout and deployment not performed
+Status: deployed to `kvartal-dev` with registry rollout disabled
 
 ## Decision
 
