@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID } from "node:crypto";
 import { handleExternalIdentityRoute } from "./external-identity.js";
+import { handlePropertyIdentityMonitoringRoute } from "./property-identity-monitoring.js";
 
 export const serviceName = "platform-api";
 
@@ -21,11 +22,12 @@ export const ownedRoutes = [
   "/api/v1/platform/external-identity-binding-requests",
   "/api/v1/platform/external-identities",
   "/api/v1/platform/external-identity-candidates",
+  "/api/v1/platform/property-identity/monitoring",
 ] as const;
 
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz", policy: "PUBLIC" },
-  { matches: (path) => path === "/api/v1/platform/actor-context" || path.startsWith("/api/v1/platform/external-identit"), policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path === "/api/v1/platform/actor-context" || path.startsWith("/api/v1/platform/external-identit") || path === "/api/v1/platform/property-identity/monitoring", policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path.startsWith("/api/v1/platform/"), policy: "LEGACY_SERVICE_AUTH" },
 ];
 
@@ -175,6 +177,7 @@ const server = createServer(async (request, response) => {
       });
       if (url.pathname === "/api/v1/platform/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
       if (await handleExternalIdentityRoute(request, response, url, prisma, actor)) return;
+      if (await handlePropertyIdentityMonitoringRoute({ request, response, url, prisma, actor })) return;
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
       sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId));

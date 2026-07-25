@@ -34,5 +34,12 @@ describe("API policy registry source contracts", () => {
     const identityHandler = read("apps/office-api/src/property-identity.ts");
     expect(identityHandler).toContain("resolvePartnerScope");
     expect(identityHandler).not.toContain("hasAdminWriteAccess");
+    expect(platform).toContain('"/api/v1/platform/property-identity/monitoring"');
+    const monitoringHandler = read("apps/platform-api/src/property-identity-monitoring.ts");
+    expect(monitoringHandler).toContain("monitoringOnly: true");
+    expect(monitoringHandler).not.toMatch(/confirm-create|confirm-link|approve|reject/);
+    const monitoringPage = read("apps/platform-admin/src/app/property-identity/page.tsx");
+    expect(monitoringPage).toContain("Заявки здесь не обрабатываются");
+    expect(monitoringPage).not.toContain("<form");
   });
 });

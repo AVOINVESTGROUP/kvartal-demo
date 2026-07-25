@@ -143,6 +143,7 @@ export default async function PlatformAdminHome() {
             <div className="mt-2 text-kv-muted">{access.platformRoles.join(", ")}</div>
             <a href="/logout" className="mt-3 inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Выйти</a>
             <Link href="/external-identities" className="ml-2 mt-3 inline-flex rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">UID bindings</Link>
+            <Link href="/property-identity" className="ml-2 mt-3 inline-flex rounded-full bg-kv-red px-4 py-2 text-[12px] font-black text-white">Property Identity</Link>
           </div>
         </div>
       </section>
