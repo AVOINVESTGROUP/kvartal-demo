@@ -11,7 +11,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
     "prisma:validate": "prisma validate --schema prisma/schema.prisma",
     "prisma:format": "prisma format --schema prisma/schema.prisma"
-    ,"test": "vitest run"
+    ,"test": "vitest run --no-file-parallelism"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0"
