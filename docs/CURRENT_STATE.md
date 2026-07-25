@@ -659,3 +659,17 @@
 - Effective feature state: Property Identity Registry remains `DISABLED` because no rollout policy exists. Existing object creation/publication behaviour therefore remains unchanged until an explicitly approved organisation or market policy is added.
 - Remaining acceptance check: sign in with an authorised Firebase user and perform the first end-to-end author workflow after a test authority policy and test organisation rollout are explicitly approved.
 - SSOT merge remains blocked until the dirty main-worktree documentation edits are reconciled with this feature branch; see the external conflict report.
+
+## Hosted admin Google Auth dev correction (2026-07-25)
+
+- Corrected the missing exact `KVARTAL_ADMIN_ORIGIN` App Hosting variable that caused `DEPLOYMENT_PREREQUISITE_MISSING` on the KVARTAL Admin login page.
+- Replaced popup-first Firebase Google Auth with redirect-first Auth in `partner-admin`, `kvartal-admin` and `platform-admin`. This removes the cross-window dependency that Chrome reported through `Cross-Origin-Opener-Policy` warnings.
+- Verified Firebase Auth authorized domains include all three dev `hosted.app` domains.
+- Verification passed:
+  - `@kvartal/auth`: 18 tests;
+  - production Next.js builds for all three admin apps;
+  - App Hosting build `build-auth-redirect-001` is `READY` on all three backends and resolves source commit `7cdcb5836e1197f4aee51d8442f3dfba829f3c09`;
+  - App Hosting rollout `rollout-auth-redirect-001` is `SUCCEEDED` on all three backends;
+  - all three live `/login` pages return `200`;
+  - effective environment contains each backend's exact origin variable.
+- The deployed login flow is now: full-page Google redirect, return to the admin app, server session exchange, Firebase browser sign-out and in-memory persistence reset.
