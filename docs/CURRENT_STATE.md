@@ -789,3 +789,10 @@
 - The constructor is bound to the entered Registry/Admin Safe, so every registry role is assigned to the Safe at deployment.
 - The browser waits for the BSC Testnet receipt and returns contract address, deployment transaction hash, Registry Safe and ABI SHA-256 hash for the verified activation form.
 - The platform-admin build now compiles the Solidity package before Next.js so the checked contract artifact is always generated in clean CI; local production build and lint passed.
+
+## Browser-owned registry contract deployment released to dev (2026-07-26)
+
+- Source commit `2b65bf719ffefb28b656aef85f8a90fff4cd5dd6` was pushed to `feature/property-identity-v4`.
+- Firebase App Hosting build `build-web3-wallet-2b65bf7` resolved that exact commit and reached `READY`; underlying regional Cloud Build `a6efd8b5-25ee-4019-9163-e58740623114` succeeded.
+- Rollout `rollout-web3-wallet-2b65bf7` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- The remaining Registry Safe and contract deployment steps now require only interactive confirmations in the owner's wallet plus BSC Testnet gas; no deployer private key needs to be provided to the platform or operator.
