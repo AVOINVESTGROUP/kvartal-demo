@@ -4,6 +4,7 @@ import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ApiAuthP
 import { randomUUID } from "node:crypto";
 import { handleExternalIdentityRoute } from "./external-identity.js";
 import { handlePropertyIdentityMonitoringRoute } from "./property-identity-monitoring.js";
+import { handlePropertyIdentityWeb3Route } from "./property-identity-web3.js";
 
 export const serviceName = "platform-api";
 
@@ -178,6 +179,7 @@ const server = createServer(async (request, response) => {
       if (url.pathname === "/api/v1/platform/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
       if (await handleExternalIdentityRoute(request, response, url, prisma, actor)) return;
       if (await handlePropertyIdentityMonitoringRoute({ request, response, url, prisma, actor })) return;
+      if (await handlePropertyIdentityWeb3Route({ request, response, url, prisma, actor })) return;
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
       sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId));

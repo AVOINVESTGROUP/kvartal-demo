@@ -384,10 +384,12 @@ async function updateObjectAction(formData: FormData) {
   const action = formValue(formData, "action") || "save";
 
   const session = await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
+  await writeSecureActorBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
     ...formPayload(formData, session.organizationSlug),
     action,
     clearMedia: formData.get("clearMedia") === "on",
+  }, {
+    "Idempotency-Key": `object-update:${objectId}:${crypto.randomUUID()}`,
   });
   revalidatePath("/");
 }

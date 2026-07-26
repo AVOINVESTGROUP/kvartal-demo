@@ -16,6 +16,7 @@ export const ownedRoutes = [
   "/api/v1/public/session-context",
   "/api/v1/public/ai-search",
   "/api/v1/public/client-intents",
+  "/api/v1/public/property-identity",
   "/api/v1/platform/market-insights/refresh",
   "/api/v1/admin/intake/process-drive-folder",
   "/api/v1/admin/context",
@@ -42,7 +43,7 @@ export const ownedRoutes = [
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz" || path.startsWith("/api/v1/public/"), policy: "PUBLIC" },
   { matches: (path) => path === "/api/v1/admin/actor-context", policy: "ACTOR_AUTH_REQUIRED" },
-  { matches: (path) => path === "/api/v1/admin/objects", policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path === "/api/v1/admin/objects" || /^\/api\/v1\/admin\/objects\/[^/]+$/.test(path), policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path.startsWith("/api/v1/admin/property-identity/"), policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path === "/api/v1/platform/market-insights/refresh", policy: "LEGACY_SERVICE_AUTH" },
   { matches: (path) => path.startsWith("/api/v1/admin/"), policy: "LEGACY_SERVICE_AUTH" },
@@ -2344,6 +2345,48 @@ const server = createServer(async (request, response) => {
         })),
         ...objects.map((object: PublicObjectRow) => ({ ...serializeObject(object, language), source: "LEGACY_GRANDFATHERED" })),
       ].slice(0, take),
+    });
+    return;
+  }
+
+  const publicIdentityMatch = url.pathname.match(/^\/api\/v1\/public\/property-identity\/([^/]+)$/);
+  if (publicIdentityMatch && request.method === "GET") {
+    const stableId = decodeURIComponent(publicIdentityMatch[1]);
+    const profile = await prisma.propertyIdentityProfile.findUnique({
+      where: { stableId },
+      include: {
+        canonicalVersions: { where: { isCurrent: true }, orderBy: { versionNumber: "desc" }, take: 1 },
+        token: { include: { ownerWallet: { include: { organization: true } } } },
+      },
+    });
+    if (!profile) { sendError(response, 404, "property_identity_not_found", "Property Identity was not found."); return; }
+    const token = profile.token;
+    const publicStatus = profile.status === "SUSPENDED" || token?.status === "SUSPENDED" ? "SUSPENDED"
+      : profile.status === "REVOKED" || token?.status === "REVOKED" ? "REVOKED"
+      : token && ["ACTIVE", "REASSIGNED"].includes(token.status) && token.reconciliationStatus === "IN_SYNC" ? "VERIFIED"
+      : "VERIFICATION_PENDING";
+    const explorerBase = token?.chainId === 56 ? "https://bscscan.com" : "https://testnet.bscscan.com";
+    sendJson(response, 200, {
+      stableId: profile.stableId,
+      identityStatus: profile.status,
+      publicStatus,
+      subjectScope: profile.subjectScope,
+      jurisdiction: profile.jurisdiction,
+      canonicalVersion: profile.canonicalVersions[0] ? { versionNumber: profile.canonicalVersions[0].versionNumber, snapshotHash: profile.canonicalVersions[0].snapshotHash, createdAt: profile.canonicalVersions[0].createdAt } : null,
+      token: token ? {
+        tokenId: token.tokenId.toFixed(0),
+        chainId: token.chainId,
+        contractAddress: token.contractAddress,
+        corporateSafe: token.ownerAddress,
+        originatorOrganization: token.ownerWallet.organization.legalName,
+        status: token.status,
+        reconciliationStatus: token.reconciliationStatus,
+        issuedAt: token.issuedAt,
+        lastReconciledAt: token.lastReconciledAt,
+        transactionUrl: token.lastTxHash ? `${explorerBase}/tx/${token.lastTxHash}` : null,
+        contractUrl: `${explorerBase}/address/${token.contractAddress}`,
+      } : null,
+      disclaimer: "This record confirms registry provenance only. It is not proof of legal title, ownership, valuation, or authority to sell.",
     });
     return;
   }
@@ -6916,10 +6959,7 @@ Schema:
   }
 
   if (objectMatch && request.method === "PATCH") {
-    if (!hasAdminWriteAccess(request)) {
-      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
-      return;
-    }
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
 
     type UpdateObjectBody = {
       organizationSlug?: string;
@@ -6970,6 +7010,13 @@ Schema:
 
     if (!existing) {
       sendError(response, 404, "object_not_found", `Object '${objectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+
+    try {
+      resolvePartnerScope(actorContext, { organizationId: existing.ownerOrganizationId, officeId: existing.ownerOfficeId });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "This object is outside the signed-in user's organisation or office access scope.");
       return;
     }
 

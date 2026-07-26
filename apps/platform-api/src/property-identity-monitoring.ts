@@ -105,6 +105,30 @@ export async function handlePropertyIdentityMonitoringRoute(input: {
     return true;
   }
 
+  const rolloutAction = input.url.pathname.match(/^\/api\/v1\/platform\/property-identity\/rollout-policies\/([^/]+)$/);
+  if (rolloutAction && input.request.method === "PATCH") {
+    assertOwnerAccess(input.actor);
+    const body = await readJsonBody(input.request);
+    const policyId = decodeURIComponent(rolloutAction[1]);
+    const expectedVersion = Number(body.expectedVersion);
+    const mode = body.mode === "NEW_SUBMISSIONS_ONLY" || body.mode === "STRICT" ? body.mode : "DISABLED";
+    const registryEnabled = mode !== "DISABLED" && body.registryEnabled === true;
+    const publishGateEnabled = registryEnabled && body.publishGateEnabled === true;
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (!Number.isSafeInteger(expectedVersion) || reason.length < 10) throw new ActorAuthError("FORBIDDEN", 400, "Current policy version and a reason are required.");
+    const before = await input.prisma.propertyIdentityRolloutPolicy.findUnique({ where: { id: policyId } });
+    if (!before) throw new ActorAuthError("FORBIDDEN", 404, "The rollout policy was not found.");
+    const changed = await input.prisma.$transaction(async (tx) => {
+      const result = await tx.propertyIdentityRolloutPolicy.updateMany({ where: { id: policyId, version: expectedVersion }, data: { mode, registryEnabled, publishGateEnabled, version: { increment: 1 } } });
+      if (result.count !== 1) throw new ActorAuthError("FORBIDDEN", 409, "The rollout policy changed. Reload before trying again.");
+      const after = await tx.propertyIdentityRolloutPolicy.findUniqueOrThrow({ where: { id: policyId } });
+      await tx.auditLog.create({ data: { actorUserId: input.actor.appUserId, action: "PROPERTY_IDENTITY_ROLLOUT_UPDATED", entityType: "PropertyIdentityRolloutPolicy", entityId: policyId, before: JSON.parse(JSON.stringify(before)), after: JSON.parse(JSON.stringify({ ...after, reason })) } });
+      return after;
+    });
+    sendJson(input.response, 200, { ok: true, rolloutPolicy: changed });
+    return true;
+  }
+
   if (input.url.pathname !== "/api/v1/platform/property-identity/monitoring" || input.request.method !== "GET") return false;
   assertMonitoringAccess(input.actor);
 

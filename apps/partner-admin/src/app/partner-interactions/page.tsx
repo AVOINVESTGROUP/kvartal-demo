@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAdminSession } from "../../lib/auth";
 import { deleteBackendJson, fetchBackendJson, writeBackendJson } from "../../lib/server-api";
@@ -621,7 +622,7 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
             <h1 className="mt-2 text-[30px] font-black tracking-tight text-kv-navy">Взаимодействия партнёров</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <a href="/" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[13px] font-black text-kv-navy">Объекты</a>
+            <Link href="/" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[13px] font-black text-kv-navy">Объекты</Link>
             <form action="/partner-interactions" method="get">
               {selectedPartner ? <input type="hidden" name="partner" value={selectedPartner.id} /> : null}
               {selectedInteractionId ? <input type="hidden" name="interaction" value={selectedInteractionId} /> : null}
