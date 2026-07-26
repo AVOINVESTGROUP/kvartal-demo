@@ -735,5 +735,28 @@
 - Added owner-only verification of representation rights, publication-grant activation and audited rollout-policy controls.
 - Added BSC Testnet/Safe/Web3 foundation, non-tradable BEP-721 contract, token-operation queue, reconciliation, and a privacy-safe public verification page.
 - Added a safety data migration that disables the incorrect rollout before the corrected services are deployed. Re-enable `NEW_SUBMISSIONS_ONLY` only after ordinary-form dev E2E passes; enable publish gate separately after grant E2E.
-- This corrected branch is not yet deployed. The previously activated live Moscow policy remains in effect until Google operator credentials are renewed or the corrective database migration is deployed.
+- Deployment and safety-migration results are recorded in the following section.
 - User and verification instructions: `docs/property-identity-v4/UNIFIED-REGISTRY-USER-GUIDE.md`.
+
+## Unified Property Identity correction deployed to dev (2026-07-26)
+
+- Source branch: `feature/property-identity-v4`; deployed application commit: `3068cfeab0375cdcf9a1c5953977c19d3196701f`; final CI hardening commit: `67671d2a3c76e1aa47bd089f6f50f954331b7046`.
+- Pre-migration Cloud SQL backup `1785056857868` completed successfully (operation `5159f2c9-ec93-4680-8cd6-702d00000036`).
+- Cloud Build images succeeded:
+  - migration build `cabc2c64-b4b0-4918-a2ba-1d56a2da1a4d`;
+  - office API build `44ffba48-6f83-40cc-842c-583b5128c9c7`;
+  - platform API build `be256340-aac5-4356-a233-24ba1b59f722`.
+- Migration execution `kvartal-db-migrate-l8cj7` succeeded. The safety migration disabled the incorrect separate-registry rollout before the corrected APIs received traffic.
+- Cloud Run revisions now serve 100% of dev traffic:
+  - `kvartal-office-api-unified-3068cfe`;
+  - `kvartal-platform-api-unified-3068cfe` with explicit BSC Testnet chain id `97`.
+- Authenticated readiness returned `200` and database ready for both APIs; the existing public object inventory returned `200` after deployment.
+- App Hosting admin build `build-unified-pi-3068cfe` and rollout `rollout-unified-pi-3068cfe` succeeded on `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`.
+- The root `kvartal-web-dev` build exposed two clean-CI defects: integration tests were included in the database production compile and Prisma Client generation relied on local artifacts. Both were fixed in commits `3f7ae04` and `67671d2`; clean root build then passed all 13 tasks.
+- App Hosting public build `build-unified-pi-67671d2` and rollout `rollout-unified-pi-67671d2` succeeded on `kvartal-web-dev`.
+- Live verification:
+  - all three admin login pages return `200` with `Cross-Origin-Opener-Policy: same-origin-allow-popups`;
+  - legacy partner and KVARTAL `/property-identity` URLs redirect to `/`;
+  - unauthenticated platform-owner `/property-identity/web3` redirects to `/login`;
+  - public `/verify/{stableId}` is live and returns the privacy-safe not-found view for an unknown ID.
+- Effective feature state remains `DISABLED` by design. The next release gate is one authenticated ordinary-object create/edit check with `office@integrayachtsuae.com`; only then may the owner enable `NEW_SUBMISSIONS_ONLY` without publish gate and run duplicate/representation/offer E2E.
