@@ -1,4 +1,5 @@
-import PropertyIdentityPage from "../../../../partner-admin/src/app/property-identity/page";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-export default PropertyIdentityPage;
+export default function LegacyPropertyIdentityRoute() {
+  redirect("/");
+}

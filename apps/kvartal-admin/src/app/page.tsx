@@ -308,7 +308,6 @@ export default async function KvartalAdminHome() {
             <Badge>{organization?.countryOfRegistration ?? "RU"}</Badge>
             <Badge>{organization?.defaultCurrency ?? "RUB"}</Badge>
             {session.roles.map((role) => <Badge key={role}>{role}</Badge>)}
-            <a href="/property-identity" className="inline-flex rounded-full bg-kv-red px-4 py-2 text-[12px] font-black text-white">Property Identity Registry</a>
             </div>
             <a href="/logout" className="inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">
               Выйти
