@@ -724,3 +724,16 @@
 - Activated reviewed `RU / CADASTRAL_ID / ROSREESTR` policies for land parcel, building, premise and unit scopes. Other markets remain disabled.
 - Full hosted-page Firebase-session checks returned `200` and rendered the working create-registration form for both `abtiurin@gmail.com` and `office@integrayachtsuae.com`.
 - Full report: `docs/property-identity-v4/DEV-USABILITY-ACTIVATION.md`.
+
+## Unified Property Identity correction prepared (2026-07-26)
+
+- The Moscow activation above was found to violate the platform architecture: it introduced a separate partner-facing registration surface and blocked the existing object form.
+- ADR 0007 now fixes the invariant: one physical property, one global identity, ordinary partner object form as the only ingress, partner-specific representation rights/offers/publication grants, and Web3 control only in platform-admin.
+- Removed partner links and UI for `/property-identity`; legacy URLs redirect to the ordinary cabinet.
+- Converted object create/read to ActorContext authentication. Organization and office selectors are validated against the signed-in user's memberships; the synthetic admin-console author is no longer used for new objects.
+- Added automatic identity resolution to ordinary object creation. An exact official-identifier match reuses the canonical object and creates a partner representation right/offer instead of a second physical object.
+- Added owner-only verification of representation rights, publication-grant activation and audited rollout-policy controls.
+- Added BSC Testnet/Safe/Web3 foundation, non-tradable BEP-721 contract, token-operation queue, reconciliation, and a privacy-safe public verification page.
+- Added a safety data migration that disables the incorrect rollout before the corrected services are deployed. Re-enable `NEW_SUBMISSIONS_ONLY` only after ordinary-form dev E2E passes; enable publish gate separately after grant E2E.
+- This corrected branch is not yet deployed. The previously activated live Moscow policy remains in effect until Google operator credentials are renewed or the corrective database migration is deployed.
+- User and verification instructions: `docs/property-identity-v4/UNIFIED-REGISTRY-USER-GUIDE.md`.

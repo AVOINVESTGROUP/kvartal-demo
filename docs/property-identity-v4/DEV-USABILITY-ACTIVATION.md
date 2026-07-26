@@ -4,7 +4,7 @@ Date: 2026-07-25
 
 Environment: `kvartal-dev`
 
-Status: active for the Moscow market in `NEW_SUBMISSIONS_ONLY` mode.
+Status: superseded on 2026-07-26 by ADR 0007. The separate partner registration surface must not be used. The live policy remains active only until the corrective deployment disables it.
 
 ## User meaning
 
