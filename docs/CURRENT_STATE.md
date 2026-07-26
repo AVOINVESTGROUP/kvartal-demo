@@ -760,3 +760,14 @@
   - unauthenticated platform-owner `/property-identity/web3` redirects to `/login`;
   - public `/verify/{stableId}` is live and returns the privacy-safe not-found view for an unknown ID.
 - Effective feature state remains `DISABLED` by design. The next release gate is one authenticated ordinary-object create/edit check with `office@integrayachtsuae.com`; only then may the owner enable `NEW_SUBMISSIONS_ONLY` without publish gate and run duplicate/representation/offer E2E.
+
+## Property Identity real Web3 execution increment prepared (2026-07-26)
+
+- Added owner-only registration of a deployed BSC registry contract. Activation now verifies the successful deployment receipt, deployed bytecode, ERC-721 interface, contract identity, every Registry/Admin role, Safe owners and threshold directly through BSC RPC.
+- Contract registry records now preserve the Registry/Admin Safe address, bytecode hash, deployment block, verification time and registering platform user.
+- Added a browser-owned Safe 2-of-N deployment flow in `platform-admin`; private keys and seed phrases never reach the application.
+- Added Safe Protocol Kit transaction creation/signing and Safe API Kit proposal/status workflow. After enough confirmations, an owner can execute from the connected wallet and record the resulting BSC transaction automatically.
+- Token queue payloads now contain an explicit immutable Safe transaction envelope (`safe`, `to`, `value`, `data`, `operation`) rather than requiring the operator to reconstruct calldata.
+- The testnet deployment script now emits the ABI SHA-256 hash required by verified contract registration.
+- Local verification passed for Prisma generation, Web3 tests/build, Solidity tests, platform API build/tests, platform-admin production build and lint.
+- On-chain deployment is intentionally not claimed yet: no owner-controlled Registry/Admin Safe address, funded signer transaction or Safe API key currently exists in the project configuration. These are external signer/account prerequisites, not values the application may invent.

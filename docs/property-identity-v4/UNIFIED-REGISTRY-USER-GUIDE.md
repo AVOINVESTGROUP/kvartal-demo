@@ -84,3 +84,18 @@ Property Identity Registry — единый реестр физических о
 - Safe smart-account signatures (EIP-1271): https://docs.safe.global/advanced/smart-account-signatures
 - Safe Transaction Service flow: https://docs.safe.global/core-api/transaction-service-guides/transactions
 - OpenZeppelin Contracts 5 ERC-721 and access control: https://docs.openzeppelin.com/contracts/5.x/api/token/erc721 and https://docs.openzeppelin.com/contracts/5.x/access-control
+
+## Полный запуск Web3 в dev
+
+Web3 управляется только владельцем платформы на странице `platform-admin → Property Identity Registry → Web3 и Safe`.
+
+1. Подключите кошелёк с tBNB и создайте `Registry/Admin Safe 2-of-N`. Укажите минимум два принадлежащих владельцу платформы адреса; подключённый адрес должен быть одним из них.
+2. Разверните `Bep721PropertyIdentityToken` в BSC Testnet скриптом `pnpm --filter @kvartal/contracts deploy:testnet`. В окружении нужны только на время запуска `BSC_TESTNET_DEPLOYER_PRIVATE_KEY` и адрес созданного Safe в `IREPN_REGISTRY_ADMIN_SAFE_ADDRESS`. Ключ нельзя сохранять в Git или базе.
+3. В блоке «Активировать развёрнутый Web3-реестр» укажите адрес контракта, адрес Registry/Admin Safe, deployment tx hash, ABI hash из вывода deploy-скрипта и версию.
+4. API непосредственно из BSC Testnet проверит успешную deployment-транзакцию, наличие байткода, название и символ контракта, ERC-721 interface, все семь ролей Safe и порог не меньше 2. Только после этого контракт становится `ACTIVE`.
+5. Для каждой организации создайте или подключите Corporate Safe, выпустите challenge и подтвердите его Safe-подписью. Corporate Safe становится `ACTIVE` только при двух или более владельцах и threshold не меньше 2.
+6. Создайте операцию `MINT`. Нажмите «Подписать и отправить в Safe»: браузер сформирует точную Safe-транзакцию, кошелёк подпишет её, а API передаст предложение в Safe Transaction Service.
+7. Второй владелец подтверждает ту же транзакцию в Safe. Затем нажмите «Проверить подписи и исполнить». После достижения порога браузер отправит транзакцию в BSC Testnet, а chain tx hash автоматически попадёт в операцию.
+8. Нажмите «Сверить с блокчейном». Статус `IN_SYNC` появляется только если owner, token state и данные в блокчейне совпали.
+
+Для официального Safe Transaction Service API в Cloud Run должен быть задан секрет `SAFE_API_KEY`. Получение этого ключа выполняется владельцем аккаунта на `https://developer.safe.global`; ключ не вводится в интерфейсе и не публикуется. Вместо него допускается собственный совместимый сервис через `SAFE_TRANSACTION_SERVICE_URL`.

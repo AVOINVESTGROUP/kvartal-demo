@@ -136,6 +136,10 @@ export class SafeRpcAdapter implements CorporateWalletAdapter {
 }
 
 const registryAbi = [
+  { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
+  { type: "function", name: "symbol", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
+  { type: "function", name: "supportsInterface", stateMutability: "view", inputs: [{ name: "interfaceId", type: "bytes4" }], outputs: [{ name: "", type: "bool" }] },
+  { type: "function", name: "hasRole", stateMutability: "view", inputs: [{ name: "role", type: "bytes32" }, { name: "account", type: "address" }], outputs: [{ name: "", type: "bool" }] },
   { type: "function", name: "ownerOf", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [{ name: "", type: "address" }] },
   { type: "function", name: "identityRecord", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [{ name: "propertyReferenceHash", type: "bytes32" }, { name: "canonicalVersionHash", type: "bytes32" }, { name: "evidencePackageHash", type: "bytes32" }, { name: "status", type: "uint8" }] },
   { type: "function", name: "mintIdentity", inputs: [{ name: "to", type: "address" }, { name: "tokenId", type: "uint256" }, { name: "propertyReferenceHash", type: "bytes32" }, { name: "canonicalVersionHash", type: "bytes32" }, { name: "evidencePackageHash", type: "bytes32" }, { name: "uri", type: "string" }], outputs: [] },
@@ -151,6 +155,46 @@ export class RegistryRpcAdapter {
 
   constructor(rpcUrl: string, client?: PublicClient) {
     this.client = client ?? createPublicClient({ transport: http(rpcUrl) });
+  }
+
+  async verifyDeployment(input: { contractAddress: string; deploymentTxHash: Hex; registryAdminSafe: string }) {
+    const contractAddress = normalizeAddress(input.contractAddress);
+    const registryAdminSafe = normalizeAddress(input.registryAdminSafe);
+    const [bytecode, receipt] = await Promise.all([
+      this.client.getBytecode({ address: contractAddress }),
+      this.client.getTransactionReceipt({ hash: input.deploymentTxHash }),
+    ]);
+    if (!bytecode || bytecode === "0x") throw new Error("REGISTRY_CONTRACT_BYTECODE_MISSING");
+    if (receipt.status !== "success") throw new Error("REGISTRY_DEPLOYMENT_TRANSACTION_FAILED");
+    if (!receipt.contractAddress || getAddress(receipt.contractAddress) !== contractAddress) throw new Error("REGISTRY_DEPLOYMENT_ADDRESS_MISMATCH");
+
+    const roles = [
+      `0x${"00".repeat(32)}`,
+      keccak256(stringToHex("ISSUER_ROLE")),
+      keccak256(stringToHex("VERSION_ROLE")),
+      keccak256(stringToHex("SUSPENDER_ROLE")),
+      keccak256(stringToHex("REVOKER_ROLE")),
+      keccak256(stringToHex("REASSIGNER_ROLE")),
+      keccak256(stringToHex("PAUSER_ROLE")),
+    ] as const;
+    const [name, symbol, supportsErc721, ...roleChecks] = await Promise.all([
+      this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "name" }),
+      this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "symbol" }),
+      this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "supportsInterface", args: ["0x80ac58cd"] }),
+      ...roles.map((role) => this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "hasRole", args: [role, registryAdminSafe] })),
+    ]);
+    if (name !== "IREPN Property Identity" || symbol !== "IREPN-ID" || supportsErc721 !== true) throw new Error("REGISTRY_CONTRACT_INTERFACE_INVALID");
+    if (roleChecks.some((granted) => granted !== true)) throw new Error("REGISTRY_ADMIN_SAFE_ROLES_MISSING");
+    return Object.freeze({
+      contractAddress,
+      registryAdminSafe,
+      deploymentTxHash: receipt.transactionHash,
+      deploymentBlockNumber: receipt.blockNumber,
+      bytecodeHash: keccak256(bytecode),
+      name,
+      symbol,
+      rolesVerified: roles.length,
+    });
   }
 
   async readToken(contractAddress: string, tokenId: bigint) {

@@ -1,4 +1,5 @@
-const { ethers, network } = require("hardhat");
+const { createHash } = require("node:crypto");
+const { ethers, network, artifacts } = require("hardhat");
 
 async function main() {
   if (Number(network.config.chainId) !== 97) throw new Error("DEPLOYMENT_RESTRICTED_TO_BSC_TESTNET");
@@ -10,11 +11,14 @@ async function main() {
   const contract = await factory.deploy(registryAdminSafe);
   await contract.waitForDeployment();
   const deployment = await contract.deploymentTransaction().wait();
+  const artifact = await artifacts.readArtifact("Bep721PropertyIdentityToken");
+  const abiHash = `0x${createHash("sha256").update(JSON.stringify(artifact.abi), "utf8").digest("hex")}`;
   console.log(JSON.stringify({
     chainId: Number(network.config.chainId),
     contractAddress: await contract.getAddress(),
     deploymentTxHash: deployment.hash,
     registryAdminSafe,
+    abiHash,
   }, null, 2));
 }
 

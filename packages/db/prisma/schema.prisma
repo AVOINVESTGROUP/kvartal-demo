@@ -2485,20 +2485,26 @@ model CorporateWalletApproval {
 }
 
 model BlockchainContractRegistry {
-  id               String   @id @default(cuid())
-  chainId          Int
-  contractType     String
-  contractAddress  String
-  version          String
-  abiHash          String
-  deploymentTxHash String
-  explorerUrl      String?
-  status           String
-  active           Boolean  @default(false)
-  createdAt        DateTime @default(now())
+  id                       String   @id @default(cuid())
+  chainId                  Int
+  contractType             String
+  contractAddress          String
+  registryAdminSafeAddress String?
+  version                  String
+  abiHash                  String
+  bytecodeHash             String?
+  deploymentTxHash         String
+  deploymentBlockNumber    BigInt?
+  explorerUrl              String?
+  status                   String
+  active                   Boolean  @default(false)
+  verifiedAt               DateTime?
+  registeredByUserId       String?
+  createdAt                DateTime @default(now())
 
   @@unique([chainId, contractType, version])
   @@index([chainId, contractAddress, active])
+  @@index([chainId, registryAdminSafeAddress, active])
 }
 
 model PropertyIdentityToken {
