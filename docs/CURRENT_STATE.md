@@ -884,3 +884,10 @@
 - After a confirmed receipt, both the integrated and manual transaction-recording paths immediately invoke the existing blockchain reconciliation endpoint. The UI reports the resulting `IN_SYNC` state instead of leaving the token in a manual `PENDING` step.
 - The server still validates the queued immutable transaction envelope before the first proposal, rechecks the connected signer against the on-chain Safe owners for the second signature and never receives a private key.
 - Verified locally: platform API tests `6/6` and build; platform-admin production build and lint.
+
+## End-to-end Safe mint completion workflow deployed (2026-07-26)
+
+- Source commit `2991e3a67f24ec6ea2b2c98b523db3b61db30627` was pushed to `feature/property-identity-v4`.
+- Platform API image build `64121ebd-a8da-4448-bb6c-c317fb911d6b` succeeded. Cloud Run revision `kvartal-platform-api-safe-mint-2991e3a` serves 100% of traffic; authenticated `/readyz` returned `database=ready`, `organizationCount=7`.
+- Firebase App Hosting build `build-safe-mint-2991e3a` resolved the exact source SHA, regional Cloud Build `bf64feba-6bf0-47e4-b390-c7bf4fda618c` succeeded and rollout `rollout-safe-mint-2991e3a` reached `SUCCEEDED`.
+- Software deployment is complete through automatic post-receipt reconciliation. The remaining first Mainnet execution cannot be simulated or server-signed: it requires two actual public owner addresses, real BNB gas and explicit wallet confirmations.
