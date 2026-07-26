@@ -822,3 +822,12 @@
 - The wallet flow now switches to BNB Smart Chain Mainnet and, when it is absent, requests MetaMask to add the official chain `56`, BNB currency, BNB Chain RPC and BscScan explorer configuration.
 - Firebase App Hosting build `build-mainnet-wallet-9eaae5d` resolved the exact commit; regional Cloud Build `41e68778-9c5b-4d12-ad80-301ba5978d76` succeeded and the App Hosting build reached `READY`.
 - Rollout `rollout-mainnet-wallet-9eaae5d` reached `SUCCEEDED`; live `/login` returned `200` with the required popup-compatible COOP header.
+
+## BSC Mainnet operational readiness prepared (2026-07-26)
+
+- The existing `kvartal-dev` GCP/Firebase project remains the runtime container; a separate GCP production project is not required to use BNB Smart Chain Mainnet. Blockchain network selection remains fixed by `PROPERTY_IDENTITY_CHAIN_ID=56`.
+- Added an owner-facing readiness result calculated by `platform-api` from effective chain configuration and PostgreSQL state. It reports Mainnet selection, write authorization, Safe Transaction Service configuration, active verified registry contract, active Corporate Safes, eligible identity profiles and reconciled active tokens.
+- The owner Web3 page now starts with a plain-language checklist and one factual next action. It does not claim that the registry works until at least one active token has been reconciled as `IN_SYNC` against BSC Mainnet.
+- Token-operation controls are disabled until the actual contract, Corporate Safe, eligible identity and Safe coordination prerequisites exist.
+- Added unit coverage for incomplete, mint-ready and first-token-live readiness states; platform API tests/build and platform-admin production build/lint pass locally.
+- Verified the current official BNB Safe Transaction Service through Safe API Kit 5.0.1 using `https://safe-transaction-bsc.safe.global/api`; it returned `Safe Transaction Service` version `6.6.1`. Runtime configuration and deployment remain the next release step.

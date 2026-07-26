@@ -38,6 +38,51 @@ function safeApiKit(env: NodeJS.ProcessEnv, chainId: number) {
   return new SafeApiKit({ chainId: BigInt(chainId), ...(apiKey ? { apiKey } : {}), ...(txServiceUrl ? { txServiceUrl } : {}) });
 }
 
+export function buildWeb3Readiness(input: {
+  chainId: number;
+  production: boolean;
+  writesAllowed: boolean;
+  safeTransactionServiceConfigured: boolean;
+  activeRegistryContract: { contractAddress: string; registryAdminSafeAddress: string | null } | null;
+  activeCorporateWalletCount: number;
+  eligibleProfileCount: number;
+  reconciledActiveTokenCount: number;
+}) {
+  const mainnetSelected = input.production && input.chainId === 56;
+  const activeRegistryContract = Boolean(input.activeRegistryContract?.registryAdminSafeAddress);
+  const firstTokenLive = input.reconciledActiveTokenCount > 0;
+  const readyForMint = mainnetSelected
+    && input.writesAllowed
+    && input.safeTransactionServiceConfigured
+    && activeRegistryContract
+    && input.activeCorporateWalletCount > 0
+    && input.eligibleProfileCount > 0;
+
+  let nextAction = "FIRST_TOKEN_LIVE";
+  if (!mainnetSelected) nextAction = "SELECT_BSC_MAINNET";
+  else if (!input.writesAllowed) nextAction = "ENABLE_MAINNET_WRITES";
+  else if (!input.safeTransactionServiceConfigured) nextAction = "CONFIGURE_SAFE_TRANSACTION_SERVICE";
+  else if (!activeRegistryContract) nextAction = "CREATE_REGISTRY_SAFE_AND_DEPLOY_CONTRACT";
+  else if (input.activeCorporateWalletCount === 0) nextAction = "CONNECT_ORIGINATOR_CORPORATE_SAFE";
+  else if (input.eligibleProfileCount === 0) nextAction = "PREPARE_VERIFIED_PROPERTY";
+  else if (!firstTokenLive) nextAction = "MINT_AND_RECONCILE_FIRST_TOKEN";
+
+  return {
+    mainnetSelected,
+    writesAllowed: input.writesAllowed,
+    safeTransactionServiceConfigured: input.safeTransactionServiceConfigured,
+    activeRegistryContract,
+    registryContractAddress: input.activeRegistryContract?.contractAddress ?? null,
+    registryAdminSafeAddress: input.activeRegistryContract?.registryAdminSafeAddress ?? null,
+    activeCorporateWalletCount: input.activeCorporateWalletCount,
+    eligibleProfileCount: input.eligibleProfileCount,
+    reconciledActiveTokenCount: input.reconciledActiveTokenCount,
+    readyForMint,
+    firstTokenLive,
+    nextAction,
+  };
+}
+
 export async function handlePropertyIdentityWeb3Route(input: { request: IncomingMessage; response: ServerResponse; url: URL; prisma: PrismaClient; actor: ActorContext; env?: NodeJS.ProcessEnv }) {
   if (!input.url.pathname.startsWith("/api/v1/platform/property-identity/web3")) return false;
   assertOwner(input.actor);
@@ -56,8 +101,22 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
       input.prisma.propertyIdentityProfile.findMany({ where: { status: "VERIFIED_INTERNAL" }, select: { id: true, stableId: true, token: { select: { id: true, status: true } }, propertyObject: { select: { localizations: { where: { language: "ru" }, select: { title: true }, take: 1 } } } }, orderBy: { createdAt: "desc" }, take: 100 }),
     ]);
     const config = readChainConfig(env);
+    const activeRegistryContract = contracts.find((contract) => contract.chainId === config.chainId && contract.active && contract.status === "ACTIVE") ?? null;
+    const activeCorporateWalletCount = wallets.filter((wallet) => wallet.chainId === config.chainId && wallet.status === "ACTIVE").length;
+    const reconciledActiveTokenCount = tokens.filter((token) => token.chainId === config.chainId && token.status === "ACTIVE" && token.reconciliationStatus === "IN_SYNC").length;
+    const readiness = buildWeb3Readiness({
+      chainId: config.chainId,
+      production: config.production,
+      writesAllowed: config.writesAllowed,
+      safeTransactionServiceConfigured: Boolean(env.SAFE_API_KEY?.trim() || env.SAFE_TRANSACTION_SERVICE_URL?.trim()),
+      activeRegistryContract: activeRegistryContract ? { contractAddress: activeRegistryContract.contractAddress, registryAdminSafeAddress: activeRegistryContract.registryAdminSafeAddress } : null,
+      activeCorporateWalletCount,
+      eligibleProfileCount: eligibleProfiles.length,
+      reconciledActiveTokenCount,
+    });
     sendJson(input.response, 200, {
       chain: config,
+      readiness,
       wallets: wallets.map((wallet) => ({
         ...wallet,
         challenge: wallet.status === "CHALLENGE_ISSUED" && wallet.lastChallengeNonce && wallet.lastChallengeExpiresAt && wallet.lastChallengeExpiresAt.getTime() > Date.now()
