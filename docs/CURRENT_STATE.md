@@ -869,3 +869,10 @@
 - Firebase App Hosting build `build-corporate-safe-86f3ad4` resolved the exact source SHA; regional Cloud Build `8e533016-1065-45b2-8301-4b1136b24bad` succeeded and rollout `rollout-corp-safe-86f3ad4` reached `SUCCEEDED`.
 - A synthetic session for the existing verified `office@integrayachtsuae.com` identity returned `200` for session creation and the live Web3 page. The rendered page contains the unified Registry bootstrap and the two-owner Corporate Safe challenge instructions.
 - No signing action was simulated: the remaining Safe creation, contract deployment and Safe-owner message signatures require the actual owner-controlled wallet addresses and explicit MetaMask confirmations.
+
+## Pre-Mainnet contract lifecycle audit (2026-07-26)
+
+- Re-read the final `Bep721PropertyIdentityToken` deployment source and compared every API operation encoder (`MINT`, `UPDATE_HASHES`, `SUSPEND`, `UNSUSPEND`, `REVOKE`, `REASSIGN`) with the Solidity ABI.
+- Expanded contract coverage from 3 to 8 lifecycle/security tests. Added checks for zero recipients/hashes, duplicate token IDs, both `safeTransferFrom` overloads, all approval paths, invalid lifecycle transitions, terminal revoke, reassignment data preservation, zero-address reassignment, unauthorized role use, pause/unpause and authorized hash updates.
+- All 8 contract tests pass. Creation bytecode is 8,301 bytes and deployed bytecode is 7,249 bytes, below the EVM 24,576-byte deployed-code limit.
+- No Solidity change was required by this audit; the artifact used by the published bootstrap remains unchanged.

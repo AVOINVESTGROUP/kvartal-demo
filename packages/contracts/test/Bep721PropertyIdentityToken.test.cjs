@@ -42,4 +42,68 @@ describe("Bep721PropertyIdentityToken", function () {
     await contract.revoke(7);
     expect((await contract.identityRecord(7)).status).to.equal(3);
   });
+
+  it("rejects zero hashes, zero recipients and duplicate identities", async function () {
+    const { contract, partnerSafe } = await deploy();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(contract.mintIdentity(ethers.ZeroAddress, 1, hash, hash, hash, "")).to.be.reverted;
+    await expect(contract.mintIdentity(partnerSafe.address, 1, ethers.ZeroHash, hash, hash, "")).to.be.revertedWithCustomError(contract, "ZeroHashForbidden");
+    await contract.mintIdentity(partnerSafe.address, 1, hash, hash, hash, "ipfs://one");
+    await expect(contract.mintIdentity(partnerSafe.address, 1, hash, hash, hash, "ipfs://duplicate")).to.be.reverted;
+    expect(await contract.tokenURI(1)).to.equal("ipfs://one");
+  });
+
+  it("blocks every holder transfer entry point", async function () {
+    const { contract, partnerSafe, other } = await deploy();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await contract.mintIdentity(partnerSafe.address, 9, hash, hash, hash, "");
+    await expect(contract.connect(partnerSafe)["safeTransferFrom(address,address,uint256)"](partnerSafe.address, other.address, 9)).to.be.revertedWithCustomError(contract, "HolderOperationForbidden");
+    await expect(contract.connect(partnerSafe)["safeTransferFrom(address,address,uint256,bytes)"](partnerSafe.address, other.address, 9, "0x")).to.be.revertedWithCustomError(contract, "HolderOperationForbidden");
+    await expect(contract.connect(partnerSafe).setApprovalForAll(other.address, true)).to.be.revertedWithCustomError(contract, "HolderOperationForbidden");
+  });
+
+  it("keeps revoke terminal and enforces lifecycle transitions", async function () {
+    const { contract, partnerSafe, other } = await deploy();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await contract.mintIdentity(partnerSafe.address, 11, hash, hash, hash, "");
+    await expect(contract.unsuspend(11)).to.be.revertedWithCustomError(contract, "IdentityStateInvalid");
+    await contract.suspend(11);
+    await contract.unsuspend(11);
+    await contract.revoke(11);
+    await expect(contract.suspend(11)).to.be.revertedWithCustomError(contract, "IdentityStateInvalid");
+    await expect(contract.registryReassign(11, other.address)).to.be.revertedWithCustomError(contract, "IdentityStateInvalid");
+    await expect(contract.updateHashes(11, hash, hash)).to.be.revertedWithCustomError(contract, "IdentityStateInvalid");
+  });
+
+  it("preserves identity data across registry reassignment", async function () {
+    const { contract, partnerSafe, other } = await deploy();
+    const propertyHash = ethers.keccak256(ethers.toUtf8Bytes("property"));
+    const versionHash = ethers.keccak256(ethers.toUtf8Bytes("version"));
+    const evidenceHash = ethers.keccak256(ethers.toUtf8Bytes("evidence"));
+    await contract.mintIdentity(partnerSafe.address, 12, propertyHash, versionHash, evidenceHash, "ipfs://identity");
+    await expect(contract.registryReassign(12, ethers.ZeroAddress)).to.be.reverted;
+    await contract.registryReassign(12, other.address);
+    const record = await contract.identityRecord(12);
+    expect(await contract.ownerOf(12)).to.equal(other.address);
+    expect(record.propertyReferenceHash).to.equal(propertyHash);
+    expect(record.canonicalVersionHash).to.equal(versionHash);
+    expect(record.evidencePackageHash).to.equal(evidenceHash);
+    expect(record.status).to.equal(1);
+    expect(await contract.tokenURI(12)).to.equal("ipfs://identity");
+  });
+
+  it("enforces role separation and emergency pause", async function () {
+    const { contract, registrySafe, partnerSafe, attacker } = await deploy();
+    const hash = ethers.keccak256(ethers.toUtf8Bytes("x"));
+    await expect(contract.connect(attacker).mintIdentity(partnerSafe.address, 20, hash, hash, hash, "")).to.be.reverted;
+    await expect(contract.connect(attacker).pause()).to.be.reverted;
+    await contract.pause();
+    await expect(contract.mintIdentity(partnerSafe.address, 20, hash, hash, hash, "")).to.be.revertedWithCustomError(contract, "EnforcedPause");
+    await contract.unpause();
+    await contract.mintIdentity(partnerSafe.address, 20, hash, hash, hash, "");
+    const nextHash = ethers.keccak256(ethers.toUtf8Bytes("next"));
+    await expect(contract.connect(attacker).updateHashes(20, nextHash, nextHash)).to.be.reverted;
+    await contract.connect(registrySafe).updateHashes(20, nextHash, nextHash);
+    expect((await contract.identityRecord(20)).canonicalVersionHash).to.equal(nextHash);
+  });
 });
