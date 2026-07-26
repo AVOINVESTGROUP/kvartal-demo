@@ -2260,12 +2260,45 @@ const server = createServer(async (request, response) => {
     const hiddenObjectIds = hiddenOverrides.map((item: { propertyObjectId: string }) => item.propertyObjectId);
     const effectiveOwnerSlug = ownerSlug ?? (tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined);
 
+    const activeGrants = tenantSiteConfig ? await prisma.propertyPublicationGrant.findMany({
+      where: {
+        status: "ACTIVE",
+        publicationSurface: { siteConfigId: tenantSiteConfig.id, status: "ACTIVE" },
+        identityProfile: { status: "VERIFIED_INTERNAL" },
+        partnerOffer: {
+          status: "ACTIVE",
+          ...(effectiveOwnerSlug ? { sellerOrganization: { slug: effectiveOwnerSlug } } : {}),
+          representationRight: { status: "VERIFIED" },
+        },
+        ...(hiddenObjectIds.length ? { propertyObjectId: { notIn: hiddenObjectIds } } : {}),
+      },
+      orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+      take,
+      include: {
+        identityProfile: true,
+        partnerOffer: { include: { sellerOrganization: true, sellerOffice: true } },
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+          },
+        },
+      },
+    }) : [];
+    const registryObjectIds = activeGrants.map((grant) => grant.propertyObjectId);
+    const excludedObjectIds = [...new Set([...hiddenObjectIds, ...registryObjectIds])];
+
     const objects = await prisma.propertyObject.findMany({
       where: {
         status: "published",
         visibility: "public",
         canBeShownByOtherOffices: true,
-        ...(hiddenObjectIds.length ? { id: { notIn: hiddenObjectIds } } : {}),
+        ...(excludedObjectIds.length ? { id: { notIn: excludedObjectIds } } : {}),
         ...(effectiveOwnerSlug ? { ownerOrganization: { slug: effectiveOwnerSlug } } : {}),
       },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -2294,7 +2327,23 @@ const server = createServer(async (request, response) => {
       visibilityRule: effectiveOwnerSlug
         ? "status=published AND visibility=public AND canBeShownByOtherOffices=true AND ownerOrganization=tenant"
         : "status=published AND visibility=public AND canBeShownByOtherOffices=true",
-      objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
+      objects: [
+        ...activeGrants.map((grant) => ({
+          ...serializeObject(grant.propertyObject, language),
+          priceAmount: decimalToString(grant.partnerOffer.priceAmount),
+          priceCurrency: grant.partnerOffer.priceCurrency,
+          sellerSide: {
+            organizationSlug: grant.partnerOffer.sellerOrganization.slug,
+            organizationName: grant.partnerOffer.sellerOrganization.legalName,
+            officeSlug: grant.partnerOffer.sellerOffice.slug,
+            officeName: grant.partnerOffer.sellerOffice.legalName,
+          },
+          propertyIdentityId: grant.identityProfile.stableId,
+          publicationGrantId: grant.id,
+          source: "PROPERTY_IDENTITY_REGISTRY",
+        })),
+        ...objects.map((object: PublicObjectRow) => ({ ...serializeObject(object, language), source: "LEGACY_GRANDFATHERED" })),
+      ].slice(0, take),
     });
     return;
   }

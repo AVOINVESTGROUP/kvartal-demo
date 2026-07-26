@@ -27,7 +27,7 @@ export const ownedRoutes = [
 
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz", policy: "PUBLIC" },
-  { matches: (path) => path === "/api/v1/platform/actor-context" || path.startsWith("/api/v1/platform/external-identit") || path === "/api/v1/platform/property-identity/monitoring", policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path === "/api/v1/platform/actor-context" || path.startsWith("/api/v1/platform/external-identit") || path.startsWith("/api/v1/platform/property-identity/"), policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path.startsWith("/api/v1/platform/"), policy: "LEGACY_SERVICE_AUTH" },
 ];
 
