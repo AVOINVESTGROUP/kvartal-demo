@@ -876,3 +876,11 @@
 - Expanded contract coverage from 3 to 8 lifecycle/security tests. Added checks for zero recipients/hashes, duplicate token IDs, both `safeTransferFrom` overloads, all approval paths, invalid lifecycle transitions, terminal revoke, reassignment data preservation, zero-address reassignment, unauthorized role use, pause/unpause and authorized hash updates.
 - All 8 contract tests pass. Creation bytecode is 8,301 bytes and deployed bytecode is 7,249 bytes, below the EVM 24,576-byte deployed-code limit.
 - No Solidity change was required by this audit; the artifact used by the published bootstrap remains unchanged.
+
+## End-to-end Safe mint completion workflow prepared (2026-07-26)
+
+- Added an owner-only confirmation endpoint for pending Registry/Admin Safe transactions. It accepts only a current on-chain Safe owner, prevents duplicate confirmation submission and uses Safe Transaction Service to add the second signature.
+- `SafeExecutionButton` now lets the second owner sign the exact existing `safeTxHash` from MetaMask, refreshes the threshold state, executes only after the Safe threshold is reached and waits for a successful Mainnet receipt.
+- After a confirmed receipt, both the integrated and manual transaction-recording paths immediately invoke the existing blockchain reconciliation endpoint. The UI reports the resulting `IN_SYNC` state instead of leaving the token in a manual `PENDING` step.
+- The server still validates the queued immutable transaction envelope before the first proposal, rechecks the connected signer against the on-chain Safe owners for the second signature and never receives a private key.
+- Verified locally: platform API tests `6/6` and build; platform-admin production build and lint.

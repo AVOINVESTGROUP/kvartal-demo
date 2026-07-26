@@ -311,7 +311,8 @@ export function SafeExecutionButton(props: {
   payload: unknown;
   safeTxHash: string;
   getExecutionAction: (operationId: string) => Promise<{ status: string; confirmations: number; confirmationsRequired: number; chainTxHash: string | null; serviceTransaction: Record<string, unknown> }>;
-  recordExecutionAction: (operationId: string, safeTxHash: string, chainTxHash: string) => Promise<{ ok: boolean }>;
+  confirmAction: (operationId: string, senderAddress: string, senderSignature: string) => Promise<{ ok: boolean; status: string; confirmations: number; confirmationsRequired: number }>;
+  recordExecutionAction: (operationId: string, safeTxHash: string, chainTxHash: string) => Promise<{ ok: boolean; reconciliationStatus: string }>;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -321,14 +322,10 @@ export function SafeExecutionButton(props: {
     setMessage(null);
     try {
       if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
-      const status = await props.getExecutionAction(props.operationId);
+      let status = await props.getExecutionAction(props.operationId);
       if (status.chainTxHash) {
         await props.recordExecutionAction(props.operationId, props.safeTxHash, status.chainTxHash);
         setMessage(`Транзакция уже исполнена: ${status.chainTxHash}`);
-        return;
-      }
-      if (status.status !== "READY_TO_EXECUTE") {
-        setMessage(`Собрано подписей ${status.confirmations} из ${status.confirmationsRequired}. Второй владелец должен подтвердить транзакцию в Safe.`);
         return;
       }
       const provider = window.ethereum;
@@ -339,9 +336,19 @@ export function SafeExecutionButton(props: {
       if (!senderAddress) throw new Error("Кошелёк не вернул адрес исполнителя.");
       const transaction = readPayload(props.payload);
       const protocolKit = await Safe.init({ provider, signer: senderAddress, safeAddress: transaction.registryAdminSafeAddress });
+      if (status.status !== "READY_TO_EXECUTE") {
+        const signature = await protocolKit.signHash(props.safeTxHash);
+        const confirmation = await props.confirmAction(props.operationId, senderAddress, signature.data);
+        if (confirmation.status !== "READY_TO_EXECUTE") {
+          setMessage(`Подпись принята: ${confirmation.confirmations}/${confirmation.confirmationsRequired}. Переключите MetaMask на другого владельца Safe.`);
+          return;
+        }
+        status = await props.getExecutionAction(props.operationId);
+      }
       const execution = await protocolKit.executeTransaction(status.serviceTransaction as Parameters<typeof protocolKit.executeTransaction>[0]);
-      await props.recordExecutionAction(props.operationId, props.safeTxHash, execution.hash);
-      setMessage(`Транзакция отправлена в блокчейн: ${execution.hash}`);
+      await waitForSuccessfulReceipt(provider, execution.hash, "Исполнение Safe-транзакции");
+      const result = await props.recordExecutionAction(props.operationId, props.safeTxHash, execution.hash);
+      setMessage(`Транзакция подтверждена и сверена с блокчейном: ${execution.hash}. Reconciliation: ${result.reconciliationStatus}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось исполнить Safe-транзакцию.");
     } finally {

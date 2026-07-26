@@ -390,6 +390,35 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
     return true;
   }
 
+  const confirmSafeMatch = input.url.pathname.match(/^\/api\/v1\/platform\/property-identity\/web3\/token-operations\/([^/]+)\/confirm-safe-transaction$/);
+  if (confirmSafeMatch && input.request.method === "POST") {
+    const body = await readJsonBody(input.request);
+    const operationId = decodeURIComponent(confirmSafeMatch[1]);
+    const senderAddress = normalizeAddress(requiredString(body, "senderAddress"));
+    const senderSignature = requiredString(body, "senderSignature").toLowerCase();
+    if (!/^0x[0-9a-f]+$/.test(senderSignature) || senderSignature.length < 132) throw new ActorAuthError("FORBIDDEN", 400, "senderSignature is invalid.");
+    const operation = await input.prisma.propertyTokenOperation.findUnique({ where: { id: operationId }, include: { tokenRecord: true } });
+    if (!operation || !operation.tokenRecord || !operation.registrySafeTxHash) throw new ActorAuthError("FORBIDDEN", 404, "A proposed Safe transaction was not found.");
+    if (operation.status !== "PENDING_REGISTRY_SAFE") throw new ActorAuthError("FORBIDDEN", 409, "Only a pending Safe transaction can receive another signature.");
+    const payload = operation.payloadJson && typeof operation.payloadJson === "object" && !Array.isArray(operation.payloadJson) ? operation.payloadJson as Record<string, unknown> : {};
+    const expectedSafe = normalizeAddress(String(payload.registryAdminSafeAddress ?? ""));
+    const config = readChainConfig({ ...env, PROPERTY_IDENTITY_CHAIN_ID: String(operation.tokenRecord.chainId) });
+    assertChainWriteAllowed(config, env);
+    const safe = await new SafeRpcAdapter(config.rpcUrl).readSafe(expectedSafe);
+    if (!safe.owners.some((owner) => owner.toLowerCase() === senderAddress.toLowerCase())) throw new ActorAuthError("FORBIDDEN", 403, "The connected signer is not an owner of Registry/Admin Safe.");
+    const api = safeApiKit(env, config.chainId);
+    let serviceTransaction = await api.getTransaction(operation.registrySafeTxHash);
+    if (!serviceTransaction.confirmations?.some((confirmation) => confirmation.owner.toLowerCase() === senderAddress.toLowerCase())) {
+      await api.confirmTransaction(operation.registrySafeTxHash, senderSignature);
+      serviceTransaction = await api.getTransaction(operation.registrySafeTxHash);
+    }
+    const confirmations = serviceTransaction.confirmations?.length ?? 0;
+    const status = confirmations >= serviceTransaction.confirmationsRequired ? "READY_TO_EXECUTE" : "PENDING_REGISTRY_SAFE";
+    await input.prisma.propertyTokenOperation.update({ where: { id: operation.id }, data: { status } });
+    sendJson(input.response, 200, { ok: true, status, confirmations, confirmationsRequired: serviceTransaction.confirmationsRequired, safeTxHash: operation.registrySafeTxHash });
+    return true;
+  }
+
   const submittedMatch = input.url.pathname.match(/^\/api\/v1\/platform\/property-identity\/web3\/token-operations\/([^/]+)\/record-chain-tx$/);
   if (submittedMatch && input.request.method === "POST") {
     const body = await readJsonBody(input.request);
@@ -403,7 +432,7 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
       input.prisma.propertyTokenOperation.update({ where: { id: operation.id }, data: { status: "SUBMITTED", chainTxHash, registrySafeTxHash: typeof body.registrySafeTxHash === "string" ? body.registrySafeTxHash : operation.registrySafeTxHash } }),
       input.prisma.propertyIdentityToken.update({ where: { id: operation.tokenRecordId }, data: { lastTxHash: chainTxHash, reconciliationStatus: "PENDING" } }),
     ]);
-    sendJson(input.response, 202, { ok: true, reconciliationRequired: true, chainWritePerformedByApi: false });
+    sendJson(input.response, 202, { ok: true, tokenRecordId: operation.tokenRecordId, reconciliationRequired: true, chainWritePerformedByApi: false });
     return true;
   }
 
