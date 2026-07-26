@@ -423,7 +423,7 @@ describe("Property Identity v4 database invariants", () => {
       headers: { "idempotency-key": "identity-flow-confirm-0001" },
       body: { checkRunId: checked.body.checkRunId },
     });
-    expect(confirmed.status).toBe(201);
+    expect(confirmed.status, JSON.stringify(confirmed.body)).toBe(201);
     expect(confirmed.body).toMatchObject({ status: "CLOSED", resolution: "CREATE_NEW" });
     expect(await prisma.propertyIdentityProfile.count({ where: { createdFromSubmissionId: submissionId, status: "VERIFIED_INTERNAL" } })).toBe(1);
 

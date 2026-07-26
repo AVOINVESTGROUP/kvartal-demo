@@ -286,7 +286,7 @@ async function idempotentMutation(input: {
       data: { status: "SUCCEEDED", responseStatus: result.status, responseBody: result.payload as Prisma.InputJsonValue, terminalAt: new Date() },
     });
     return { ...result, replay: false };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 10_000, timeout: 30_000 });
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
       return await execute();
@@ -1381,6 +1381,7 @@ export async function handlePropertyIdentityRequest(input: {
       return true;
     }
     const error = caught as { status?: number; code?: string; message?: string };
+    if (!error.status || error.status >= 500) console.error("property_identity_request_failed", { code: error.code ?? "UNKNOWN", message: error.message ?? "Unknown error", correlationId: input.actor.correlationId });
     sendJson(input.response, error.status ?? 500, { ok: false, error: { code: error.code ?? "PROPERTY_IDENTITY_INTERNAL_ERROR", message: error.status && error.status < 500 ? error.message : "Property Identity operation failed.", correlationId: input.actor.correlationId } });
     return true;
   }
