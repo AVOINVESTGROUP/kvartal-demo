@@ -860,3 +860,12 @@
 - The owner UI signs the typed challenge through Protocol Kit and MetaMask, proposes the first signature, adds the second owner's signature on the next click and reports `n/threshold`. This removes the previous requirement to construct and paste a raw aggregate signature manually.
 - The raw-signature form remains collapsed as a recovery mechanism. The Registry/Admin Safe address is offered as the first-launch Corporate Safe default only when it is already verified and only if the owners intentionally use the same 2-of-N governance for that originator organization.
 - Verified locally: Web3 tests `5/5` and build, platform API tests `6/6` and build, platform-admin production build and lint.
+
+## Corporate Safe threshold-signature workflow deployed (2026-07-26)
+
+- Source commit `86f3ad4787efdee0e80539fbc55feed15435fbc4` was pushed to `feature/property-identity-v4`.
+- Platform API image build `db0971f9-7436-4fce-b2a9-2206d6db24cf` succeeded. Cloud Run revision `kvartal-platform-api-corp-safe-86f3ad4` serves 100% of traffic and authenticated `/readyz` returned `database=ready`, `organizationCount=7`.
+- Effective Cloud Run configuration still contains `SAFE_TRANSACTION_SERVICE_URL=https://safe-transaction-bsc.safe.global/api`.
+- Firebase App Hosting build `build-corporate-safe-86f3ad4` resolved the exact source SHA; regional Cloud Build `8e533016-1065-45b2-8301-4b1136b24bad` succeeded and rollout `rollout-corp-safe-86f3ad4` reached `SUCCEEDED`.
+- A synthetic session for the existing verified `office@integrayachtsuae.com` identity returned `200` for session creation and the live Web3 page. The rendered page contains the unified Registry bootstrap and the two-owner Corporate Safe challenge instructions.
+- No signing action was simulated: the remaining Safe creation, contract deployment and Safe-owner message signatures require the actual owner-controlled wallet addresses and explicit MetaMask confirmations.
