@@ -5,7 +5,7 @@ import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
 import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
-import { handlePropertyIdentityRequest, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft } from "./property-identity.js";
+import { createPropertyFromUnifiedIngress, handlePropertyIdentityRequest, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft, resolvePartnerScope } from "./property-identity.js";
 
 export const serviceName = "office-api";
 
@@ -42,6 +42,7 @@ export const ownedRoutes = [
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz" || path.startsWith("/api/v1/public/"), policy: "PUBLIC" },
   { matches: (path) => path === "/api/v1/admin/actor-context", policy: "ACTOR_AUTH_REQUIRED" },
+  { matches: (path) => path === "/api/v1/admin/objects", policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path.startsWith("/api/v1/admin/property-identity/"), policy: "ACTOR_AUTH_REQUIRED" },
   { matches: (path) => path === "/api/v1/platform/market-insights/refresh", policy: "LEGACY_SERVICE_AUTH" },
   { matches: (path) => path.startsWith("/api/v1/admin/"), policy: "LEGACY_SERVICE_AUTH" },
@@ -2806,13 +2807,22 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/admin/objects" && request.method === "GET") {
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
     const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
     const language = url.searchParams.get("language") ?? "ru";
     const take = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
 
+    const requestedOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, select: { id: true } });
+    if (!requestedOrganization) { sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`); return; }
+    try { resolvePartnerScope(actorContext, { organizationId: requestedOrganization.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope."); return; }
+
     const objects = await prisma.propertyObject.findMany({
       where: {
-        ownerOrganization: { slug: organizationSlug },
+        OR: [
+          { ownerOrganizationId: requestedOrganization.id },
+          { representationRights: { some: { organizationId: requestedOrganization.id, status: { in: ["DECLARED", "EVIDENCE_PENDING", "VERIFIED"] } } } },
+        ],
       },
       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
       take,
@@ -2843,6 +2853,17 @@ const server = createServer(async (request, response) => {
             },
           },
         },
+        identityProfile: true,
+        representationRights: {
+          where: { organizationId: requestedOrganization.id },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            organization: true,
+            office: true,
+            offers: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
+        },
       },
     });
 
@@ -2850,9 +2871,24 @@ const server = createServer(async (request, response) => {
       ok: true,
       service: serviceName,
       organizationSlug,
-      scopeRule: "ownerOrganization.slug = requested organization",
-      objects: objects.map((object: AdminObjectRow) => ({
+      scopeRule: "canonical owner or active representation right for requested organization",
+      objects: objects.map((object) => {
+        const representation = object.representationRights[0];
+        const offer = representation?.offers[0];
+        const commercialTerms = offer?.commercialTerms && typeof offer.commercialTerms === "object" && !Array.isArray(offer.commercialTerms)
+          ? offer.commercialTerms as Record<string, unknown>
+          : {};
+        return {
         ...serializeObject(object, language, "admin"),
+        priceAmount: offer?.priceAmount ? decimalToString(offer.priceAmount) : decimalToString(object.priceAmount),
+        priceCurrency: offer?.priceCurrency ?? object.priceCurrency,
+        priceDisplay: typeof commercialTerms.priceDisplay === "string" ? commercialTerms.priceDisplay : serializeObject(object, language, "admin").priceDisplay,
+        sellerSide: representation ? {
+          organizationSlug: representation.organization.slug,
+          organizationName: representation.organization.legalName,
+          officeSlug: representation.office.slug,
+          officeName: representation.office.legalName,
+        } : serializeObject(object, language, "admin").sellerSide,
         titleEn: object.localizations.find((item) => item.language === "en")?.title ?? null,
         descriptionEn: object.localizations.find((item) => item.language === "en")?.description ?? null,
         addressDisplayEn: object.localizations.find((item) => item.language === "en")?.addressDisplay ?? null,
@@ -2863,9 +2899,16 @@ const server = createServer(async (request, response) => {
         visibility: object.visibility,
         canBeShownByOtherOffices: object.canBeShownByOtherOffices,
         mediaCount: object.media.length,
+        identity: object.identityProfile ? {
+          stableId: object.identityProfile.stableId,
+          status: object.identityProfile.status,
+          representationStatus: object.representationRights[0]?.status ?? null,
+          offerStatus: object.representationRights[0]?.offers[0]?.status ?? null,
+          isOriginator: object.ownerOrganizationId === requestedOrganization.id,
+        } : null,
         createdAt: object.createdAt.toISOString(),
         updatedAt: object.updatedAt.toISOString(),
-      })),
+      }; }),
     });
     return;
   }
@@ -6216,10 +6259,7 @@ Schema:
   }
 
   if (url.pathname === "/api/v1/admin/objects" && request.method === "POST") {
-    if (!hasAdminWriteAccess(request)) {
-      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
-      return;
-    }
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
 
     type CreateObjectBody = {
       organizationSlug?: string;
@@ -6299,22 +6339,83 @@ Schema:
       return;
     }
 
-    const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
-    if (rollout.registryEnabled) {
-      sendError(response, 409, "property_identity_submission_required", "Create the property through a Property Identity registration submission.");
+    try {
+      resolvePartnerScope(actorContext, { organizationId: organization.id, officeId: office.id });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's access scope.");
       return;
     }
 
-    const createdByUser = await prisma.appUser.upsert({
-      where: { firebaseUid: "admin-console-system-user" },
-      update: { email: "admin-console@fixer.guru", active: true },
-      create: {
-        firebaseUid: "admin-console-system-user",
-        email: "admin-console@fixer.guru",
-        displayName: "KVARTAL Admin Console",
-        active: true,
-      },
-    });
+    const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
+    if (rollout.registryEnabled) {
+      const cadastralNumber = optionalString(body.cadastralNumber);
+      if (!cadastralNumber) {
+        sendError(response, 400, "official_identifier_required", "An official property identifier is required for this market.");
+        return;
+      }
+      const country = market.country.trim().toLocaleUpperCase("und");
+      const jurisdiction = country === "RUSSIA" || country === "RUSSIAN FEDERATION" || country === "RU" ? "RU"
+        : country === "GEORGIA" || country === "GE" ? "GE"
+        : country === "UNITED ARAB EMIRATES" || country === "UAE" || country === "AE" ? "AE"
+        : country === "ARMENIA" || country === "AM" ? "AM"
+        : country.slice(0, 2);
+      const assetClass = optionalString(body.assetClass) ?? "land";
+      const subjectScope = assetClass === "land" ? "LAND_PARCEL"
+        : assetClass === "apartment" ? "UNIT"
+        : assetClass === "development_project" || assetClass === "investment_project" ? "PROJECT"
+        : assetClass === "office" || assetClass === "retail" ? "PREMISE"
+        : "BUILDING";
+      try {
+        const result = await createPropertyFromUnifiedIngress({
+          prisma,
+          actor: actorContext,
+          request,
+          organizationId: organization.id,
+          officeId: office.id,
+          marketId: market.id,
+          jurisdiction,
+          subjectScope,
+          assetClass,
+          identityInput: {
+            title,
+            titleEn: optionalString(body.titleEn),
+            description: optionalString(body.description),
+            descriptionEn: optionalString(body.descriptionEn),
+            addressDisplay,
+            addressDisplayEn: optionalString(body.addressDisplayEn),
+            assetSubtype: optionalString(body.assetSubtype),
+            areaSqm: optionalString(body.areaSqm),
+            landAreaSqm: optionalString(body.landAreaSqm),
+            buildingAreaSqm: optionalString(body.buildingAreaSqm),
+            rentableAreaSqm: optionalString(body.rentableAreaSqm),
+            floorNumber: optionalString(body.floorNumber),
+            floorsTotal: optionalString(body.floorsTotal),
+            roomsCount: optionalString(body.roomsCount),
+            bedroomsCount: optionalString(body.bedroomsCount),
+            bathroomsCount: optionalString(body.bathroomsCount),
+          },
+          identifiers: [{
+            scheme: "CADASTRAL_ID",
+            authorityNamespace: jurisdiction === "RU" ? "ROSREESTR" : `${jurisdiction}:LAND_REGISTRY`,
+            rawValue: cadastralNumber,
+            sourceType: "partner_object_form",
+          }],
+          commercialInput: {
+            priceAmount: optionalString(body.priceAmount),
+            priceCurrency: optionalString(body.priceCurrency),
+            priceDisplay: optionalString(body.priceDisplay),
+            priceDisplayEn: optionalString(body.priceDisplayEn),
+            requestPublication: optionalString(body.status) === "published" && optionalString(body.visibility) === "public",
+          },
+        });
+        if (result.replay) response.setHeader("idempotent-replay", "true");
+        sendJson(response, result.status, result.payload);
+      } catch (caught) {
+        const error = caught as { status?: number; code?: string; message?: string };
+        sendError(response, error.status ?? 500, error.code ?? "unified_property_ingress_failed", error.status && error.status < 500 ? error.message ?? "The object could not be saved." : "The object could not be saved.");
+      }
+      return;
+    }
 
     const status = optionalString(body.status) === "published" ? "published" : "draft";
     const visibility = optionalString(body.visibility) === "public" ? "public" : optionalString(body.visibility) === "office_network" ? "office_network" : "private";
@@ -6326,7 +6427,7 @@ Schema:
         ownerOfficeId: office.id,
         informationOwnerOrganizationId: organization.id,
         informationOwnerOfficeId: office.id,
-        createdByUserId: createdByUser.id,
+        createdByUserId: actorContext.appUserId,
         marketId: market.id,
         status,
         visibility,

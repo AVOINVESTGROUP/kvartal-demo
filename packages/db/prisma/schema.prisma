@@ -187,6 +187,42 @@ enum PropertyIdentityCryptoKeyStatus {
   RETIRED
 }
 
+enum PropertyOriginatorStatus {
+  RECORDED
+  REVOKED
+}
+
+enum PropertyRepresentationStatus {
+  DECLARED
+  EVIDENCE_PENDING
+  VERIFIED
+  EXPIRED
+  REVOKED
+  DISPUTED
+}
+
+enum PropertyOfferStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  WITHDRAWN
+}
+
+enum PublicationSurfaceStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PropertyPublicationGrantStatus {
+  DRAFT
+  ACTIVE
+  REPLACED
+  EXPIRED
+  REVOKED
+  SUSPENDED
+}
+
 enum OrganizationRole {
   organization_owner
   organization_admin
@@ -554,6 +590,12 @@ model Organization {
   propertyRegistrationSubmissions   PropertyRegistrationSubmission[]
   propertyIdentityAuthorityPolicies PropertyIdentityAuthorityPolicy[]
   propertyIdentityRolloutPolicies   PropertyIdentityRolloutPolicy[]
+  propertyOriginatorRecords         PropertyOriginatorRecord[]
+  propertyRepresentationRights      PropertyRepresentationRight[]
+  propertyOffers                    PartnerOffer[]
+  publicationSurfaces               PropertyPublicationSurface[]
+  publicationGrantsAsSeller         PropertyPublicationGrant[]        @relation("PublicationGrantSellerOrganization")
+  publicationGrantsAsBuyer          PropertyPublicationGrant[]        @relation("PublicationGrantBuyerOrganization")
 }
 
 model OrganizationLocalization {
@@ -607,6 +649,12 @@ model Office {
   propertyAIAnalyses               PropertyObjectAIAnalysis[]
   legalDocuments                   LegalDocument[]
   propertyRegistrationSubmissions  PropertyRegistrationSubmission[]
+  propertyOriginatorRecords        PropertyOriginatorRecord[]
+  propertyRepresentationRights     PropertyRepresentationRight[]
+  propertyOffers                   PartnerOffer[]
+  publicationSurfaces              PropertyPublicationSurface[]
+  publicationGrantsAsSeller        PropertyPublicationGrant[]       @relation("PublicationGrantSellerOffice")
+  publicationGrantsAsBuyer         PropertyPublicationGrant[]       @relation("PublicationGrantBuyerOffice")
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -847,7 +895,7 @@ model OfficeMembership {
 }
 
 model SiteConfig {
-  id                  String                   @id @default(cuid())
+  id                  String                      @id @default(cuid())
   organizationId      String
   officeId            String
   domain              String?
@@ -857,15 +905,16 @@ model SiteConfig {
   defaultCurrency     CurrencyCode
   supportedCurrencies CurrencyCode[]
   primaryMarketIds    String[]
-  showPartnerObjects  Boolean                  @default(true)
+  showPartnerObjects  Boolean                     @default(true)
   contactEmail        String?
   contactPhone        String?
-  active              Boolean                  @default(true)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  organization        Organization             @relation(fields: [organizationId], references: [id])
-  office              Office                   @relation(fields: [officeId], references: [id])
+  active              Boolean                     @default(true)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  organization        Organization                @relation(fields: [organizationId], references: [id])
+  office              Office                      @relation(fields: [officeId], references: [id])
   localizations       SiteConfigLocalization[]
+  publicationSurface  PropertyPublicationSurface?
 
   @@index([organizationId])
   @@index([officeId])
@@ -960,6 +1009,10 @@ model PropertyObject {
   identityProfile                    PropertyIdentityProfile?
   linkedRegistrationSubmissions      PropertyRegistrationSubmission[]
   migrationRegistrationSubmission    PropertyRegistrationSubmission?  @relation("PropertyIdentityMigrationSource")
+  originatorRecords                  PropertyOriginatorRecord[]
+  representationRights               PropertyRepresentationRight[]
+  partnerOffers                      PartnerOffer[]
+  publicationGrants                  PropertyPublicationGrant[]
 
   @@index([ownerOrganizationId])
   @@index([ownerOfficeId])
@@ -1117,6 +1170,9 @@ model PropertyIdentityProfile {
   confirmations           PropertyIdentityAuthorConfirmation[]
   candidateEvidence       PropertyIdentityCandidateEvidence[]
   events                  PropertyIdentityEvent[]
+  originatorRecords       PropertyOriginatorRecord[]
+  representationRights    PropertyRepresentationRight[]
+  publicationGrants       PropertyPublicationGrant[]
 
   @@index([status, jurisdiction, subjectScope])
 }
@@ -1179,10 +1235,141 @@ model PropertyCanonicalVersion {
   identityProfile       PropertyIdentityProfile            @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
   authorConfirmation    PropertyIdentityAuthorConfirmation @relation(fields: [authorConfirmationId], references: [id], onDelete: Restrict)
   createdByUser         AppUser                            @relation("PropertyCanonicalVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publicationGrants     PropertyPublicationGrant[]
 
   @@unique([identityProfileId, versionNumber])
   @@index([identityProfileId, isCurrent])
   @@index([snapshotHash])
+}
+
+model PropertyOriginatorRecord {
+  id                String                   @id @default(cuid())
+  identityProfileId String
+  organizationId    String
+  officeId          String
+  status            PropertyOriginatorStatus @default(RECORDED)
+  recordedByUserId  String
+  verifiedAt        DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime                 @default(now())
+  identityProfile   PropertyIdentityProfile  @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office            Office                   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  PropertyObject    PropertyObject?          @relation(fields: [propertyObjectId], references: [id])
+  propertyObjectId  String?
+
+  @@unique([identityProfileId, organizationId, officeId])
+  @@index([identityProfileId, status])
+  @@index([organizationId, status])
+}
+
+model PropertyRepresentationRight {
+  id                  String                       @id @default(cuid())
+  propertyObjectId    String
+  identityProfileId   String
+  organizationId      String
+  officeId            String
+  rightType           String
+  status              PropertyRepresentationStatus @default(DECLARED)
+  scope               Json
+  territory           String?
+  channel             String?
+  validFrom           DateTime?
+  validUntil          DateTime?
+  evidenceDocumentIds String[]
+  declaredByUserId    String
+  verifiedByUserId    String?
+  revokedAt           DateTime?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  propertyObject      PropertyObject               @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  identityProfile     PropertyIdentityProfile      @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  organization        Organization                 @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office              Office                       @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  offers              PartnerOffer[]
+
+  @@index([propertyObjectId, status])
+  @@index([identityProfileId, status])
+  @@index([organizationId, status])
+}
+
+model PartnerOffer {
+  id                    String                      @id @default(cuid())
+  propertyObjectId      String
+  representationRightId String
+  sellerOrganizationId  String
+  sellerOfficeId        String
+  status                PropertyOfferStatus         @default(DRAFT)
+  priceAmount           Decimal?                    @db.Decimal(18, 2)
+  priceCurrency         CurrencyCode?
+  paymentTerms          Json?
+  availability          String?
+  commercialTerms       Json?
+  validFrom             DateTime                    @default(now())
+  validUntil            DateTime?
+  sourceLabel           String?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  propertyObject        PropertyObject              @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  representationRight   PropertyRepresentationRight @relation(fields: [representationRightId], references: [id], onDelete: Restrict)
+  sellerOrganization    Organization                @relation(fields: [sellerOrganizationId], references: [id], onDelete: Restrict)
+  sellerOffice          Office                      @relation(fields: [sellerOfficeId], references: [id], onDelete: Restrict)
+  publicationGrants     PropertyPublicationGrant[]
+
+  @@index([propertyObjectId, status])
+  @@index([sellerOrganizationId, status])
+}
+
+model PropertyPublicationSurface {
+  id             String                     @id @default(cuid())
+  siteConfigId   String?                    @unique
+  tenantKey      String?                    @unique
+  canonicalHost  String?
+  surfaceType    String
+  organizationId String
+  officeId       String?
+  status         PublicationSurfaceStatus   @default(ACTIVE)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  siteConfig     SiteConfig?                @relation(fields: [siteConfigId], references: [id], onDelete: SetNull)
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office         Office?                    @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  grants         PropertyPublicationGrant[]
+
+  @@index([organizationId, status])
+  @@index([officeId, status])
+}
+
+model PropertyPublicationGrant {
+  id                       String                         @id @default(cuid())
+  publicationSurfaceId     String
+  propertyObjectId         String
+  identityProfileId        String
+  partnerOfferId           String
+  canonicalVersionId       String
+  buyerSideOrganizationId  String
+  buyerSideOfficeId        String
+  sellerSideOrganizationId String
+  sellerSideOfficeId       String
+  status                   PropertyPublicationGrantStatus @default(DRAFT)
+  validFrom                DateTime                       @default(now())
+  validUntil               DateTime?
+  replacedByGrantId        String?
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @updatedAt
+  publicationSurface       PropertyPublicationSurface     @relation(fields: [publicationSurfaceId], references: [id], onDelete: Restrict)
+  propertyObject           PropertyObject                 @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  identityProfile          PropertyIdentityProfile        @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  partnerOffer             PartnerOffer                   @relation(fields: [partnerOfferId], references: [id], onDelete: Restrict)
+  canonicalVersion         PropertyCanonicalVersion       @relation(fields: [canonicalVersionId], references: [id], onDelete: Restrict)
+  buyerSideOrganization    Organization                   @relation("PublicationGrantBuyerOrganization", fields: [buyerSideOrganizationId], references: [id], onDelete: Restrict)
+  buyerSideOffice          Office                         @relation("PublicationGrantBuyerOffice", fields: [buyerSideOfficeId], references: [id], onDelete: Restrict)
+  sellerSideOrganization   Organization                   @relation("PublicationGrantSellerOrganization", fields: [sellerSideOrganizationId], references: [id], onDelete: Restrict)
+  sellerSideOffice         Office                         @relation("PublicationGrantSellerOffice", fields: [sellerSideOfficeId], references: [id], onDelete: Restrict)
+
+  @@index([publicationSurfaceId, propertyObjectId, status])
+  @@index([identityProfileId, status])
+  @@index([sellerSideOrganizationId, status])
 }
 
 model PropertyIdentityAuthorConfirmation {

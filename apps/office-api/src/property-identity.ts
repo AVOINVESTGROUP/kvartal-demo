@@ -660,6 +660,131 @@ function optionalInteger(value: unknown, field: string) {
   return number;
 }
 
+async function writePartnerCommercialLayer(input: {
+  tx: Prisma.TransactionClient;
+  actor: ActorContext;
+  identityProfileId: string;
+  propertyObjectId: string;
+  canonicalVersionId: string;
+  organizationId: string;
+  officeId: string;
+  commercialInput: JsonObject;
+  originator: boolean;
+}) {
+  if (input.originator) {
+    await input.tx.propertyOriginatorRecord.upsert({
+      where: {
+        identityProfileId_organizationId_officeId: {
+          identityProfileId: input.identityProfileId,
+          organizationId: input.organizationId,
+          officeId: input.officeId,
+        },
+      },
+      update: { status: "RECORDED", revokedAt: null },
+      create: {
+        identityProfileId: input.identityProfileId,
+        organizationId: input.organizationId,
+        officeId: input.officeId,
+        recordedByUserId: input.actor.appUserId,
+      },
+    });
+  }
+
+  const existingRight = await input.tx.propertyRepresentationRight.findFirst({
+    where: {
+      propertyObjectId: input.propertyObjectId,
+      organizationId: input.organizationId,
+      officeId: input.officeId,
+      status: { in: ["DECLARED", "EVIDENCE_PENDING", "VERIFIED"] },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  const representationRight = existingRight ?? await input.tx.propertyRepresentationRight.create({
+    data: {
+      propertyObjectId: input.propertyObjectId,
+      identityProfileId: input.identityProfileId,
+      organizationId: input.organizationId,
+      officeId: input.officeId,
+      rightType: typeof input.commercialInput.rightType === "string" ? input.commercialInput.rightType : "NON_EXCLUSIVE_SELLER_REPRESENTATIVE",
+      status: "DECLARED",
+      scope: { source: "PARTNER_OBJECT_FORM", declaration: "PARTNER_DECLARED" },
+      territory: typeof input.commercialInput.territory === "string" ? input.commercialInput.territory : null,
+      channel: "KVARTAL_PARTNER_NETWORK",
+      evidenceDocumentIds: [],
+      declaredByUserId: input.actor.appUserId,
+    },
+  });
+
+  const priceAmount = optionalNumber(input.commercialInput.priceAmount, "commercialInput.priceAmount");
+  const priceCurrency = typeof input.commercialInput.priceCurrency === "string" && ["RUB", "USD", "EUR", "GEL", "AMD", "AED"].includes(input.commercialInput.priceCurrency)
+    ? input.commercialInput.priceCurrency as "RUB" | "USD" | "EUR" | "GEL" | "AMD" | "AED"
+    : undefined;
+  const existingOffer = await input.tx.partnerOffer.findFirst({
+    where: { representationRightId: representationRight.id, status: { in: ["DRAFT", "ACTIVE"] } },
+    orderBy: { createdAt: "desc" },
+  });
+  const offerData = {
+    priceAmount,
+    priceCurrency,
+    availability: typeof input.commercialInput.availability === "string" ? input.commercialInput.availability : "available",
+    commercialTerms: {
+      priceDisplay: typeof input.commercialInput.priceDisplay === "string" ? input.commercialInput.priceDisplay : null,
+      priceDisplayEn: typeof input.commercialInput.priceDisplayEn === "string" ? input.commercialInput.priceDisplayEn : null,
+    },
+    sourceLabel: "PARTNER_OBJECT_FORM",
+  } as const;
+  const offer = existingOffer
+    ? await input.tx.partnerOffer.update({ where: { id: existingOffer.id }, data: offerData })
+    : await input.tx.partnerOffer.create({
+        data: {
+          propertyObjectId: input.propertyObjectId,
+          representationRightId: representationRight.id,
+          sellerOrganizationId: input.organizationId,
+          sellerOfficeId: input.officeId,
+          status: "ACTIVE",
+          ...offerData,
+        },
+      });
+
+  if (input.commercialInput.requestPublication !== true) return { representationRight, offer, grants: [] };
+  const siteConfigs = await input.tx.siteConfig.findMany({
+    where: { organizationId: input.organizationId, officeId: input.officeId, active: true },
+  });
+  const grants = [];
+  for (const siteConfig of siteConfigs) {
+    const surface = await input.tx.propertyPublicationSurface.upsert({
+      where: { siteConfigId: siteConfig.id },
+      update: { status: "ACTIVE", canonicalHost: siteConfig.domain ?? siteConfig.subdomain },
+      create: {
+        siteConfigId: siteConfig.id,
+        canonicalHost: siteConfig.domain ?? siteConfig.subdomain,
+        surfaceType: "PARTNER_SITE",
+        organizationId: siteConfig.organizationId,
+        officeId: siteConfig.officeId,
+      },
+    });
+    const activeGrant = await input.tx.propertyPublicationGrant.findFirst({
+      where: { publicationSurfaceId: surface.id, propertyObjectId: input.propertyObjectId, status: { in: ["DRAFT", "ACTIVE"] } },
+      orderBy: { createdAt: "desc" },
+    });
+    grants.push(activeGrant ?? await input.tx.propertyPublicationGrant.create({
+      data: {
+        publicationSurfaceId: surface.id,
+        propertyObjectId: input.propertyObjectId,
+        identityProfileId: input.identityProfileId,
+        partnerOfferId: offer.id,
+        canonicalVersionId: input.canonicalVersionId,
+        buyerSideOrganizationId: siteConfig.organizationId,
+        buyerSideOfficeId: siteConfig.officeId,
+        sellerSideOrganizationId: input.organizationId,
+        sellerSideOfficeId: input.officeId,
+        status: representationRight.status === "VERIFIED" ? "ACTIVE" : "DRAFT",
+      },
+    }));
+  }
+  return { representationRight, offer, grants };
+}
+
 async function confirmSubmission(input: {
   prisma: PrismaClient;
   actor: ActorContext;
@@ -809,7 +934,7 @@ async function confirmSubmission(input: {
           physical: physical as Prisma.InputJsonObject,
           observations: submission.observations.map((observation) => ({ id: observation.id, scheme: observation.scheme, authorityNamespace: observation.authorityNamespace, normalizerId: observation.normalizerId, normalizerVersion: observation.normalizerVersion })),
         };
-        await tx.propertyCanonicalVersion.create({
+        const canonicalVersion = await tx.propertyCanonicalVersion.create({
           data: {
             identityProfileId: profile.id,
             versionNumber: 1,
@@ -841,11 +966,23 @@ async function confirmSubmission(input: {
         }
         await tx.propertyIdentifierObservation.updateMany({ where: { submissionId: submission.id, status: "READY" }, data: { status: "ACCEPTED" } });
         await tx.propertyIdentityProfile.update({ where: { id: profile.id }, data: { status: "VERIFIED_INTERNAL" } });
+        const commercialInput = typeof input.body.commercialInput === "object" && input.body.commercialInput !== null ? input.body.commercialInput as JsonObject : {};
+        const commercial = await writePartnerCommercialLayer({
+          tx,
+          actor: input.actor,
+          identityProfileId: profile.id,
+          propertyObjectId: propertyObject.id,
+          canonicalVersionId: canonicalVersion.id,
+          organizationId: submission.organizationId,
+          officeId: submission.officeId,
+          commercialInput,
+          originator: true,
+        });
         await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { status: "CLOSED", canonicalPropertyObjectId: propertyObject.id, closedAt: new Date(), rowVersion: { increment: 1 } } });
         await tx.propertyIdentityEvent.create({
           data: { submissionId: submission.id, identityProfileId: profile.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "AUTHOR_CONFIRMED_CREATE", previousStatus: submission.status, nextStatus: "CLOSED", payload: { checkRunId: checkRun.id, propertyObjectId: propertyObject.id } },
         });
-        return { status: 201, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "CREATE_NEW", propertyObjectId: propertyObject.id, propertyIdentityId: profile.stableId } };
+        return { status: 201, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "CREATE_NEW", propertyObjectId: propertyObject.id, propertyIdentityId: profile.stableId, representationRightId: commercial.representationRight.id, offerId: commercial.offer.id } };
       }
 
       if (matchedProfileIds.length !== 1) throw new PropertyIdentityHttpError(409, "IDENTITY_CHANGED_RECHECK_REQUIRED", "The exact identity result changed. Run the check again.");
@@ -867,12 +1004,90 @@ async function confirmSubmission(input: {
         },
       });
       await tx.propertyIdentifierObservation.updateMany({ where: { submissionId: submission.id, status: "READY" }, data: { status: "ACCEPTED" } });
+      const canonicalVersion = await tx.propertyCanonicalVersion.findFirst({
+        where: { identityProfileId: profile.id, isCurrent: true },
+        orderBy: { versionNumber: "desc" },
+      });
+      if (!canonicalVersion) throw new PropertyIdentityHttpError(409, "CANONICAL_VERSION_UNAVAILABLE", "The canonical property version is unavailable.");
+      const commercialInput = typeof input.body.commercialInput === "object" && input.body.commercialInput !== null ? input.body.commercialInput as JsonObject : {};
+      const commercial = await writePartnerCommercialLayer({
+        tx,
+        actor: input.actor,
+        identityProfileId: profile.id,
+        propertyObjectId: profile.propertyObjectId,
+        canonicalVersionId: canonicalVersion.id,
+        organizationId: submission.organizationId,
+        officeId: submission.officeId,
+        commercialInput,
+        originator: false,
+      });
       await tx.propertyRegistrationSubmission.update({ where: { id: submission.id }, data: { status: "CLOSED", canonicalPropertyObjectId: profile.propertyObjectId, closedAt: new Date(), rowVersion: { increment: 1 } } });
       await tx.propertyIdentityEvent.create({
         data: { submissionId: submission.id, identityProfileId: profile.id, actorUserId: input.actor.appUserId, actorOrganizationId: submission.organizationId, actorOfficeId: submission.officeId, eventType: "AUTHOR_CONFIRMED_LINK", previousStatus: submission.status, nextStatus: "CLOSED", payload: { checkRunId: checkRun.id, propertyObjectId: profile.propertyObjectId } },
       });
-      return { status: 200, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: profile.propertyObjectId, propertyIdentityId: profile.stableId } };
+      return { status: 200, payload: { ok: true, submissionId: submission.id, status: "CLOSED", resolution: "LINK_EXISTING", propertyObjectId: profile.propertyObjectId, propertyIdentityId: profile.stableId, representationRightId: commercial.representationRight.id, offerId: commercial.offer.id } };
     },
+  });
+}
+
+export async function createPropertyFromUnifiedIngress(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  request: IncomingMessage;
+  organizationId: string;
+  officeId: string;
+  marketId: string;
+  jurisdiction: string;
+  subjectScope: PropertyIdentitySubjectScope;
+  assetClass: string;
+  identityInput: JsonObject;
+  identifiers: JsonObject[];
+  commercialInput: JsonObject;
+  env?: NodeJS.ProcessEnv;
+}) {
+  const submissionBody: JsonObject = {
+    organizationId: input.organizationId,
+    officeId: input.officeId,
+    marketId: input.marketId,
+    jurisdiction: input.jurisdiction,
+    subjectScope: input.subjectScope,
+    assetClass: input.assetClass,
+    identityInput: input.identityInput,
+    identifiers: input.identifiers,
+  };
+  const created = await createSubmission({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    body: submissionBody,
+    env: input.env ?? process.env,
+  });
+  const submissionId = typeof created.payload.submissionId === "string" ? created.payload.submissionId : null;
+  if (!submissionId) return created;
+  if (created.payload.status === "NEEDS_CORRECTION") {
+    throw new PropertyIdentityHttpError(409, "IDENTIFIER_CORRECTION_REQUIRED", "The official property identifier must be corrected before the object can be saved.");
+  }
+
+  const checked = await runExactCheck({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    submissionId,
+    body: {},
+  });
+  const checkRunId = typeof checked.payload.checkRunId === "string" ? checked.payload.checkRunId : null;
+  const outcome = checked.payload.outcome;
+  if (!checkRunId || (outcome !== "UNIQUE_CANDIDATE" && outcome !== "EXACT_EXISTING")) {
+    throw new PropertyIdentityHttpError(409, "PROPERTY_IDENTITY_REVIEW_REQUIRED", "The property identity could not be resolved automatically.");
+  }
+
+  return confirmSubmission({
+    prisma: input.prisma,
+    actor: input.actor,
+    request: input.request,
+    submissionId,
+    body: { checkRunId, commercialInput: input.commercialInput },
+    resolution: outcome === "EXACT_EXISTING" ? "LINK_EXISTING" : "CREATE_NEW",
   });
 }
 
