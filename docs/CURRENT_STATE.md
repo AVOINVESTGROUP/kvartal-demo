@@ -796,3 +796,13 @@
 - Firebase App Hosting build `build-web3-wallet-2b65bf7` resolved that exact commit and reached `READY`; underlying regional Cloud Build `a6efd8b5-25ee-4019-9163-e58740623114` succeeded.
 - Rollout `rollout-web3-wallet-2b65bf7` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
 - The remaining Registry Safe and contract deployment steps now require only interactive confirmations in the owner's wallet plus BSC Testnet gas; no deployer private key needs to be provided to the platform or operator.
+
+## BSC Mainnet product correction prepared (2026-07-26)
+
+- The product owner rejected BSC Testnet as the final result and required a working project. ADR 0008 therefore makes BNB Smart Chain Mainnet (`chainId 56`) the production Property Identity network.
+- Added an effective `writesAllowed` state and enforced `assertChainWriteAllowed` in verified contract registration, token-operation creation and Safe Transaction Service proposal. The previous mainnet guard existed only as an unused helper; this defect is corrected.
+- Mainnet activation now requires both `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=true` and an owner change ticket. The owner UI disables wallet writes when the backend has not enabled them.
+- Removed testnet-only copy from the active owner workflow and added explicit real-BNB/Mainnet warnings.
+- Added a guarded `deploy:mainnet` CLI fallback while keeping browser-owned deployment as the preferred path.
+- Preserved the required `cancun` compilation target because OpenZeppelin Contracts 5.4 uses the `MCOPY` instruction and cannot compile for `paris`; Solidity 0.8.26 and optimizer settings remain unchanged.
+- Current infrastructure fact: only GCP project `kvartal-dev` exists; there is no separately provisioned KVARTAL production project or production App Hosting/Cloud SQL stack.

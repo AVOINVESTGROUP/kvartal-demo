@@ -30,7 +30,7 @@ function readPayload(payload: unknown): SafePayload {
   return { registryAdminSafeAddress, contractAddress, encodedCall };
 }
 
-export function SafeDeploymentPanel(props: { chainId: number }) {
+export function SafeDeploymentPanel(props: { chainId: number; writesAllowed: boolean }) {
   const [ownersText, setOwnersText] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -39,6 +39,7 @@ export function SafeDeploymentPanel(props: { chainId: number }) {
     setBusy(true);
     setMessage(null);
     try {
+      if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
       const expectedChainHex = `0x${props.chainId.toString(16)}`;
@@ -66,10 +67,10 @@ export function SafeDeploymentPanel(props: { chainId: number }) {
     }
   }
 
-  return <div className="mt-3 grid gap-2"><textarea value={ownersText} onChange={(event) => setOwnersText(event.target.value)} placeholder={"0x владелец 1\n0x владелец 2"} className="min-h-24 rounded border border-kv-line p-3 font-mono text-sm"/><button type="button" disabled={busy} onClick={deploy} className="justify-self-start rounded bg-kv-navy px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте кошелёк…" : "Развернуть Registry/Admin Safe 2-of-N"}</button>{message ? <p className="break-all rounded bg-kv-bg p-3 text-xs">{message}</p> : null}</div>;
+  return <div className="mt-3 grid gap-2"><textarea value={ownersText} onChange={(event) => setOwnersText(event.target.value)} placeholder={"0x владелец 1\n0x владелец 2"} className="min-h-24 rounded border border-kv-line p-3 font-mono text-sm"/><button type="button" disabled={busy || !props.writesAllowed} onClick={deploy} className="justify-self-start rounded bg-kv-navy px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте кошелёк…" : "Развернуть Registry/Admin Safe 2-of-N"}</button>{message ? <p className="break-all rounded bg-kv-bg p-3 text-xs">{message}</p> : null}</div>;
 }
 
-export function RegistryContractDeploymentPanel(props: { chainId: number; bytecode: string; abiJson: string }) {
+export function RegistryContractDeploymentPanel(props: { chainId: number; writesAllowed: boolean; bytecode: string; abiJson: string }) {
   const [safeAddress, setSafeAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export function RegistryContractDeploymentPanel(props: { chainId: number; byteco
     setBusy(true);
     setMessage(null);
     try {
+      if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
       const normalizedSafe = safeAddress.trim().toLowerCase();
@@ -92,7 +94,7 @@ export function RegistryContractDeploymentPanel(props: { chainId: number; byteco
       const constructorArgument = normalizedSafe.slice(2).padStart(64, "0");
       const transactionHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: sender, data: `${props.bytecode}${constructorArgument}` }] });
       if (typeof transactionHash !== "string") throw new Error("Кошелёк не вернул deployment tx hash.");
-      setMessage(`Транзакция ${transactionHash} отправлена. Ожидаем подтверждение BSC Testnet…`);
+      setMessage(`Транзакция ${transactionHash} отправлена. Ожидаем подтверждение сети…`);
       let receipt: Record<string, unknown> | null = null;
       for (let attempt = 0; attempt < 45 && !receipt; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -111,10 +113,10 @@ export function RegistryContractDeploymentPanel(props: { chainId: number; byteco
     }
   }
 
-  return <div className="mt-3 grid gap-2"><input value={safeAddress} onChange={(event) => setSafeAddress(event.target.value)} placeholder="0x Registry/Admin Safe" className="min-h-11 rounded border border-kv-line px-3 font-mono"/><button type="button" disabled={busy} onClick={deploy} className="justify-self-start rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Ожидаем BSC Testnet…" : "Развернуть контракт через кошелёк"}</button>{message ? <pre className="whitespace-pre-wrap break-all rounded bg-kv-bg p-3 text-xs">{message}</pre> : null}</div>;
+  return <div className="mt-3 grid gap-2"><input value={safeAddress} onChange={(event) => setSafeAddress(event.target.value)} placeholder="0x Registry/Admin Safe" className="min-h-11 rounded border border-kv-line px-3 font-mono"/><button type="button" disabled={busy || !props.writesAllowed} onClick={deploy} className="justify-self-start rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Ожидаем подтверждение сети…" : "Развернуть контракт через кошелёк"}</button>{message ? <pre className="whitespace-pre-wrap break-all rounded bg-kv-bg p-3 text-xs">{message}</pre> : null}</div>;
 }
 
-export function SafeOperationButton(props: { operationId: string; chainId: number; payload: unknown; proposeAction: ProposalAction }) {
+export function SafeOperationButton(props: { operationId: string; chainId: number; writesAllowed: boolean; payload: unknown; proposeAction: ProposalAction }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -122,6 +124,7 @@ export function SafeOperationButton(props: { operationId: string; chainId: numbe
     setBusy(true);
     setMessage(null);
     try {
+      if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
       const expectedChainHex = `0x${props.chainId.toString(16)}`;
@@ -146,12 +149,13 @@ export function SafeOperationButton(props: { operationId: string; chainId: numbe
     }
   }
 
-  return <div className="mt-2"><button type="button" disabled={busy} onClick={propose} className="rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте кошелёк…" : "Подписать и отправить в Safe"}</button>{message ? <p className="mt-2 break-all rounded bg-white p-2 text-xs">{message}</p> : null}</div>;
+  return <div className="mt-2"><button type="button" disabled={busy || !props.writesAllowed} onClick={propose} className="rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте кошелёк…" : "Подписать и отправить в Safe"}</button>{message ? <p className="mt-2 break-all rounded bg-white p-2 text-xs">{message}</p> : null}</div>;
 }
 
 export function SafeExecutionButton(props: {
   operationId: string;
   chainId: number;
+  writesAllowed: boolean;
   payload: unknown;
   safeTxHash: string;
   getExecutionAction: (operationId: string) => Promise<{ status: string; confirmations: number; confirmationsRequired: number; chainTxHash: string | null; serviceTransaction: Record<string, unknown> }>;
@@ -164,6 +168,7 @@ export function SafeExecutionButton(props: {
     setBusy(true);
     setMessage(null);
     try {
+      if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const status = await props.getExecutionAction(props.operationId);
       if (status.chainTxHash) {
         await props.recordExecutionAction(props.operationId, props.safeTxHash, status.chainTxHash);
@@ -186,7 +191,7 @@ export function SafeExecutionButton(props: {
       const protocolKit = await Safe.init({ provider, signer: senderAddress, safeAddress: transaction.registryAdminSafeAddress });
       const execution = await protocolKit.executeTransaction(status.serviceTransaction as Parameters<typeof protocolKit.executeTransaction>[0]);
       await props.recordExecutionAction(props.operationId, props.safeTxHash, execution.hash);
-      setMessage(`Транзакция отправлена в BSC Testnet: ${execution.hash}`);
+      setMessage(`Транзакция отправлена в блокчейн: ${execution.hash}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Не удалось исполнить Safe-транзакцию.");
     } finally {
@@ -194,5 +199,5 @@ export function SafeExecutionButton(props: {
     }
   }
 
-  return <div className="mt-2"><button type="button" disabled={busy} onClick={execute} className="rounded bg-kv-navy px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Проверяем Safe…" : "Проверить подписи и исполнить"}</button>{message ? <p className="mt-2 break-all rounded bg-white p-2 text-xs">{message}</p> : null}</div>;
+  return <div className="mt-2"><button type="button" disabled={busy || !props.writesAllowed} onClick={execute} className="rounded bg-kv-navy px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Проверяем Safe…" : "Проверить подписи и исполнить"}</button>{message ? <p className="mt-2 break-all rounded bg-white p-2 text-xs">{message}</p> : null}</div>;
 }

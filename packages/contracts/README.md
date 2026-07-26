@@ -6,7 +6,7 @@
 - IREPN Registry/Admin Safe holds all contract administration roles.
 - Holder transfers and approvals always revert.
 - On-chain records contain only stable reference and evidence/version hashes.
-- The included deployment command is restricted to BNB Smart Chain Testnet (chain `97`). There is intentionally no Mainnet deployment command.
+- Deployment supports BNB Smart Chain Mainnet (chain `56`) and Testnet (chain `97`). Mainnet requires the explicit write flag and an owner-approved change ticket.
 
 Local verification:
 
@@ -14,4 +14,4 @@ Local verification:
 pnpm --filter @kvartal/contracts test
 ```
 
-Testnet deployment requires `BSC_TESTNET_DEPLOYER_PRIVATE_KEY` and `IREPN_REGISTRY_ADMIN_SAFE_ADDRESS` from Secret Manager or an ephemeral operator environment. Never commit them.
+Browser deployment through platform-admin is preferred because the private key never reaches the application. The backup Mainnet CLI command requires `BSC_MAINNET_DEPLOYER_PRIVATE_KEY`, `IREPN_REGISTRY_ADMIN_SAFE_ADDRESS`, `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=true` and `PROPERTY_IDENTITY_MAINNET_CHANGE_TICKET`; never commit these values.

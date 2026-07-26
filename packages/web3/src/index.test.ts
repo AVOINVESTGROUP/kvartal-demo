@@ -5,7 +5,11 @@ describe("Property Identity Web3 domain", () => {
   it("uses the official BSC testnet by default and blocks mainnet writes", () => {
     expect(readChainConfig({}).chainId).toBe(97);
     const mainnet = readChainConfig({ PROPERTY_IDENTITY_CHAIN_ID: "56" });
+    expect(mainnet.writesAllowed).toBe(false);
     expect(() => assertChainWriteAllowed(mainnet, {})).toThrow("WEB3_MAINNET_WRITE_DISABLED");
+    const enabled = readChainConfig({ PROPERTY_IDENTITY_CHAIN_ID: "56", PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED: "true", PROPERTY_IDENTITY_MAINNET_CHANGE_TICKET: "OWNER-20260726" });
+    expect(enabled.writesAllowed).toBe(true);
+    expect(() => assertChainWriteAllowed(enabled, { PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED: "true" })).not.toThrow();
   });
 
   it("derives stable uint256 token ids without exposing property data", () => {

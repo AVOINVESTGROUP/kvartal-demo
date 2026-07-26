@@ -21,13 +21,15 @@ export type ChainConfig = Readonly<{
   rpcUrl: string;
   explorerUrl: string;
   production: boolean;
+  writesAllowed: boolean;
 }>;
 
 export function readChainConfig(env: NodeJS.ProcessEnv = process.env): ChainConfig {
   const chainId = Number(env.PROPERTY_IDENTITY_CHAIN_ID ?? 97);
   if (chainId !== 97 && chainId !== 56) throw new Error("WEB3_CHAIN_UNSUPPORTED");
   const production = chainId === 56;
-  if (production && env.PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED === "true") {
+  const writesAllowed = !production || env.PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED === "true";
+  if (production && writesAllowed) {
     if ((env.PROPERTY_IDENTITY_MAINNET_CHANGE_TICKET?.trim().length ?? 0) < 8) throw new Error("WEB3_MAINNET_CHANGE_TICKET_REQUIRED");
   }
   return Object.freeze({
@@ -36,6 +38,7 @@ export function readChainConfig(env: NodeJS.ProcessEnv = process.env): ChainConf
     rpcUrl: env.PROPERTY_IDENTITY_RPC_URL?.trim() || (production ? "https://bsc-dataseed.bnbchain.org" : "https://bsc-testnet-dataseed.bnbchain.org"),
     explorerUrl: production ? "https://bscscan.com" : "https://testnet.bscscan.com",
     production,
+    writesAllowed,
   });
 }
 

@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import SafeApiKit from "@safe-global/api-kit";
 import { ActorAuthError, validateIdempotencyKey, type ActorContext } from "@kvartal/auth";
-import { buildPublicTokenPayload, corporateWalletChallenge, deterministicTokenId, encodeRegistryOperation, normalizeAddress, readChainConfig, RegistryRpcAdapter, SafeRpcAdapter, type SupportedChainId } from "@kvartal/web3";
+import { assertChainWriteAllowed, buildPublicTokenPayload, corporateWalletChallenge, deterministicTokenId, encodeRegistryOperation, normalizeAddress, readChainConfig, RegistryRpcAdapter, SafeRpcAdapter, type SupportedChainId } from "@kvartal/web3";
 
 function sendJson(response: ServerResponse, status: number, payload: unknown) {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
@@ -73,6 +73,7 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
   if (input.url.pathname === "/api/v1/platform/property-identity/web3/contracts/register" && input.request.method === "POST") {
     const body = await readJsonBody(input.request);
     const config = readChainConfig(env);
+    assertChainWriteAllowed(config, env);
     const contractAddress = normalizeAddress(requiredString(body, "contractAddress"));
     const registryAdminSafeAddress = normalizeAddress(requiredString(body, "registryAdminSafeAddress"));
     const deploymentTxHash = requiredString(body, "deploymentTxHash").toLowerCase();
@@ -181,6 +182,7 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
     const originator = profile.originatorRecords[0];
     if (!canonical || !originator) throw new ActorAuthError("FORBIDDEN", 409, "Canonical version and originator are required.");
     const config = readChainConfig(env);
+    assertChainWriteAllowed(config, env);
     const contract = await input.prisma.blockchainContractRegistry.findFirst({ where: { chainId: config.chainId, contractType: "BEP721_PROPERTY_IDENTITY", active: true, status: "ACTIVE" }, orderBy: { createdAt: "desc" } });
     if (!contract) throw new ActorAuthError("FORBIDDEN", 409, "An active registry contract is not configured.");
     if (!contract.registryAdminSafeAddress) throw new ActorAuthError("FORBIDDEN", 409, "The active registry contract has no verified Registry/Admin Safe.");
@@ -229,6 +231,7 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
     if (safeTransactionData.to !== expectedTo || safeTransactionData.value !== "0" || safeTransactionData.data !== expectedData || safeTransactionData.operation !== 0) throw new ActorAuthError("FORBIDDEN", 409, "The signed Safe transaction does not match the queued registry operation.");
     if (![safeTransactionData.safeTxGas, safeTransactionData.baseGas, safeTransactionData.gasPrice].every((item) => /^\d+$/.test(item)) || !Number.isSafeInteger(safeTransactionData.nonce) || safeTransactionData.nonce < 0) throw new ActorAuthError("FORBIDDEN", 400, "Safe gas fields or nonce are invalid.");
     const config = readChainConfig({ ...env, PROPERTY_IDENTITY_CHAIN_ID: String(operation.tokenRecord.chainId) });
+    assertChainWriteAllowed(config, env);
     const safe = await new SafeRpcAdapter(config.rpcUrl).readSafe(expectedSafe);
     if (!safe.owners.some((owner) => owner === senderAddress)) throw new ActorAuthError("FORBIDDEN", 403, "The connected signer is not an owner of Registry/Admin Safe.");
     try {
