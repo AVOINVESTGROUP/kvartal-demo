@@ -815,3 +815,10 @@
 - Revision `kvartal-platform-api-mainnetcfg-6be35d9` now serves 100% of traffic with separately verified values: chain ID `56`, Mainnet writes `true`, owner change ticket `OWNER-MAINNET-20260726`. Authenticated readiness returned `database=ready`.
 - Firebase App Hosting build `build-mainnet-6be35d9` resolved the exact commit and reached `READY`; rollout `rollout-mainnet-6be35d9` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
 - The owner UI and API now target BNB Smart Chain Mainnet. No Mainnet Safe, registry contract or token has been claimed or created yet because those require explicit wallet confirmations and real BNB gas.
+
+## BSC Mainnet wallet configuration released (2026-07-26)
+
+- Source commit `9eaae5dd9c8ef0fd7a5db1882b13a78b05044ca6` was pushed to `feature/property-identity-v4`.
+- The wallet flow now switches to BNB Smart Chain Mainnet and, when it is absent, requests MetaMask to add the official chain `56`, BNB currency, BNB Chain RPC and BscScan explorer configuration.
+- Firebase App Hosting build `build-mainnet-wallet-9eaae5d` resolved the exact commit; regional Cloud Build `41e68778-9c5b-4d12-ad80-301ba5978d76` succeeded and the App Hosting build reached `READY`.
+- Rollout `rollout-mainnet-wallet-9eaae5d` reached `SUCCEEDED`; live `/login` returned `200` with the required popup-compatible COOP header.
