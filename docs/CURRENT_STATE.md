@@ -831,3 +831,14 @@
 - Token-operation controls are disabled until the actual contract, Corporate Safe, eligible identity and Safe coordination prerequisites exist.
 - Added unit coverage for incomplete, mint-ready and first-token-live readiness states; platform API tests/build and platform-admin production build/lint pass locally.
 - Verified the current official BNB Safe Transaction Service through Safe API Kit 5.0.1 using `https://safe-transaction-bsc.safe.global/api`; it returned `Safe Transaction Service` version `6.6.1`. Runtime configuration and deployment remain the next release step.
+
+## BSC Mainnet operational readiness deployed (2026-07-26)
+
+- Source commit `dca6f5e5258184e7a81349043fec9219afabe8ac` was pushed to `feature/property-identity-v4`.
+- Platform API image build `4adb82f4-478a-45a9-aad9-a6af16c33432` succeeded and published `platform-api:readiness-dca6f5e`.
+- Cloud Run revision `kvartal-platform-api-readiness-dca6f5e` serves 100% of traffic. Its effective environment preserves chain ID `56`, Mainnet writes and the owner change ticket, and adds `SAFE_TRANSACTION_SERVICE_URL=https://safe-transaction-bsc.safe.global/api`.
+- Authenticated `/readyz` returned `ok=true`, `database=ready`, `organizationCount=7`.
+- Firebase App Hosting build `build-web3-ready-dca6f5e` resolved the exact source SHA and reached `READY`; regional Cloud Build `ede07228-d9f0-4bd2-ae11-2e3969872767` succeeded.
+- Rollout `rollout-web3-ready-dca6f5e` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- A synthetic Firebase session for the existing verified `office@integrayachtsuae.com` identity returned `200` from session creation and `200` from `/property-identity/web3`. The rendered live page confirmed BNB Mainnet, Safe Transaction Service readiness and the factual next action to create the Registry/Admin Safe and deploy the registry contract.
+- No owner wallet address, private key or seed phrase was created, stored or inferred. Mainnet Safe and contract deployment still require explicit confirmation in an owner-controlled wallet and real BNB gas.
