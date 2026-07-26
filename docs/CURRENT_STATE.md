@@ -771,3 +771,14 @@
 - The testnet deployment script now emits the ABI SHA-256 hash required by verified contract registration.
 - Local verification passed for Prisma generation, Web3 tests/build, Solidity tests, platform API build/tests, platform-admin production build and lint.
 - On-chain deployment is intentionally not claimed yet: no owner-controlled Registry/Admin Safe address, funded signer transaction or Safe API key currently exists in the project configuration. These are external signer/account prerequisites, not values the application may invent.
+
+## Property Identity Safe execution software deployed to dev (2026-07-26)
+
+- Source commit `5334a3702f0d5004a9b38a12e47be515568bc899` was pushed to `feature/property-identity-v4`.
+- Pre-migration Cloud SQL backup `1785067279757` completed successfully; operation `2479ab6e-7c6a-4dbf-aab7-bd2200000036` is `DONE`.
+- Migration image build `1613fd5b-1d1e-48eb-a7a1-3384c6f4e228` succeeded. Cloud Run execution `kvartal-db-migrate-7r4ch` completed successfully with one succeeded task.
+- Platform API image build `642b7b4e-adc2-4426-a80d-38b085e735b4` succeeded. Revision `kvartal-platform-api-web3-5334a37` serves 100% of dev traffic; authenticated `/readyz` returned `database=ready`.
+- Firebase App Hosting build `build-web3-5334a37` for `fixer-platform-admin-dev` resolved the exact source commit and reached `READY`.
+- Rollout `rollout-web3-5334a37` reached `SUCCEEDED`.
+- Live checks: platform-admin `/login` returns `200` with `Cross-Origin-Opener-Policy: same-origin-allow-popups`; unauthenticated `/property-identity/web3` returns `307` to `/login`.
+- The software deployment does not create a Safe or write a contract to BSC by itself. The next on-chain gate is an interactive owner-wallet transaction with funded tBNB and at least two owner addresses, followed by a separately issued Safe Developer API key for proposal coordination.
