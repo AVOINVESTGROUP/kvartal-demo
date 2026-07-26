@@ -10,6 +10,15 @@ type ProposalAction = (operationId: string, submission: {
   senderSignature: string;
 }) => Promise<{ ok: boolean; safeTxHash: string; requiredConfirmations: number }>;
 
+type RegistryActivationAction = (submission: {
+  contractAddress: string;
+  registryAdminSafeAddress: string;
+  deploymentTxHash: string;
+  abiHash: string;
+  version: string;
+  reason: string;
+}) => Promise<{ ok: boolean; contractAddress: string }>;
+
 type SafePayload = {
   registryAdminSafeAddress: string;
   contractAddress: string;
@@ -46,6 +55,93 @@ async function ensureWalletChain(provider: Eip1193Provider, chainId: number) {
       blockExplorerUrls: [mainnet ? "https://bscscan.com" : "https://testnet.bscscan.com"],
     }] });
   }
+}
+
+async function waitForSuccessfulReceipt(provider: Eip1193Provider, transactionHash: string, label: string) {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const result = await provider.request({ method: "eth_getTransactionReceipt", params: [transactionHash] });
+    if (result && typeof result === "object" && !Array.isArray(result)) {
+      const receipt = result as Record<string, unknown>;
+      if (receipt.status !== "0x1") throw new Error(`${label} завершилась ошибкой. Tx: ${transactionHash}`);
+      return receipt;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  throw new Error(`${label} ещё подтверждается. Tx: ${transactionHash}`);
+}
+
+export function RegistryBootstrapPanel(props: {
+  chainId: number;
+  writesAllowed: boolean;
+  bytecode: string;
+  abiJson: string;
+  activateAction: RegistryActivationAction;
+}) {
+  const [ownersText, setOwnersText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pendingContract, setPendingContract] = useState<null | {
+    contractAddress: string;
+    registryAdminSafeAddress: string;
+    deploymentTxHash: string;
+    abiHash: string;
+  }>(null);
+
+  async function bootstrap() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (!props.writesAllowed) throw new Error("Запись в BNB Smart Chain Mainnet административно заблокирована.");
+      if (pendingContract) {
+        setMessage("Повторно проверяем и активируем уже развёрнутый контракт…");
+        await props.activateAction({ ...pendingContract, version: "1.0.0", reason: "Первичное развёртывание Property Identity Registry в BNB Mainnet" });
+        setMessage(`Готово. Web3-реестр активирован: ${pendingContract.contractAddress}`);
+        return;
+      }
+
+      const provider = window.ethereum;
+      if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
+      await ensureWalletChain(provider, props.chainId);
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      const sender = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0].toLowerCase() : "";
+      const owners = [...new Set(ownersText.split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter(Boolean))];
+      if (owners.length < 2 || owners.some((item) => !/^0x[0-9a-f]{40}$/.test(item))) throw new Error("Укажите минимум два разных корректных публичных адреса владельцев Safe.");
+      if (!owners.includes(sender)) throw new Error("Подключённый кошелёк должен быть одним из владельцев Safe.");
+      if (!props.bytecode.startsWith("0x") || props.bytecode.length < 100) throw new Error("Deployment bytecode контракта отсутствует.");
+
+      setMessage("Шаг 1 из 3: создаём Registry/Admin Safe 2-of-N…");
+      const protocolKit = await Safe.init({ provider, signer: sender, predictedSafe: { safeAccountConfig: { owners, threshold: 2 }, safeDeploymentConfig: { safeVersion: "1.4.1" } } });
+      const safeAddress = await protocolKit.getAddress();
+      if (!(await protocolKit.isSafeDeployed())) {
+        const deployment = await protocolKit.createSafeDeploymentTransaction();
+        const safeTxHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: sender, to: deployment.to, value: deployment.value, data: deployment.data }] });
+        if (typeof safeTxHash !== "string") throw new Error("Кошелёк не вернул hash транзакции развёртывания Safe.");
+        setMessage(`Шаг 1 из 3: ожидаем Safe ${safeAddress}. Tx: ${safeTxHash}`);
+        await waitForSuccessfulReceipt(provider, safeTxHash, "Развёртывание Safe");
+      }
+
+      setMessage(`Шаг 2 из 3: Safe ${safeAddress} готов. Подтвердите развёртывание контракта.`);
+      const constructorArgument = safeAddress.toLowerCase().slice(2).padStart(64, "0");
+      const deploymentTxHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: sender, data: `${props.bytecode}${constructorArgument}` }] });
+      if (typeof deploymentTxHash !== "string") throw new Error("Кошелёк не вернул deployment tx hash контракта.");
+      const receipt = await waitForSuccessfulReceipt(provider, deploymentTxHash, "Развёртывание контракта");
+      if (typeof receipt.contractAddress !== "string") throw new Error(`Сеть не вернула адрес контракта. Tx: ${deploymentTxHash}`);
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(props.abiJson));
+      const abiHash = `0x${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      const deploymentResult = { contractAddress: receipt.contractAddress, registryAdminSafeAddress: safeAddress, deploymentTxHash, abiHash };
+      setPendingContract(deploymentResult);
+
+      setMessage("Шаг 3 из 3: API проверяет байткод, BEP-721, роли, Safe и deployment receipt…");
+      await props.activateAction({ ...deploymentResult, version: "1.0.0", reason: "Первичное развёртывание Property Identity Registry в BNB Mainnet" });
+      setMessage(`Готово. Registry/Admin Safe: ${safeAddress}. Web3-контракт активирован: ${receipt.contractAddress}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не удалось ввести Web3-реестр в работу.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="mt-4 grid gap-3"><textarea value={ownersText} onChange={(event) => setOwnersText(event.target.value)} disabled={busy || Boolean(pendingContract)} placeholder={"0x публичный адрес владельца 1\n0x публичный адрес владельца 2"} className="min-h-24 rounded border border-kv-line p-3 font-mono text-sm disabled:opacity-60"/><button type="button" disabled={busy || !props.writesAllowed} onClick={bootstrap} className="justify-self-start rounded bg-kv-red px-5 py-3 font-black text-white disabled:opacity-60">{busy ? "Выполняется… откройте MetaMask" : pendingContract ? "Повторить проверку и активацию" : "Создать Safe и запустить Web3-реестр"}</button>{message ? <pre className="whitespace-pre-wrap break-all rounded bg-kv-bg p-3 text-sm">{message}</pre> : null}<p className="text-xs text-kv-muted">Будут запрошены две Mainnet-транзакции: создание Safe и развёртывание контракта. Приложение не получает private keys и не может подтвердить транзакцию вместо владельца.</p></div>;
 }
 
 export function SafeDeploymentPanel(props: { chainId: number; writesAllowed: boolean }) {

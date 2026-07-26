@@ -842,3 +842,12 @@
 - Rollout `rollout-web3-ready-dca6f5e` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
 - A synthetic Firebase session for the existing verified `office@integrayachtsuae.com` identity returned `200` from session creation and `200` from `/property-identity/web3`. The rendered live page confirmed BNB Mainnet, Safe Transaction Service readiness and the factual next action to create the Registry/Admin Safe and deploy the registry contract.
 - No owner wallet address, private key or seed phrase was created, stored or inferred. Mainnet Safe and contract deployment still require explicit confirmation in an owner-controlled wallet and real BNB gas.
+
+## Unified BSC Mainnet registry bootstrap prepared (2026-07-26)
+
+- Replaced the three error-prone manual owner steps (Safe deployment, contract deployment and technical-field copy/paste registration) with one `RegistryBootstrapPanel` workflow.
+- The workflow switches/adds BNB Smart Chain Mainnet, requires at least two distinct public Safe-owner addresses with threshold 2, and requires the connected wallet to be one of those owners.
+- After explicit wallet confirmation it waits for successful Safe deployment, then requests explicit contract-deployment confirmation, waits for the receipt, computes the ABI SHA-256 hash and calls the existing server-side verified registration action.
+- Server activation still independently verifies the deployment receipt, bytecode, BEP-721 identity/interface, Registry/Admin roles, Safe owner count and threshold. Browser output is never trusted as proof by itself.
+- A partial-success recovery state prevents accidental duplicate contract deployment: if the contract is mined but API activation fails, the same button retries only verification/activation. A collapsed manual recovery form remains available for a previously mined deployment.
+- Platform-admin production build and lint pass locally.
