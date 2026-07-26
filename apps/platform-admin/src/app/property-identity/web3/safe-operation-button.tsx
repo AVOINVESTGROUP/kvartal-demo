@@ -69,6 +69,51 @@ export function SafeDeploymentPanel(props: { chainId: number }) {
   return <div className="mt-3 grid gap-2"><textarea value={ownersText} onChange={(event) => setOwnersText(event.target.value)} placeholder={"0x владелец 1\n0x владелец 2"} className="min-h-24 rounded border border-kv-line p-3 font-mono text-sm"/><button type="button" disabled={busy} onClick={deploy} className="justify-self-start rounded bg-kv-navy px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте кошелёк…" : "Развернуть Registry/Admin Safe 2-of-N"}</button>{message ? <p className="break-all rounded bg-kv-bg p-3 text-xs">{message}</p> : null}</div>;
 }
 
+export function RegistryContractDeploymentPanel(props: { chainId: number; bytecode: string; abiJson: string }) {
+  const [safeAddress, setSafeAddress] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function deploy() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const provider = window.ethereum;
+      if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
+      const normalizedSafe = safeAddress.trim().toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(normalizedSafe)) throw new Error("Укажите корректный адрес Registry/Admin Safe.");
+      if (!props.bytecode.startsWith("0x") || props.bytecode.length < 100) throw new Error("Deployment bytecode контракта отсутствует.");
+      const expectedChainHex = `0x${props.chainId.toString(16)}`;
+      const currentChain = await provider.request({ method: "eth_chainId" });
+      if (currentChain !== expectedChainHex) await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      const sender = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
+      if (!sender) throw new Error("Кошелёк не вернул адрес deployer.");
+      const constructorArgument = normalizedSafe.slice(2).padStart(64, "0");
+      const transactionHash = await provider.request({ method: "eth_sendTransaction", params: [{ from: sender, data: `${props.bytecode}${constructorArgument}` }] });
+      if (typeof transactionHash !== "string") throw new Error("Кошелёк не вернул deployment tx hash.");
+      setMessage(`Транзакция ${transactionHash} отправлена. Ожидаем подтверждение BSC Testnet…`);
+      let receipt: Record<string, unknown> | null = null;
+      for (let attempt = 0; attempt < 45 && !receipt; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const result = await provider.request({ method: "eth_getTransactionReceipt", params: [transactionHash] });
+        if (result && typeof result === "object" && !Array.isArray(result)) receipt = result as Record<string, unknown>;
+      }
+      if (!receipt) throw new Error(`Контракт ещё подтверждается. Deployment tx: ${transactionHash}`);
+      if (receipt.status !== "0x1" || typeof receipt.contractAddress !== "string") throw new Error(`Deployment завершился ошибкой. Tx: ${transactionHash}`);
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(props.abiJson));
+      const abiHash = `0x${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      setMessage(`Contract: ${receipt.contractAddress}\nDeployment tx: ${transactionHash}\nRegistry Safe: ${normalizedSafe}\nABI hash: ${abiHash}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не удалось развернуть контракт.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="mt-3 grid gap-2"><input value={safeAddress} onChange={(event) => setSafeAddress(event.target.value)} placeholder="0x Registry/Admin Safe" className="min-h-11 rounded border border-kv-line px-3 font-mono"/><button type="button" disabled={busy} onClick={deploy} className="justify-self-start rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Ожидаем BSC Testnet…" : "Развернуть контракт через кошелёк"}</button>{message ? <pre className="whitespace-pre-wrap break-all rounded bg-kv-bg p-3 text-xs">{message}</pre> : null}</div>;
+}
+
 export function SafeOperationButton(props: { operationId: string; chainId: number; payload: unknown; proposeAction: ProposalAction }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);

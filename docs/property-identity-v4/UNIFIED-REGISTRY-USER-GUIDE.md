@@ -90,7 +90,7 @@ Property Identity Registry — единый реестр физических о
 Web3 управляется только владельцем платформы на странице `platform-admin → Property Identity Registry → Web3 и Safe`.
 
 1. Подключите кошелёк с tBNB и создайте `Registry/Admin Safe 2-of-N`. Укажите минимум два принадлежащих владельцу платформы адреса; подключённый адрес должен быть одним из них.
-2. Разверните `Bep721PropertyIdentityToken` в BSC Testnet скриптом `pnpm --filter @kvartal/contracts deploy:testnet`. В окружении нужны только на время запуска `BSC_TESTNET_DEPLOYER_PRIVATE_KEY` и адрес созданного Safe в `IREPN_REGISTRY_ADMIN_SAFE_ADDRESS`. Ключ нельзя сохранять в Git или базе.
+2. Вставьте созданный Safe в блок «Развернуть BEP‑721 контракт реестра» и подтвердите deployment в MetaMask. Интерфейс покажет contract address, deployment tx hash и ABI hash. Закрытый ключ остаётся в кошельке. Операторский скрипт `pnpm --filter @kvartal/contracts deploy:testnet` остаётся резервным способом; ключ нельзя сохранять в Git или базе.
 3. В блоке «Активировать развёрнутый Web3-реестр» укажите адрес контракта, адрес Registry/Admin Safe, deployment tx hash, ABI hash из вывода deploy-скрипта и версию.
 4. API непосредственно из BSC Testnet проверит успешную deployment-транзакцию, наличие байткода, название и символ контракта, ERC-721 interface, все семь ролей Safe и порог не меньше 2. Только после этого контракт становится `ACTIVE`.
 5. Для каждой организации создайте или подключите Corporate Safe, выпустите challenge и подтвердите его Safe-подписью. Corporate Safe становится `ACTIVE` только при двух или более владельцах и threshold не меньше 2.

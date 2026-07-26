@@ -782,3 +782,10 @@
 - Rollout `rollout-web3-5334a37` reached `SUCCEEDED`.
 - Live checks: platform-admin `/login` returns `200` with `Cross-Origin-Opener-Policy: same-origin-allow-popups`; unauthenticated `/property-identity/web3` returns `307` to `/login`.
 - The software deployment does not create a Safe or write a contract to BSC by itself. The next on-chain gate is an interactive owner-wallet transaction with funded tBNB and at least two owner addresses, followed by a separately issued Safe Developer API key for proposal coordination.
+
+## Browser-owned registry contract deployment prepared (2026-07-26)
+
+- Added direct `Bep721PropertyIdentityToken` deployment from the owner Web3 page through an EIP-1193 wallet.
+- The constructor is bound to the entered Registry/Admin Safe, so every registry role is assigned to the Safe at deployment.
+- The browser waits for the BSC Testnet receipt and returns contract address, deployment transaction hash, Registry Safe and ABI SHA-256 hash for the verified activation form.
+- The platform-admin build now compiles the Solidity package before Next.js so the checked contract artifact is always generated in clean CI; local production build and lint passed.
