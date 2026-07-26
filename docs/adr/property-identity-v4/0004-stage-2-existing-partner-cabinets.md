@@ -1,7 +1,9 @@
 # ADR 0004: Property Identity v4 Stage 2 in existing partner cabinets
 
 Date: 2026-07-25
-Status: completed locally; no deployment performed
+Status: superseded in part by ADR 0007
+
+> The separate `/property-identity` partner route described below was rejected by the product owner on 2026-07-26. Property Identity must be embedded in the existing object workflow. See ADR 0007.
 
 ## Decision
 

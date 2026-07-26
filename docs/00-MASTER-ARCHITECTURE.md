@@ -472,6 +472,17 @@ Near-term priorities:
 - Cloud Run APIs own backend writes.
 - Root `index.html` remains untouched.
 - Do not claim a file has broken encoding based only on terminal output; verify the file itself first.
+
+## 18. Property Identity and Web3 Boundary
+
+- Property Identity is one platform-wide registry shared by every partner organisation.
+- Partner organisations continue to create and manage properties only through the existing object workspace.
+- Registry checking is an internal part of ordinary object ingress, not a separate partner portal, page or application queue.
+- Jurisdiction-specific identifier policies do not create separate registries.
+- One physical property has one canonical `PropertyObject` and one identity profile; additional agencies attach organisation-specific representation rights, offers and publication grants rather than duplicate the physical object.
+- The PostgreSQL identity foundation is off-chain infrastructure and must not be called a completed Web3 implementation.
+- Web3 contracts, Registry/Admin Safe governance, token operations, reconciliation, incidents and monitoring are controlled through the Fixer.guru platform-owner boundary (`platform-admin` and `platform-api`).
+- Partner object cards may expose public-safe identity/token status but do not expose blockchain administration controls.
 # Auth Foundation Increment 1A (2026-07-25)
 
 Secure human traffic uses Firebase browser sign-in only to mint a five-day HttpOnly Firebase session cookie at the relevant Next.js BFF. The BFF invokes private Cloud Run with infrastructure identity in `X-Serverless-Authorization` and the Firebase session JWT in `Authorization`. APIs verify revocation and resolve the Firebase `(provider, subject)` only through `AppUserExternalIdentity`; database memberships and active role assignments produce an immutable `ActorContext`.
