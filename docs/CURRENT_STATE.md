@@ -851,3 +851,12 @@
 - Server activation still independently verifies the deployment receipt, bytecode, BEP-721 identity/interface, Registry/Admin roles, Safe owner count and threshold. Browser output is never trusted as proof by itself.
 - A partial-success recovery state prevents accidental duplicate contract deployment: if the contract is mined but API activation fails, the same button retries only verification/activation. A collapsed manual recovery form remains available for a previously mined deployment.
 - Platform-admin production build and lint pass locally.
+
+## Corporate Safe threshold-signature workflow prepared (2026-07-26)
+
+- Fixed a latent API serialization defect in `corporateWalletChallenge`: the EIP-712 `uint256 expiresAt` value is now represented as a precision-safe decimal string instead of a JavaScript `bigint`, so challenge responses can be serialized as JSON. Web3 tests now assert the exact expiry and JSON serialization.
+- Added an owner-only Safe message coordination endpoint backed by the configured Safe Transaction Service. It accepts only signatures from current on-chain Safe owners, binds them to the current unexpired organization/nonce/address challenge and ignores duplicate owner submissions.
+- The endpoint activates a Corporate Safe only after the Safe service contains signatures from at least the actual on-chain threshold, the service message structurally matches the current challenge and the aggregated `preparedSignature` passes an on-chain EIP-1271 call.
+- The owner UI signs the typed challenge through Protocol Kit and MetaMask, proposes the first signature, adds the second owner's signature on the next click and reports `n/threshold`. This removes the previous requirement to construct and paste a raw aggregate signature manually.
+- The raw-signature form remains collapsed as a recovery mechanism. The Registry/Admin Safe address is offered as the first-launch Corporate Safe default only when it is already verified and only if the owners intentionally use the same 2-of-N governance for that originator organization.
+- Verified locally: Web3 tests `5/5` and build, platform API tests `6/6` and build, platform-admin production build and lint.

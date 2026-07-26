@@ -80,7 +80,8 @@ export function corporateWalletChallenge(input: { chainId: SupportedChainId; saf
     safeAddress: normalizeAddress(input.safeAddress),
     organizationId: input.organizationId,
     nonce: input.nonce,
-    expiresAt: BigInt(Math.floor(input.expiresAt.getTime() / 1000)),
+    // Decimal strings preserve uint256 precision and remain JSON serializable across the API boundary.
+    expiresAt: String(Math.floor(input.expiresAt.getTime() / 1000)),
     purpose: "BIND_CORPORATE_SAFE",
   } as const;
   const typedData = {

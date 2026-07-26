@@ -1,6 +1,6 @@
 "use client";
 
-import Safe, { type Eip1193Provider } from "@safe-global/protocol-kit";
+import Safe, { hashSafeMessage, type Eip1193Provider } from "@safe-global/protocol-kit";
 import { useState } from "react";
 
 type ProposalAction = (operationId: string, submission: {
@@ -18,6 +18,12 @@ type RegistryActivationAction = (submission: {
   version: string;
   reason: string;
 }) => Promise<{ ok: boolean; contractAddress: string }>;
+
+type CorporateSafeSignatureAction = (walletId: string, submission: {
+  safeMessageHash: string;
+  senderAddress: string;
+  senderSignature: string;
+}) => Promise<{ ok: boolean; status: string; confirmations: number; confirmationsRequired: number; productionReady?: boolean }>;
 
 type SafePayload = {
   registryAdminSafeAddress: string;
@@ -142,6 +148,46 @@ export function RegistryBootstrapPanel(props: {
   }
 
   return <div className="mt-4 grid gap-3"><textarea value={ownersText} onChange={(event) => setOwnersText(event.target.value)} disabled={busy || Boolean(pendingContract)} placeholder={"0x публичный адрес владельца 1\n0x публичный адрес владельца 2"} className="min-h-24 rounded border border-kv-line p-3 font-mono text-sm disabled:opacity-60"/><button type="button" disabled={busy || !props.writesAllowed} onClick={bootstrap} className="justify-self-start rounded bg-kv-red px-5 py-3 font-black text-white disabled:opacity-60">{busy ? "Выполняется… откройте MetaMask" : pendingContract ? "Повторить проверку и активацию" : "Создать Safe и запустить Web3-реестр"}</button>{message ? <pre className="whitespace-pre-wrap break-all rounded bg-kv-bg p-3 text-sm">{message}</pre> : null}<p className="text-xs text-kv-muted">Будут запрошены две Mainnet-транзакции: создание Safe и развёртывание контракта. Приложение не получает private keys и не может подтвердить транзакцию вместо владельца.</p></div>;
+}
+
+export function CorporateSafeChallengePanel(props: {
+  walletId: string;
+  safeAddress: string;
+  chainId: number;
+  typedData: unknown;
+  submitAction: CorporateSafeSignatureAction;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function signAndSubmit() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const provider = window.ethereum;
+      if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
+      await ensureWalletChain(provider, props.chainId);
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      const sender = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
+      if (!sender) throw new Error("Кошелёк не вернул адрес владельца Safe.");
+      const protocolKit = await Safe.init({ provider, signer: sender, safeAddress: props.safeAddress });
+      const owners = await protocolKit.getOwners();
+      if (!owners.some((owner) => owner.toLowerCase() === sender.toLowerCase())) throw new Error("Подключённый адрес не является владельцем этого Corporate Safe.");
+      const safeMessage = protocolKit.createMessage(props.typedData as never);
+      const signedMessage = await protocolKit.signMessage(safeMessage, "eth_signTypedData_v4", props.safeAddress);
+      const ownerSignature = signedMessage.getSignature(sender);
+      if (!ownerSignature?.data) throw new Error("Кошелёк не вернул подпись Safe message.");
+      const safeMessageHash = await protocolKit.getSafeMessageHash(hashSafeMessage(props.typedData as never));
+      const result = await props.submitAction(props.walletId, { safeMessageHash, senderAddress: sender, senderSignature: ownerSignature.data });
+      setMessage(result.productionReady ? "Corporate Safe подтверждён порогом владельцев и активирован." : `Подпись принята: ${result.confirmations}/${result.confirmationsRequired}. Переключите MetaMask на второго владельца и нажмите кнопку ещё раз.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не удалось подписать challenge Corporate Safe.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="mt-3"><button type="button" disabled={busy} onClick={signAndSubmit} className="rounded bg-kv-red px-4 py-2 font-black text-white disabled:opacity-60">{busy ? "Откройте MetaMask…" : "Подписать challenge владельцем Safe"}</button>{message ? <p className="mt-2 break-all rounded bg-kv-bg p-3 text-sm">{message}</p> : null}<p className="mt-2 text-xs text-kv-muted">Для Safe 2-of-N нажмите кнопку по одному разу из каждого из двух адресов владельцев. Подписи координируются через Safe Transaction Service; gas не расходуется.</p></div>;
 }
 
 export function SafeDeploymentPanel(props: { chainId: number; writesAllowed: boolean }) {

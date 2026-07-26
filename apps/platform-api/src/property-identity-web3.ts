@@ -31,6 +31,35 @@ function bytes32(value: string) {
   return /^0x[0-9a-fA-F]{64}$/.test(value) ? value.toLowerCase() : `0x${createHash("sha256").update(value, "utf8").digest("hex")}`;
 }
 
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isHttpNotFound(error: unknown) {
+  return Boolean(error && typeof error === "object" && "statusCode" in error && (error as { statusCode?: number }).statusCode === 404);
+}
+
+async function persistCorporateWalletActivation(input: {
+  prisma: PrismaClient;
+  walletId: string;
+  safe: { owners: readonly string[]; threshold: number; version: string | null };
+}) {
+  const status = input.safe.threshold >= 2 && input.safe.owners.length >= 2 ? "ACTIVE" : "VERIFIED";
+  const updated = await input.prisma.$transaction(async (tx) => {
+    await tx.corporateWalletSigner.deleteMany({ where: { corporateWalletId: input.walletId } });
+    await tx.corporateWalletSigner.createMany({ data: input.safe.owners.map((signerAddress) => ({ corporateWalletId: input.walletId, signerAddress, role: "SAFE_OWNER" })) });
+    const policy = await tx.corporateWalletPolicy.findFirst({ where: { corporateWalletId: input.walletId, active: true } });
+    if (!policy) await tx.corporateWalletPolicy.create({ data: { corporateWalletId: input.walletId, minThreshold: 2, makerCheckerRequired: true, highRiskOperationTypes: ["ROTATE", "FREEZE", "RECOVERY"] } });
+    return tx.organizationCorporateWallet.update({ where: { id: input.walletId }, data: { status, threshold: input.safe.threshold, ownerCount: input.safe.owners.length, ownersHash: bytes32([...input.safe.owners].sort().join(":")), safeVersion: input.safe.version, lastOnChainSyncAt: new Date(), lastChallengeNonce: null, lastChallengeExpiresAt: null } });
+  });
+  return { updated, status };
+}
+
 function safeApiKit(env: NodeJS.ProcessEnv, chainId: number) {
   const apiKey = env.SAFE_API_KEY?.trim();
   const txServiceUrl = env.SAFE_TRANSACTION_SERVICE_URL?.trim();
@@ -213,15 +242,53 @@ export async function handlePropertyIdentityWeb3Route(input: { request: Incoming
     const adapter = new SafeRpcAdapter(config.rpcUrl);
     const [valid, safe] = await Promise.all([adapter.verifyEip1271(wallet.walletAddress, challenge.messageHash, signature), adapter.readSafe(wallet.walletAddress)]);
     if (!valid) throw new ActorAuthError("FORBIDDEN", 409, "The Safe EIP-1271 signature is invalid.");
-    const status = safe.threshold >= 2 && safe.owners.length >= 2 ? "ACTIVE" : "VERIFIED";
-    const updated = await input.prisma.$transaction(async (tx) => {
-      await tx.corporateWalletSigner.deleteMany({ where: { corporateWalletId: wallet.id } });
-      await tx.corporateWalletSigner.createMany({ data: safe.owners.map((signerAddress) => ({ corporateWalletId: wallet.id, signerAddress, role: "SAFE_OWNER" })) });
-      const policy = await tx.corporateWalletPolicy.findFirst({ where: { corporateWalletId: wallet.id, active: true } });
-      if (!policy) await tx.corporateWalletPolicy.create({ data: { corporateWalletId: wallet.id, minThreshold: 2, makerCheckerRequired: true, highRiskOperationTypes: ["ROTATE", "FREEZE", "RECOVERY"] } });
-      return tx.organizationCorporateWallet.update({ where: { id: wallet.id }, data: { status, threshold: safe.threshold, ownerCount: safe.owners.length, ownersHash: bytes32([...safe.owners].sort().join(":")), safeVersion: safe.version, lastOnChainSyncAt: new Date(), lastChallengeNonce: null, lastChallengeExpiresAt: null } });
-    });
+    const { updated, status } = await persistCorporateWalletActivation({ prisma: input.prisma, walletId: wallet.id, safe });
     sendJson(input.response, 200, { ok: true, wallet: updated, productionReady: status === "ACTIVE", note: status === "VERIFIED" ? "At least two Safe owners and threshold 2 are required for token operations." : null });
+    return true;
+  }
+
+  const safeMessageMatch = input.url.pathname.match(/^\/api\/v1\/platform\/property-identity\/web3\/corporate-wallets\/([^/]+)\/submit-safe-message-signature$/);
+  if (safeMessageMatch && input.request.method === "POST") {
+    const body = await readJsonBody(input.request);
+    const walletId = decodeURIComponent(safeMessageMatch[1]);
+    const safeMessageHash = requiredString(body, "safeMessageHash").toLowerCase();
+    const senderAddress = normalizeAddress(requiredString(body, "senderAddress"));
+    const senderSignature = requiredString(body, "senderSignature").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(safeMessageHash)) throw new ActorAuthError("FORBIDDEN", 400, "safeMessageHash must be bytes32.");
+    if (!/^0x[0-9a-f]+$/.test(senderSignature) || senderSignature.length < 132) throw new ActorAuthError("FORBIDDEN", 400, "senderSignature is invalid.");
+    const wallet = await input.prisma.organizationCorporateWallet.findUnique({ where: { id: walletId } });
+    if (!wallet || wallet.status !== "CHALLENGE_ISSUED" || !wallet.lastChallengeNonce || !wallet.lastChallengeExpiresAt) throw new ActorAuthError("FORBIDDEN", 409, "An active wallet challenge is required.");
+    if (wallet.lastChallengeExpiresAt.getTime() <= Date.now()) throw new ActorAuthError("FORBIDDEN", 409, "The wallet challenge has expired.");
+    const config = readChainConfig({ ...env, PROPERTY_IDENTITY_CHAIN_ID: String(wallet.chainId) });
+    const challenge = corporateWalletChallenge({ chainId: wallet.chainId as SupportedChainId, safeAddress: wallet.walletAddress, organizationId: wallet.organizationId, nonce: wallet.lastChallengeNonce, expiresAt: wallet.lastChallengeExpiresAt });
+    const adapter = new SafeRpcAdapter(config.rpcUrl);
+    const safe = await adapter.readSafe(wallet.walletAddress);
+    if (!safe.owners.some((owner) => owner.toLowerCase() === senderAddress.toLowerCase())) throw new ActorAuthError("FORBIDDEN", 403, "Only an on-chain Safe owner may sign the binding challenge.");
+    const api = safeApiKit(env, config.chainId);
+    let serviceMessage = null;
+    try {
+      serviceMessage = await api.getMessage(safeMessageHash);
+    } catch (error) {
+      if (!isHttpNotFound(error)) throw error;
+    }
+    if (serviceMessage && (serviceMessage.safe.toLowerCase() !== wallet.walletAddress.toLowerCase() || canonicalJson(serviceMessage.message) !== canonicalJson(challenge.typedData))) throw new ActorAuthError("FORBIDDEN", 409, "The Safe service message does not match the active corporate-wallet challenge.");
+    if (!serviceMessage) {
+      await api.addMessage(wallet.walletAddress, { message: challenge.typedData as never, signature: senderSignature });
+    } else if (!serviceMessage.confirmations.some((confirmation) => confirmation.owner.toLowerCase() === senderAddress.toLowerCase())) {
+      await api.addMessageSignature(safeMessageHash, senderSignature);
+    }
+    serviceMessage = await api.getMessage(safeMessageHash);
+    if (serviceMessage.safe.toLowerCase() !== wallet.walletAddress.toLowerCase() || canonicalJson(serviceMessage.message) !== canonicalJson(challenge.typedData)) throw new ActorAuthError("FORBIDDEN", 409, "The Safe service message does not match the active corporate-wallet challenge.");
+    const safeOwnerSet = new Set(safe.owners.map((owner) => owner.toLowerCase()));
+    const confirmedOwners = new Set(serviceMessage.confirmations.map((confirmation) => confirmation.owner.toLowerCase()).filter((owner) => safeOwnerSet.has(owner)));
+    if (confirmedOwners.size < safe.threshold) {
+      sendJson(input.response, 202, { ok: true, status: "AWAITING_SAFE_SIGNATURES", safeMessageHash, confirmations: confirmedOwners.size, confirmationsRequired: safe.threshold });
+      return true;
+    }
+    const valid = await adapter.verifyEip1271(wallet.walletAddress, safeMessageHash as `0x${string}`, serviceMessage.preparedSignature as `0x${string}`);
+    if (!valid) throw new ActorAuthError("FORBIDDEN", 409, "The aggregated Safe EIP-1271 signature is invalid.");
+    const { updated, status } = await persistCorporateWalletActivation({ prisma: input.prisma, walletId: wallet.id, safe });
+    sendJson(input.response, 200, { ok: true, status, wallet: updated, safeMessageHash, confirmations: confirmedOwners.size, confirmationsRequired: safe.threshold, productionReady: status === "ACTIVE" });
     return true;
   }
 

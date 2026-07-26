@@ -34,5 +34,7 @@ describe("Property Identity Web3 domain", () => {
     const challenge = corporateWalletChallenge({ chainId: 97, safeAddress: "0x0000000000000000000000000000000000000001", organizationId: "org-1", nonce: "nonce-1", expiresAt: new Date("2026-07-26T12:00:00Z") });
     expect(challenge.messageHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(challenge.typedData.message.organizationId).toBe("org-1");
+    expect(challenge.typedData.message.expiresAt).toBe("1785067200");
+    expect(() => JSON.stringify(challenge)).not.toThrow();
   });
 });
