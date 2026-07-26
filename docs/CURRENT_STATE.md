@@ -806,3 +806,12 @@
 - Added a guarded `deploy:mainnet` CLI fallback while keeping browser-owned deployment as the preferred path.
 - Preserved the required `cancun` compilation target because OpenZeppelin Contracts 5.4 uses the `MCOPY` instruction and cannot compile for `paris`; Solidity 0.8.26 and optimizer settings remain unchanged.
 - Current infrastructure fact: only GCP project `kvartal-dev` exists; there is no separately provisioned KVARTAL production project or production App Hosting/Cloud SQL stack.
+
+## BSC Mainnet software activated in the current owner console (2026-07-26)
+
+- Source commit `6be35d96b915182344bdb43806b6bf51e6c9d3f3` was pushed to `feature/property-identity-v4`.
+- Platform API build `59e60b4f-5048-490c-ac06-acb7682fcefa` succeeded.
+- The first environment update incorrectly combined the three Mainnet variables into one value because PowerShell split the gcloud argument. This was detected during effective-env verification before using the Web3 route and corrected in the next revision.
+- Revision `kvartal-platform-api-mainnetcfg-6be35d9` now serves 100% of traffic with separately verified values: chain ID `56`, Mainnet writes `true`, owner change ticket `OWNER-MAINNET-20260726`. Authenticated readiness returned `database=ready`.
+- Firebase App Hosting build `build-mainnet-6be35d9` resolved the exact commit and reached `READY`; rollout `rollout-mainnet-6be35d9` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- The owner UI and API now target BNB Smart Chain Mainnet. No Mainnet Safe, registry contract or token has been claimed or created yet because those require explicit wallet confirmations and real BNB gas.

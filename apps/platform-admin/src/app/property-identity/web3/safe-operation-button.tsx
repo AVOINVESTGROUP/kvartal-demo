@@ -30,6 +30,24 @@ function readPayload(payload: unknown): SafePayload {
   return { registryAdminSafeAddress, contractAddress, encodedCall };
 }
 
+async function ensureWalletChain(provider: Eip1193Provider, chainId: number) {
+  const expectedChainHex = `0x${chainId.toString(16)}`;
+  const currentChain = await provider.request({ method: "eth_chainId" });
+  if (currentChain === expectedChainHex) return;
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
+  } catch {
+    const mainnet = chainId === 56;
+    await provider.request({ method: "wallet_addEthereumChain", params: [{
+      chainId: expectedChainHex,
+      chainName: mainnet ? "BNB Smart Chain Mainnet" : "BNB Smart Chain Testnet",
+      nativeCurrency: { name: mainnet ? "BNB" : "Test BNB", symbol: mainnet ? "BNB" : "tBNB", decimals: 18 },
+      rpcUrls: [mainnet ? "https://bsc-dataseed.bnbchain.org" : "https://bsc-testnet-dataseed.bnbchain.org"],
+      blockExplorerUrls: [mainnet ? "https://bscscan.com" : "https://testnet.bscscan.com"],
+    }] });
+  }
+}
+
 export function SafeDeploymentPanel(props: { chainId: number; writesAllowed: boolean }) {
   const [ownersText, setOwnersText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,9 +60,7 @@ export function SafeDeploymentPanel(props: { chainId: number; writesAllowed: boo
       if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
-      const expectedChainHex = `0x${props.chainId.toString(16)}`;
-      const currentChain = await provider.request({ method: "eth_chainId" });
-      if (currentChain !== expectedChainHex) await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
+      await ensureWalletChain(provider, props.chainId);
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const sender = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
       const owners = [...new Set(ownersText.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean).map((item) => item.toLowerCase()))];
@@ -85,9 +101,7 @@ export function RegistryContractDeploymentPanel(props: { chainId: number; writes
       const normalizedSafe = safeAddress.trim().toLowerCase();
       if (!/^0x[0-9a-f]{40}$/.test(normalizedSafe)) throw new Error("Укажите корректный адрес Registry/Admin Safe.");
       if (!props.bytecode.startsWith("0x") || props.bytecode.length < 100) throw new Error("Deployment bytecode контракта отсутствует.");
-      const expectedChainHex = `0x${props.chainId.toString(16)}`;
-      const currentChain = await provider.request({ method: "eth_chainId" });
-      if (currentChain !== expectedChainHex) await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
+      await ensureWalletChain(provider, props.chainId);
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const sender = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
       if (!sender) throw new Error("Кошелёк не вернул адрес deployer.");
@@ -127,11 +141,7 @@ export function SafeOperationButton(props: { operationId: string; chainId: numbe
       if (!props.writesAllowed) throw new Error("Запись в выбранную сеть административно заблокирована.");
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
-      const expectedChainHex = `0x${props.chainId.toString(16)}`;
-      const currentChain = await provider.request({ method: "eth_chainId" });
-      if (currentChain !== expectedChainHex) {
-        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
-      }
+      await ensureWalletChain(provider, props.chainId);
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const senderAddress = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
       if (!senderAddress) throw new Error("Кошелёк не вернул адрес подписанта.");
@@ -181,9 +191,7 @@ export function SafeExecutionButton(props: {
       }
       const provider = window.ethereum;
       if (!provider) throw new Error("Установите MetaMask или другой EIP-1193 кошелёк.");
-      const expectedChainHex = `0x${props.chainId.toString(16)}`;
-      const currentChain = await provider.request({ method: "eth_chainId" });
-      if (currentChain !== expectedChainHex) await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: expectedChainHex }] });
+      await ensureWalletChain(provider, props.chainId);
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       const senderAddress = Array.isArray(accounts) && typeof accounts[0] === "string" ? accounts[0] : "";
       if (!senderAddress) throw new Error("Кошелёк не вернул адрес исполнителя.");
