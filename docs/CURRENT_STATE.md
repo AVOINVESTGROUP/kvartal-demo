@@ -922,3 +922,11 @@
 - Cloud Run revisions `kvartal-platform-api-pi-v4-envfix` and `kvartal-office-api-pi-v4-40ea035` serve 100% of traffic. Platform configuration was read back after deployment: chain `56`, Mainnet writes `false`, all three approved artifact hashes present, and obsolete email-list/Safe Transaction Service variables absent.
 - Firebase App Hosting builds `build-2026-07-27-001` for `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev` reached `READY`. Their serving Cloud Run revisions use the matching build image, and all three hosted `/login` pages return `200`, contain the Google login control and contain no deployment-prerequisite/origin error.
 - No registry wallet or signer secret was invented. No BEP-721 contract was deployed and no blockchain write occurred. The remaining on-chain activation prerequisite is the actual owner-controlled wallet for `office@integrayachtsuae.com`, its Google Secret Manager secret version and gas; Mainnet remains blocked until those owner-provided prerequisites and the agreed E2E gate exist.
+
+## Partner Admin authenticated-root incident (2026-07-27)
+
+- Symptom: an authenticated request to `partner-admin-dev` failed with Next.js digest `3953254986` and the generic App Hosting server-error page.
+- Confirmed cause: the frontend still forced `PARTNER_ORGANIZATION_SLUG=apart4u-tbilisi`; the actor-aware Office API correctly rejected that tenant for an account without an Apart4u organization/office membership.
+- Immediate recovery: traffic was returned to `partner-admin-dev-build-unified-pi-3068cfe` while the forward fix was verified.
+- Forward fix: `/api/v1/admin/actor-context` returns only organizations derived from the authenticated actor's active memberships; Partner Admin selects a tenant only from that server-authorized list; organization/office admins can enter Partner Admin; a platform-only owner/admin is sent to Platform Admin instead of causing an SSR failure or impersonating a partner organization.
+- Verification: Office API tests (7/7), Office API TypeScript build, and Partner Admin production build passed locally.

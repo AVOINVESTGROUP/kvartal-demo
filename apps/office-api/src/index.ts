@@ -1890,7 +1890,21 @@ const server = createServer(async (request, response) => {
       });
       actorContext = actor;
       requestActors.set(request, actor);
-      if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
+      if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") {
+        const organizationIds = [...new Set([
+          ...actor.organizationMemberships.map((membership) => membership.organizationId),
+          ...actor.officeMemberships.map((membership) => membership.organizationId),
+        ])];
+        const organizations = organizationIds.length
+          ? await prisma.organization.findMany({
+              where: { id: { in: organizationIds } },
+              select: { id: true, slug: true, legalName: true },
+              orderBy: { legalName: "asc" },
+            })
+          : [];
+        sendJson(response, 200, { actor, organizations });
+        return;
+      }
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
       sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId)); return;

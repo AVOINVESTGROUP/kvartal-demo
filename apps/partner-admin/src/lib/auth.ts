@@ -13,6 +13,11 @@ export type AdminSession = {
   roles: string[];
 };
 
+type ActorContextResponse = {
+  actor: ActorContext;
+  organizations: Array<{ id: string; slug: string; legalName: string }>;
+};
+
 type PlatformAccess = {
   authorized: boolean;
   platformRoles: string[];
@@ -186,9 +191,12 @@ export async function getAdminSession() {
   if (!value) return null;
   try {
     const decoded = await firebaseAdminAuth().verifySessionCookie(value, true);
-    const actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(process.env.OFFICE_API_BASE_URL ?? process.env.PARTNER_API_BASE_URL, "/api/v1/admin/actor-context")).actor;
+    const context = await fetchSecureActorBackendJson<ActorContextResponse>(process.env.OFFICE_API_BASE_URL ?? process.env.PARTNER_API_BASE_URL, "/api/v1/admin/actor-context");
+    const actor = context.actor;
     const roles = [...actor.platformRoles, ...actor.organizationMemberships.flatMap((item) => item.roles), ...actor.officeMemberships.flatMap((item) => item.roles)];
-    return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture, organizationSlug: process.env.PARTNER_ORGANIZATION_SLUG ?? "", roles };
+    const preferredSlug = process.env.PARTNER_ORGANIZATION_SLUG;
+    const organization = context.organizations.find((item) => item.slug === preferredSlug) ?? context.organizations[0];
+    return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture, organizationSlug: organization?.slug ?? "", roles };
   } catch { return null; }
 }
 
@@ -200,8 +208,16 @@ export async function clearAdminSession() {
 export async function requireAdminSession() {
   const session = await getAdminSession();
 
-  if (!session || !session.roles.some((role) => ["platform_owner", "platform_admin", "organization_owner", "organization_admin"].includes(role))) {
+  if (!session || !session.roles.some((role) => ["platform_owner", "platform_admin", "organization_owner", "organization_admin", "office_owner", "office_admin"].includes(role))) {
     redirect("/login");
+  }
+
+  if (!session.organizationSlug && session.roles.some((role) => role === "platform_owner" || role === "platform_admin")) {
+    redirect(process.env.PLATFORM_ADMIN_ORIGIN ?? "https://fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app");
+  }
+
+  if (!session.organizationSlug) {
+    redirect("/login?error=organization_access_required");
   }
 
   return session;
