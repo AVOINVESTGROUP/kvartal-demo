@@ -930,3 +930,5 @@
 - Immediate recovery: traffic was returned to `partner-admin-dev-build-unified-pi-3068cfe` while the forward fix was verified.
 - Forward fix: `/api/v1/admin/actor-context` returns only organizations derived from the authenticated actor's active memberships; Partner Admin selects a tenant only from that server-authorized list; organization/office admins can enter Partner Admin; a platform-only owner/admin is sent to Platform Admin instead of causing an SSR failure or impersonating a partner organization.
 - Verification: Office API tests (7/7), Office API TypeScript build, and Partner Admin production build passed locally.
+- Deployment: Cloud Build `31cf407f-8817-46f6-8d49-9f6f6761db2d` succeeded; Office API revision `kvartal-office-api-tenant-36007e6` is ready; Firebase App Hosting build `build-2026-07-27-002` created ready revision `partner-admin-dev-build-2026-07-27-002`, which serves 100% of Partner Admin traffic.
+- Hosted smoke check: `/login` returns `200` with Google sign-in and no generic server-error page; an unauthenticated `/` request resolves safely to `/login`.
