@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assertChainWriteAllowed, buildPublicTokenPayload, corporateWalletChallenge, deterministicTokenId, encodeRegistryOperation, normalizeAddress, readChainConfig } from "./index.js";
+import { privateKeyToAccount } from "viem/accounts";
+import { agencyWalletChallenge, assertChainWriteAllowed, buildPublicTokenPayload, corporateWalletChallenge, deterministicTokenId, encodeRegistryOperation, normalizeAddress, readChainConfig, verifyAgencyWalletSignature } from "./index.js";
 
 describe("Property Identity Web3 domain", () => {
   it("uses the official BSC testnet by default and blocks mainnet writes", () => {
@@ -36,5 +37,14 @@ describe("Property Identity Web3 domain", () => {
     expect(challenge.typedData.message.organizationId).toBe("org-1");
     expect(challenge.typedData.message.expiresAt).toBe("1785067200");
     expect(() => JSON.stringify(challenge)).not.toThrow();
+  });
+
+  it("binds an agency wallet to the exact actor and verifies its EIP-712 signature", async () => {
+    const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
+    const challenge = agencyWalletChallenge({ chainId: 56, walletAddress: account.address, organizationId: "org-1", actorUserId: "user-1", nonce: "nonce-1", expiresAt: new Date("2026-07-27T12:00:00Z") });
+    const signature = await account.signTypedData(challenge.typedData);
+    await expect(verifyAgencyWalletSignature({ ...challenge, signature })).resolves.toBe(true);
+    expect(challenge.typedData.message.actorUserId).toBe("user-1");
+    expect(challenge.typedData.message.purpose).toBe("BIND_AGENCY_CORPORATE_WALLET");
   });
 });

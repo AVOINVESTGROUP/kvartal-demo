@@ -5,8 +5,8 @@ const base = {
   chainId: 56,
   production: true,
   writesAllowed: true,
-  safeTransactionServiceConfigured: true,
-  activeRegistryContract: { contractAddress: "0x0000000000000000000000000000000000000001", registryAdminSafeAddress: "0x0000000000000000000000000000000000000002" },
+  activePlatformWallet: { walletAddress: "0x0000000000000000000000000000000000000002" },
+  activeRegistryContract: { contractAddress: "0x0000000000000000000000000000000000000001", platformRegistryWalletId: "wallet-1" },
   activeCorporateWalletCount: 1,
   eligibleProfileCount: 1,
   reconciledActiveTokenCount: 0,
@@ -22,10 +22,18 @@ describe("Property Identity Web3 readiness", () => {
     });
   });
 
-  it("does not claim readiness when Safe Transaction Service is absent", () => {
-    expect(buildWeb3Readiness({ ...base, safeTransactionServiceConfigured: false })).toMatchObject({
+  it("does not claim readiness when the platform registry wallet is absent", () => {
+    expect(buildWeb3Readiness({ ...base, activePlatformWallet: null })).toMatchObject({
       readyForMint: false,
-      nextAction: "CONFIGURE_SAFE_TRANSACTION_SERVICE",
+      nextAction: "BIND_PLATFORM_REGISTRY_WALLET",
+    });
+  });
+
+  it("allows a fully configured testnet to run the dev E2E", () => {
+    expect(buildWeb3Readiness({ ...base, chainId: 97, production: false })).toMatchObject({
+      mainnetSelected: false,
+      readyForMint: true,
+      nextAction: "MINT_AND_RECONCILE_FIRST_TOKEN",
     });
   });
 

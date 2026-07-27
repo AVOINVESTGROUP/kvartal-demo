@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   ActorAuthError,
@@ -20,6 +21,12 @@ import {
   type IdentifierTuple,
   type PropertyIdentitySubjectScope,
 } from "@kvartal/property-identity";
+import {
+  buildPublicTokenPayload,
+  deterministicTokenId,
+  encodeRegistryOperation,
+  readChainConfig,
+} from "@kvartal/web3";
 
 type JsonObject = Record<string, unknown>;
 type PartnerScope = Readonly<{ organizationId: string; officeId: string }>;
@@ -660,6 +667,146 @@ function optionalInteger(value: unknown, field: string) {
   return number;
 }
 
+function web3Bytes32(value: string) {
+  return /^0x[0-9a-fA-F]{64}$/.test(value)
+    ? value.toLowerCase()
+    : `0x${createHash("sha256").update(value, "utf8").digest("hex")}`;
+}
+
+async function queueAutomaticWeb3Publication(input: {
+  tx: Prisma.TransactionClient;
+  actor: ActorContext;
+  identityProfileId: string;
+  representationRight: {
+    id: string;
+    status: string;
+    corporateWalletId: string | null;
+    evidenceHash: string | null;
+    validFrom: Date | null;
+    validUntil: Date | null;
+    createdAt: Date;
+  };
+}) {
+  if (!["ATTESTED", "VERIFIED"].includes(input.representationRight.status)) {
+    return { status: "DEFERRED_REPRESENTATION_NOT_ATTESTED" as const };
+  }
+
+  const config = readChainConfig();
+  const contract = await input.tx.blockchainContractRegistry.findFirst({
+    where: {
+      chainId: config.chainId,
+      contractType: "BEP721_PROPERTY_IDENTITY",
+      active: true,
+      status: "ACTIVE",
+      platformRegistryWalletId: { not: null },
+    },
+    include: { platformRegistryWallet: true },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!contract?.platformRegistryWallet || contract.platformRegistryWallet.status !== "ACTIVE") {
+    return { status: "DEFERRED_REGISTRY_NOT_READY" as const };
+  }
+
+  const profile = await input.tx.propertyIdentityProfile.findUnique({
+    where: { id: input.identityProfileId },
+    include: {
+      canonicalVersions: { where: { isCurrent: true }, orderBy: { versionNumber: "desc" }, take: 1 },
+      claims: { where: { status: "ACTIVE" }, orderBy: { id: "asc" } },
+      originatorRecords: { where: { status: "RECORDED" }, take: 1 },
+      token: true,
+    },
+  });
+  if (!profile || profile.status !== "VERIFIED_INTERNAL" || !profile.canonicalVersions[0] || !profile.originatorRecords[0]) {
+    return { status: "DEFERRED_IDENTITY_NOT_READY" as const };
+  }
+
+  let token = profile.token;
+  let mintQueued = false;
+  if (!token) {
+    const tokenId = deterministicTokenId(profile.stableId).toString();
+    const publicPayload = buildPublicTokenPayload({
+      stablePropertyIdentityId: profile.stableId,
+      canonicalVersionHash: web3Bytes32(profile.canonicalVersions[0].snapshotHash),
+      evidencePackageHash: web3Bytes32(JSON.stringify(profile.claims.map((claim) => ({ id: claim.id, scheme: claim.scheme, status: claim.status })))),
+    });
+    const encodedCall = encodeRegistryOperation("MINT", {
+      tokenId,
+      to: contract.platformRegistryWallet.walletAddress,
+      ...publicPayload,
+      uri: "",
+    });
+    token = await input.tx.propertyIdentityToken.create({
+      data: {
+        identityProfileId: profile.id,
+        tokenId: new Prisma.Decimal(tokenId),
+        chainId: config.chainId,
+        contractAddress: contract.contractAddress,
+        platformRegistryWalletId: contract.platformRegistryWallet.id,
+        ownerAddress: contract.platformRegistryWallet.walletAddress,
+        status: "PENDING",
+        reconciliationStatus: "PENDING",
+      },
+    });
+    await input.tx.propertyTokenOperation.create({
+      data: {
+        tokenRecordId: token.id,
+        identityProfileId: profile.id,
+        operationType: "MINT",
+        status: "PENDING_PLATFORM_SIGNER",
+        payloadJson: {
+          chainId: config.chainId,
+          contractAddress: contract.contractAddress,
+          registryAdminWallet: contract.platformRegistryWallet.walletAddress,
+          targetAddress: contract.platformRegistryWallet.walletAddress,
+          encodedCall,
+          trigger: "AGENCY_PUBLICATION_AFTER_UNIQUENESS_CHECK",
+        },
+        idempotencyKey: `auto-mint:${contract.id}:${profile.id}`,
+        requestedByUserId: input.actor.appUserId,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      },
+    });
+    mintQueued = true;
+  }
+
+  if (token.status !== "ACTIVE" || !input.representationRight.corporateWalletId || !input.representationRight.evidenceHash) {
+    return { status: mintQueued ? "MINT_QUEUED" as const : "TOKEN_PENDING" as const, tokenId: token.id };
+  }
+
+  const corporateWallet = await input.tx.organizationCorporateWallet.findUnique({ where: { id: input.representationRight.corporateWalletId } });
+  if (!corporateWallet || corporateWallet.status !== "ACTIVE") return { status: "DEFERRED_WALLET_NOT_ACTIVE" as const, tokenId: token.id };
+  const validFrom = Math.floor((input.representationRight.validFrom ?? input.representationRight.createdAt).getTime() / 1000);
+  const validUntil = input.representationRight.validUntil ? Math.floor(input.representationRight.validUntil.getTime() / 1000) : 0;
+  const evidenceHash = web3Bytes32(input.representationRight.evidenceHash);
+  const encodedCall = encodeRegistryOperation("ATTEST_REPRESENTATION", {
+    tokenId: token.tokenId.toFixed(0),
+    agencyWallet: corporateWallet.walletAddress,
+    evidenceHash,
+    validFrom,
+    validUntil,
+  });
+  await input.tx.propertyTokenRepresentation.upsert({
+    where: { tokenRecordId_representationRightId: { tokenRecordId: token.id, representationRightId: input.representationRight.id } },
+    update: { corporateWalletId: corporateWallet.id, walletAddress: corporateWallet.walletAddress, evidenceHash, status: "PENDING", validFrom: new Date(validFrom * 1000), validUntil: validUntil ? new Date(validUntil * 1000) : null },
+    create: { tokenRecordId: token.id, identityProfileId: profile.id, representationRightId: input.representationRight.id, corporateWalletId: corporateWallet.id, walletAddress: corporateWallet.walletAddress, evidenceHash, status: "PENDING", validFrom: new Date(validFrom * 1000), validUntil: validUntil ? new Date(validUntil * 1000) : null },
+  });
+  await input.tx.propertyTokenOperation.upsert({
+    where: { idempotencyKey: `representation-attest:${token.id}:${input.representationRight.id}` },
+    update: {},
+    create: {
+      tokenRecordId: token.id,
+      identityProfileId: profile.id,
+      operationType: "ATTEST_REPRESENTATION",
+      status: "PENDING_PLATFORM_SIGNER",
+      payloadJson: { chainId: token.chainId, contractAddress: token.contractAddress, registryAdminWallet: token.ownerAddress, representationRightId: input.representationRight.id, agencyWallet: corporateWallet.walletAddress, evidenceHash, validFrom, validUntil, encodedCall, trigger: "AGENCY_PUBLICATION" },
+      idempotencyKey: `representation-attest:${token.id}:${input.representationRight.id}`,
+      requestedByUserId: input.actor.appUserId,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+  return { status: "REPRESENTATION_ATTESTATION_QUEUED" as const, tokenId: token.id };
+}
+
 async function writePartnerCommercialLayer(input: {
   tx: Prisma.TransactionClient;
   actor: ActorContext;
@@ -671,6 +818,14 @@ async function writePartnerCommercialLayer(input: {
   commercialInput: JsonObject;
   originator: boolean;
 }) {
+  const [corporateWallet, evidenceDocuments] = await Promise.all([
+    input.tx.organizationCorporateWallet.findFirst({ where: { organizationId: input.organizationId, status: "ACTIVE" }, orderBy: { verifiedAt: "desc" } }),
+    input.tx.propertyDocument.findMany({ where: { propertyObjectId: input.propertyObjectId, ownerOrganizationId: input.organizationId }, select: { id: true, checksum: true, documentType: true }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const evidenceHash = evidenceDocuments.length > 0 ? `0x${requestHash(evidenceDocuments.map((document) => ({ id: document.id, checksum: document.checksum, type: document.documentType })))}` : null;
+  const canAttest = Boolean(corporateWallet && evidenceHash);
+  if (input.commercialInput.requestPublication === true && !corporateWallet) throw new PropertyIdentityHttpError(409, "CORPORATE_WALLET_REQUIRED", "Connect and verify the agency corporate wallet before publication.");
+  if (input.commercialInput.requestPublication === true && evidenceDocuments.length === 0) throw new PropertyIdentityHttpError(409, "REPRESENTATION_EVIDENCE_REQUIRED", "Attach representation evidence documents before publication.");
   if (input.originator) {
     await input.tx.propertyOriginatorRecord.upsert({
       where: {
@@ -695,25 +850,32 @@ async function writePartnerCommercialLayer(input: {
       propertyObjectId: input.propertyObjectId,
       organizationId: input.organizationId,
       officeId: input.officeId,
-      status: { in: ["DECLARED", "EVIDENCE_PENDING", "VERIFIED"] },
+      status: { in: ["DECLARED", "EVIDENCE_PENDING", "ATTESTED", "VERIFIED"] },
     },
     orderBy: { createdAt: "desc" },
   });
-  const representationRight = existingRight ?? await input.tx.propertyRepresentationRight.create({
-    data: {
+  const representationData = {
       propertyObjectId: input.propertyObjectId,
       identityProfileId: input.identityProfileId,
       organizationId: input.organizationId,
       officeId: input.officeId,
+      corporateWalletId: corporateWallet?.id ?? null,
       rightType: typeof input.commercialInput.rightType === "string" ? input.commercialInput.rightType : "NON_EXCLUSIVE_SELLER_REPRESENTATIVE",
-      status: "DECLARED",
+      status: canAttest ? "ATTESTED" as const : evidenceDocuments.length > 0 ? "DECLARED" as const : "EVIDENCE_PENDING" as const,
       scope: { source: "PARTNER_OBJECT_FORM", declaration: "PARTNER_DECLARED" },
       territory: typeof input.commercialInput.territory === "string" ? input.commercialInput.territory : null,
       channel: "KVARTAL_PARTNER_NETWORK",
-      evidenceDocumentIds: [],
+      evidenceDocumentIds: evidenceDocuments.map((document) => document.id),
+      evidenceHash,
       declaredByUserId: input.actor.appUserId,
-    },
-  });
+      attestedAt: canAttest ? new Date() : null,
+  };
+  const representationRight = existingRight
+    ? await input.tx.propertyRepresentationRight.update({ where: { id: existingRight.id }, data: representationData })
+    : await input.tx.propertyRepresentationRight.create({ data: representationData });
+  if (evidenceDocuments.length > 0) {
+    await input.tx.representationEvidenceDocument.createMany({ data: evidenceDocuments.map((document) => ({ representationRightId: representationRight.id, propertyDocumentId: document.id, attachedByUserId: input.actor.appUserId })), skipDuplicates: true });
+  }
 
   const priceAmount = optionalNumber(input.commercialInput.priceAmount, "commercialInput.priceAmount");
   const priceCurrency = typeof input.commercialInput.priceCurrency === "string" && ["RUB", "USD", "EUR", "GEL", "AMD", "AED"].includes(input.commercialInput.priceCurrency)
@@ -732,6 +894,8 @@ async function writePartnerCommercialLayer(input: {
       priceDisplayEn: typeof input.commercialInput.priceDisplayEn === "string" ? input.commercialInput.priceDisplayEn : null,
     },
     sourceLabel: "PARTNER_OBJECT_FORM",
+    status: canAttest ? "ACTIVE" as const : "DRAFT" as const,
+    createdByUserId: input.actor.appUserId,
   } as const;
   const offer = existingOffer
     ? await input.tx.partnerOffer.update({ where: { id: existingOffer.id }, data: offerData })
@@ -741,7 +905,6 @@ async function writePartnerCommercialLayer(input: {
           representationRightId: representationRight.id,
           sellerOrganizationId: input.organizationId,
           sellerOfficeId: input.officeId,
-          status: "ACTIVE",
           ...offerData,
         },
       });
@@ -750,39 +913,129 @@ async function writePartnerCommercialLayer(input: {
   const siteConfigs = await input.tx.siteConfig.findMany({
     where: { organizationId: input.organizationId, officeId: input.officeId, active: true },
   });
-  const grants = [];
+  const networkSurface = await input.tx.propertyPublicationSurface.upsert({
+    where: { tenantKey: `partner-network:${input.organizationId}:${input.officeId}` },
+    update: { status: "ACTIVE", organizationId: input.organizationId, officeId: input.officeId },
+    create: { tenantKey: `partner-network:${input.organizationId}:${input.officeId}`, surfaceType: "PARTNER_NETWORK", organizationId: input.organizationId, officeId: input.officeId, status: "ACTIVE" },
+  });
+  const publicationSurfaces = [networkSurface];
   for (const siteConfig of siteConfigs) {
-    const surface = await input.tx.propertyPublicationSurface.upsert({
+    publicationSurfaces.push(await input.tx.propertyPublicationSurface.upsert({
       where: { siteConfigId: siteConfig.id },
       update: { status: "ACTIVE", canonicalHost: siteConfig.domain ?? siteConfig.subdomain },
-      create: {
-        siteConfigId: siteConfig.id,
-        canonicalHost: siteConfig.domain ?? siteConfig.subdomain,
-        surfaceType: "PARTNER_SITE",
-        organizationId: siteConfig.organizationId,
-        officeId: siteConfig.officeId,
-      },
-    });
+      create: { siteConfigId: siteConfig.id, canonicalHost: siteConfig.domain ?? siteConfig.subdomain, surfaceType: "PARTNER_SITE", organizationId: siteConfig.organizationId, officeId: siteConfig.officeId },
+    }));
+  }
+  const grants = [];
+  for (const surface of publicationSurfaces) {
     const activeGrant = await input.tx.propertyPublicationGrant.findFirst({
       where: { publicationSurfaceId: surface.id, propertyObjectId: input.propertyObjectId, status: { in: ["DRAFT", "ACTIVE"] } },
       orderBy: { createdAt: "desc" },
     });
-    grants.push(activeGrant ?? await input.tx.propertyPublicationGrant.create({
-      data: {
+    const grantData = {
         publicationSurfaceId: surface.id,
         propertyObjectId: input.propertyObjectId,
         identityProfileId: input.identityProfileId,
         partnerOfferId: offer.id,
         canonicalVersionId: input.canonicalVersionId,
-        buyerSideOrganizationId: siteConfig.organizationId,
-        buyerSideOfficeId: siteConfig.officeId,
+        buyerSideOrganizationId: input.organizationId,
+        buyerSideOfficeId: input.officeId,
         sellerSideOrganizationId: input.organizationId,
         sellerSideOfficeId: input.officeId,
-        status: representationRight.status === "VERIFIED" ? "ACTIVE" : "DRAFT",
-      },
-    }));
+        status: representationRight.status === "ATTESTED" || representationRight.status === "VERIFIED" ? "ACTIVE" : "DRAFT",
+    } as const;
+    grants.push(activeGrant
+      ? await input.tx.propertyPublicationGrant.update({ where: { id: activeGrant.id }, data: grantData })
+      : await input.tx.propertyPublicationGrant.create({ data: grantData }));
   }
-  return { representationRight, offer, grants };
+  const web3 = await queueAutomaticWeb3Publication({ tx: input.tx, actor: input.actor, identityProfileId: input.identityProfileId, representationRight });
+  return { representationRight, offer, grants, web3 };
+}
+
+export async function publishPartnerProperty(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  propertyObjectId: string;
+  organizationId: string;
+  officeId: string;
+  commercialInput: JsonObject;
+}) {
+  resolvePartnerScope(input.actor, { organizationId: input.organizationId, officeId: input.officeId });
+  return input.prisma.$transaction(async (tx) => {
+    const profile = await tx.propertyIdentityProfile.findUnique({
+      where: { propertyObjectId: input.propertyObjectId },
+      include: { canonicalVersions: { where: { isCurrent: true }, orderBy: { versionNumber: "desc" }, take: 1 } },
+    });
+    if (!profile || profile.status !== "VERIFIED_INTERNAL" || profile.canonicalVersions.length !== 1) {
+      throw new PropertyIdentityHttpError(409, "PROPERTY_IDENTITY_VERIFICATION_REQUIRED", "The property must have one verified identity profile and one current canonical version before publication.");
+    }
+    return writePartnerCommercialLayer({
+      tx,
+      actor: input.actor,
+      identityProfileId: profile.id,
+      propertyObjectId: input.propertyObjectId,
+      canonicalVersionId: profile.canonicalVersions[0].id,
+      organizationId: input.organizationId,
+      officeId: input.officeId,
+      commercialInput: { ...input.commercialInput, requestPublication: true },
+      originator: false,
+    });
+  });
+}
+
+export async function savePartnerPropertyOffer(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  propertyObjectId: string;
+  organizationId: string;
+  officeId: string;
+  commercialInput: JsonObject;
+}) {
+  resolvePartnerScope(input.actor, { organizationId: input.organizationId, officeId: input.officeId });
+  return input.prisma.$transaction(async (tx) => {
+    const profile = await tx.propertyIdentityProfile.findUnique({
+      where: { propertyObjectId: input.propertyObjectId },
+      include: { canonicalVersions: { where: { isCurrent: true }, orderBy: { versionNumber: "desc" }, take: 1 } },
+    });
+    if (!profile || profile.status !== "VERIFIED_INTERNAL" || profile.canonicalVersions.length !== 1) {
+      throw new PropertyIdentityHttpError(409, "PROPERTY_IDENTITY_VERIFICATION_REQUIRED", "The property must have one verified identity profile and one current canonical version before an agency offer can be saved.");
+    }
+    return writePartnerCommercialLayer({
+      tx,
+      actor: input.actor,
+      identityProfileId: profile.id,
+      propertyObjectId: input.propertyObjectId,
+      canonicalVersionId: profile.canonicalVersions[0].id,
+      organizationId: input.organizationId,
+      officeId: input.officeId,
+      commercialInput: { ...input.commercialInput, requestPublication: false },
+      originator: false,
+    });
+  });
+}
+
+export async function withdrawPartnerProperty(input: {
+  prisma: PrismaClient;
+  actor: ActorContext;
+  propertyObjectId: string;
+  organizationId: string;
+  officeId: string;
+}) {
+  resolvePartnerScope(input.actor, { organizationId: input.organizationId, officeId: input.officeId });
+  return input.prisma.$transaction(async (tx) => {
+    const rights = await tx.propertyRepresentationRight.findMany({
+      where: { propertyObjectId: input.propertyObjectId, organizationId: input.organizationId, officeId: input.officeId },
+      select: { id: true },
+    });
+    const rightIds = rights.map((right) => right.id);
+    if (rightIds.length) {
+      await tx.propertyPublicationGrant.updateMany({ where: { partnerOffer: { representationRightId: { in: rightIds } }, status: "ACTIVE" }, data: { status: "REVOKED" } });
+      await tx.partnerOffer.updateMany({ where: { representationRightId: { in: rightIds }, status: "ACTIVE" }, data: { status: "WITHDRAWN" } });
+    }
+    const activeOfferCount = await tx.partnerOffer.count({ where: { propertyObjectId: input.propertyObjectId, status: "ACTIVE", publicationGrants: { some: { status: "ACTIVE" } } } });
+    if (activeOfferCount === 0) await tx.propertyObject.update({ where: { id: input.propertyObjectId }, data: { status: "draft", visibility: "private", publishedAt: null, canBeShownByOtherOffices: false } });
+    return { withdrawnOffers: rightIds.length, activeOfferCount };
+  });
 }
 
 async function confirmSubmission(input: {

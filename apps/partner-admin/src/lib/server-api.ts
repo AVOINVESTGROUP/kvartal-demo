@@ -18,11 +18,18 @@ export async function getIdentityToken(audience: string) {
 }
 
 export async function fetchSecureActorBackendJson<T>(baseUrl: string | undefined, path: string, init: RequestInit = {}): Promise<T> {
+  const response = await secureActorBackendFetch(baseUrl, path, init);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? `Backend request failed with ${response.status}`), { status: response.status, payload });
+  return payload as T;
+}
+
+export async function secureActorBackendFetch(baseUrl: string | undefined, path: string, init: RequestInit = {}) {
   if (!baseUrl) throw new Error("Secure backend URL is not configured.");
   const [{ cookies }, serviceToken] = await Promise.all([import("next/headers"), getIdentityToken(baseUrl)]);
   const session = (await cookies()).get("__Host-kvartal_session")?.value;
   if (!session) throw new Error("REAUTH_REQUIRED");
-  const response = await fetch(`${baseUrl}${path}`, {
+  return fetch(`${baseUrl}${path}`, {
     ...init, cache: "no-store",
     headers: {
       ...(init.body ? { "content-type": "application/json" } : {}),
@@ -30,9 +37,6 @@ export async function fetchSecureActorBackendJson<T>(baseUrl: string | undefined
       ...(init.headers ?? {}),
     },
   });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? `Backend request failed with ${response.status}`), { status: response.status, payload });
-  return payload as T;
 }
 
 export function writeSecureActorBackendJson<T>(baseUrl: string | undefined, path: string, method: "POST" | "PATCH", body: unknown, headers: Record<string, string>) {
@@ -82,17 +86,8 @@ export async function fetchBackendJson<T>(baseUrl: string | undefined, path: str
     return null;
   }
 
-  const token = await getIdentityToken(baseUrl);
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return response.json() as Promise<T>;
+  try { return await fetchSecureActorBackendJson<T>(baseUrl, path); }
+  catch { return null; }
 }
 
 export async function writeBackendJson<T>(baseUrl: string | undefined, path: string, method: "POST" | "PATCH", body: unknown): Promise<T | null> {
@@ -100,25 +95,7 @@ export async function writeBackendJson<T>(baseUrl: string | undefined, path: str
     return null;
   }
 
-  const token = await getIdentityToken(baseUrl);
-  const adminWriteToken = await getSecretValue("kvartal-admin-write-token");
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(adminWriteToken ? { "x-kvartal-admin-write-token": adminWriteToken } : {}),
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(details || `Backend request failed with ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
+  return fetchSecureActorBackendJson<T>(baseUrl, path, { method, body: JSON.stringify(body) });
 }
 
 export async function deleteBackendJson<T>(baseUrl: string | undefined, path: string): Promise<T | null> {
@@ -126,21 +103,5 @@ export async function deleteBackendJson<T>(baseUrl: string | undefined, path: st
     return null;
   }
 
-  const token = await getIdentityToken(baseUrl);
-  const adminWriteToken = await getSecretValue("kvartal-admin-write-token");
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "DELETE",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(adminWriteToken ? { "x-kvartal-admin-write-token": adminWriteToken } : {}),
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(details || `Backend request failed with ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
+  return fetchSecureActorBackendJson<T>(baseUrl, path, { method: "DELETE" });
 }

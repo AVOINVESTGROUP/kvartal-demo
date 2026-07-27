@@ -41,6 +41,7 @@ type PartnerSummary = {
 
 type PartnerObject = {
   id: string;
+  partnerOfferId: string;
   title: string;
   addressDisplay: string | null;
   assetClass: string;
@@ -50,6 +51,16 @@ type PartnerObject = {
   market: { city: string; country: string };
   sellerSide: { organizationName: string; officeName: string };
   media: Array<{ url: string; kind: string }>;
+};
+
+type ClientIntent = {
+  id: string;
+  requirementText: string;
+  status: string;
+  preferredLanguage: string;
+  preferredCurrency: string;
+  market: { id: string; city: string; country: string } | null;
+  updatedAt: string;
 };
 
 type InteractionMessage = {
@@ -250,9 +261,8 @@ async function createInteractionAction(formData: FormData) {
   const response = await writeBackendJson<{ interaction: { id: string } }>(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/interactions", "POST", {
     organizationSlug: session.organizationSlug,
     officeSlug: formValue(formData, "officeSlug"),
-    targetOrganizationId: formValue(formData, "targetOrganizationId"),
-    targetOfficeId: formValue(formData, "targetOfficeId"),
-    propertyObjectId: formValue(formData, "propertyObjectId"),
+    partnerOfferId: formValue(formData, "partnerOfferId"),
+    clientIntentId: formValue(formData, "clientIntentId"),
     type: formValue(formData, "type"),
     priority: formValue(formData, "priority"),
     subject: formValue(formData, "subject"),
@@ -263,7 +273,7 @@ async function createInteractionAction(formData: FormData) {
   });
 
   revalidatePath("/partner-interactions");
-  redirect(`/partner-interactions?partner=${encodeURIComponent(formValue(formData, "targetOrganizationId"))}&interaction=${encodeURIComponent(response?.interaction.id ?? "")}`);
+  redirect(`/partner-interactions?partner=${encodeURIComponent(formValue(formData, "partnerId"))}&interaction=${encodeURIComponent(response?.interaction.id ?? "")}`);
 }
 
 async function sendMessageAction(formData: FormData) {
@@ -554,7 +564,7 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
   const offices = context?.organization.offices ?? [];
   const activeOfficeSlug = value(params, "office") ?? offices[0]?.slug ?? "";
   const searchQuery = value(params, "q") ?? "";
-  const [partnersResponse, interactionsResponse, templatesResponse, blockedPartnersResponse, notificationSettingsResponse, notificationsResponse] = await Promise.all([
+  const [partnersResponse, interactionsResponse, templatesResponse, blockedPartnersResponse, notificationSettingsResponse, notificationsResponse, clientIntentsResponse] = await Promise.all([
     fetchBackendJson<{ partners: PartnerSummary[] }>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/partners?organizationSlug=${encodeURIComponent(organizationSlug)}&officeSlug=${encodeURIComponent(activeOfficeSlug)}`,
@@ -581,6 +591,10 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/interactions/notifications?organizationSlug=${encodeURIComponent(organizationSlug)}&officeSlug=${encodeURIComponent(activeOfficeSlug)}&limit=8`,
     ),
+    fetchBackendJson<{ clientIntents: ClientIntent[] }>(
+      process.env.PARTNER_API_BASE_URL,
+      `/api/v1/admin/client-intents?organizationSlug=${encodeURIComponent(organizationSlug)}&officeSlug=${encodeURIComponent(activeOfficeSlug)}&limit=100`,
+    ),
   ]);
   const partners = partnersResponse?.partners ?? [];
   const templates = templatesResponse?.templates ?? [];
@@ -588,6 +602,7 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
   const notificationSettings = notificationSettingsResponse?.settings;
   const notifications = notificationsResponse?.notifications ?? [];
   const unreadNotificationCount = notificationsResponse?.unreadCount ?? 0;
+  const clientIntents = clientIntentsResponse?.clientIntents ?? [];
   const blockedPartnerIds = new Set(blockedPartners.map((item) => item.partner.id));
   const selectedPartnerId = value(params, "partner") ?? partners[0]?.id ?? "";
   const selectedPartner = partners.find((partner) => partner.id === selectedPartnerId || partner.slug === selectedPartnerId) ?? partners[0];
@@ -883,9 +898,19 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
                         <summary className="cursor-pointer px-4 py-3 text-[13px] font-black text-kv-navy">Создать запрос</summary>
                         <form action={createInteractionAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2">
                           <input type="hidden" name="officeSlug" value={activeOfficeSlug} />
-                          <input type="hidden" name="targetOrganizationId" value={selectedPartner.id} />
-                          <input type="hidden" name="targetOfficeId" value={selectedPartner.primaryOffice.id} />
-                          <input type="hidden" name="propertyObjectId" value={object.id} />
+                          <input type="hidden" name="partnerId" value={selectedPartner.id} />
+                          <input type="hidden" name="partnerOfferId" value={object.partnerOfferId} />
+                          <label className="text-[13px] font-bold text-kv-muted md:col-span-2">
+                            Заявка покупателя
+                            <select name="clientIntentId" required defaultValue="" className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
+                              <option value="" disabled>Выберите заявку, для которой запрашивается объект</option>
+                              {clientIntents.map((intent) => (
+                                <option key={intent.id} value={intent.id}>
+                                  {intent.requirementText.slice(0, 120)}{intent.market ? ` — ${intent.market.city}` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
                           <label className="text-[13px] font-bold text-kv-muted">
                             Тип
                             <select name="type" defaultValue={selectedTemplate?.type ?? "info_request"} className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
@@ -918,7 +943,8 @@ export default async function PartnerInteractionsPage({ searchParams }: { search
                             Сообщение
                             <textarea name="message" required defaultValue={selectedTemplate?.text ?? ""} className="mt-1 min-h-[96px] w-full rounded-md border border-kv-line px-3 py-2 text-kv-ink" placeholder="Опишите интерес клиента и что нужно уточнить." />
                           </label>
-                          <button className="rounded-full bg-kv-red px-5 py-3 text-sm font-black text-white md:col-span-2">Отправить запрос</button>
+                          <button disabled={!clientIntents.length} className="rounded-full bg-kv-red px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50 md:col-span-2">Отправить запрос представителю объекта</button>
+                          {!clientIntents.length ? <p className="text-[12px] font-bold text-amber-700 md:col-span-2">Сначала создайте заявку покупателя. Запрос всегда связывается с конкретной заявкой и конкретным предложением агентства.</p> : null}
                         </form>
                       </details>
                     ) : null}

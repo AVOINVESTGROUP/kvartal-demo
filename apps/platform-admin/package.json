@@ -13,13 +13,13 @@
   },
   "dependencies": {
     "@kvartal/auth": "workspace:*",
-    "@safe-global/protocol-kit": "^8.0.4",
     "firebase": "^12.14.0",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
+    "@kvartal/contracts": "workspace:*",
     "@tailwindcss/oxide-linux-x64-gnu": "^4.3.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",

@@ -10,6 +10,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/office-api/package.json apps/office-api/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/property-identity/package.json packages/property-identity/package.json
+COPY packages/web3/package.json packages/web3/package.json
 COPY packages/db/package.json packages/db/package.json
 COPY packages/domain/package.json packages/domain/package.json
 COPY packages/config/tsconfig.base.json packages/config/tsconfig.base.json
@@ -21,6 +22,7 @@ COPY packages packages
 RUN pnpm --filter @kvartal/db prisma:generate
 RUN pnpm --filter @kvartal/auth build
 RUN pnpm --filter @kvartal/property-identity build
+RUN pnpm --filter @kvartal/web3 build
 RUN pnpm --filter @kvartal/office-api build
 
 FROM node:20-slim AS runner
@@ -35,4 +37,7 @@ COPY --from=build /app/packages/auth/dist ./packages/auth/dist
 COPY --from=build /app/packages/auth/node_modules ./packages/auth/node_modules
 COPY --from=build /app/packages/property-identity/package.json ./packages/property-identity/package.json
 COPY --from=build /app/packages/property-identity/dist ./packages/property-identity/dist
+COPY --from=build /app/packages/web3/package.json ./packages/web3/package.json
+COPY --from=build /app/packages/web3/dist ./packages/web3/dist
+COPY --from=build /app/packages/web3/node_modules ./packages/web3/node_modules
 CMD ["node", "apps/office-api/dist/index.js"]

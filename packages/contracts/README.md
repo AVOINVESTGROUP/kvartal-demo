@@ -1,12 +1,14 @@
-# IREPN Property Identity contract
+# Fixer.guru Property Identity Registry contract
 
-`Bep721PropertyIdentityToken` is a non-upgradeable, non-tradable BEP-721-compatible registry token.
+`Bep721PropertyIdentityToken` is a non-upgradeable, non-tradable BEP-721-compatible registry for one canonical physical-property identity.
 
-- Partner Corporate Safe owns the token.
-- IREPN Registry/Admin Safe holds all contract administration roles.
+- Every token is minted to the single Fixer.guru platform registry wallet and remains in platform custody.
+- The same platform wallet holds all registry administration roles.
+- Partner agencies never own or transfer the identity token. Their verified corporate BSC wallets are recorded as representation attestations for the token.
 - Holder transfers and approvals always revert.
-- On-chain records contain only stable reference and evidence/version hashes.
-- Deployment supports BNB Smart Chain Mainnet (chain `56`) and Testnet (chain `97`). Mainnet requires the explicit write flag and an owner-approved change ticket.
+- On-chain records contain only stable references, canonical/evidence hashes, representation hashes and lifecycle status; private documents remain off-chain.
+- The platform signer reads its private key only from Google Secret Manager. No key is accepted from a browser, environment file, CLI argument or repository file.
+- BNB Smart Chain Mainnet is chain `56`; Testnet is chain `97`. Mainnet writes remain blocked unless the explicit release flag and change ticket are configured.
 
 Local verification:
 
@@ -14,4 +16,4 @@ Local verification:
 pnpm --filter @kvartal/contracts test
 ```
 
-Browser deployment through platform-admin is preferred because the private key never reaches the application. The backup Mainnet CLI command requires `BSC_MAINNET_DEPLOYER_PRIVATE_KEY`, `IREPN_REGISTRY_ADMIN_SAFE_ADDRESS`, `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=true` and `PROPERTY_IDENTITY_MAINNET_CHANGE_TICKET`; never commit these values.
+Deployment is initiated by the sole platform owner from `platform-admin`. `platform-api` accepts only the approved compiled artifact hashes, deploys through the Google Secret Manager-backed signer, waits for confirmations, verifies runtime bytecode and every required role, and then records the deployment. Recovery registration exists only for a successfully deployed but not yet recorded approved contract.

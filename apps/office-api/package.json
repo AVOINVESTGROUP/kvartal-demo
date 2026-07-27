@@ -17,6 +17,7 @@
     "@kvartal/db": "workspace:*",
     "@kvartal/domain": "workspace:*",
     "@kvartal/property-identity": "workspace:*",
+    "@kvartal/web3": "workspace:*",
     "@prisma/client": "^5.22.0",
     "pdfkit": "^0.18.0"
   },

@@ -40,8 +40,10 @@ describe("API policy registry source contracts", () => {
     expect(platform).toContain('policy: "ACTOR_AUTH_REQUIRED"'); expect(platform).toContain("external-identit");
     expect(office).toContain('policy: "ACTOR_AUTH_REQUIRED"'); expect(read("packages/auth/src/index.ts")).toContain('"SYSTEM_SERVICE_ONLY"');
     expect(platform).toContain("provider_subject"); expect(platform).not.toMatch(/where:\s*\{\s*firebaseUid/);
-    expect(office).toContain('path.startsWith("/api/v1/admin/property-identity/")');
-    expect(office.indexOf('path.startsWith("/api/v1/admin/property-identity/")')).toBeLessThan(office.indexOf('path.startsWith("/api/v1/admin/")'));
+    expect(office).toContain('path.startsWith("/api/v1/admin/"), policy: "ACTOR_AUTH_REQUIRED"');
+    expect(platform).toContain('path.startsWith("/api/v1/platform/"), policy: "ACTOR_AUTH_REQUIRED"');
+    expect(office).not.toContain("process.env.ADMIN_WRITE_TOKEN");
+    expect(platform).not.toContain("FIXER_PLATFORM_OWNER_EMAILS");
     const identityHandler = read("apps/office-api/src/property-identity.ts");
     expect(identityHandler).toContain("resolvePartnerScope");
     expect(identityHandler).not.toContain("hasAdminWriteAccess");
@@ -50,7 +52,6 @@ describe("API policy registry source contracts", () => {
     expect(monitoringHandler).toContain("monitoringOnly: true");
     expect(monitoringHandler).not.toMatch(/confirm-create|confirm-link|approve|reject/);
     const monitoringPage = read("apps/platform-admin/src/app/property-identity/page.tsx");
-    expect(monitoringPage).toContain("Заявки здесь не обрабатываются");
-    expect(monitoringPage).not.toContain("<form");
+    expect(monitoringPage).not.toMatch(/approveSubmission|rejectSubmission|\/approve|\/reject/);
   });
 });

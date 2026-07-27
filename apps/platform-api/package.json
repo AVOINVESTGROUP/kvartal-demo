@@ -17,7 +17,7 @@
     "@kvartal/domain": "workspace:*",
     "@kvartal/web3": "workspace:*",
     "@prisma/client": "^5.22.0",
-    "@safe-global/api-kit": "^5.0.1"
+    "viem": "^2.38.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.10",

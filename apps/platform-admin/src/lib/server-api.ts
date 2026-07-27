@@ -82,18 +82,8 @@ export async function fetchBackendJson<T>(baseUrl: string | undefined, path: str
     return null;
   }
 
-  const token = await getIdentityToken(baseUrl);
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    console.warn(`Backend request failed: ${path} returned ${response.status}`);
-    return null;
-  }
-
-  return response.json() as Promise<T>;
+  try { return await fetchSecureActorBackendJson<T>(baseUrl, path); }
+  catch { return null; }
 }
 
 export async function writeBackendJson<T>(baseUrl: string | undefined, path: string, method: "POST" | "PATCH", body: unknown): Promise<T | null> {
@@ -101,23 +91,5 @@ export async function writeBackendJson<T>(baseUrl: string | undefined, path: str
     return null;
   }
 
-  const token = await getIdentityToken(baseUrl);
-  const adminWriteToken = await getSecretValue("kvartal-admin-write-token");
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(adminWriteToken ? { "x-kvartal-admin-write-token": adminWriteToken } : {}),
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    const details = await response.text();
-    throw new Error(details || `Backend request failed with ${response.status}`);
-  }
-
-  return response.json() as Promise<T>;
+  return fetchSecureActorBackendJson<T>(baseUrl, path, { method, body: JSON.stringify(body) });
 }

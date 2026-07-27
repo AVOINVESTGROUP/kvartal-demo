@@ -81,6 +81,9 @@ importers:
       '@kvartal/property-identity':
         specifier: workspace:*
         version: link:../../packages/property-identity
+      '@kvartal/web3':
+        specifier: workspace:*
+        version: link:../../packages/web3
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
@@ -195,9 +198,6 @@ importers:
       '@kvartal/auth':
         specifier: workspace:*
         version: link:../../packages/auth
-      '@safe-global/protocol-kit':
-        specifier: ^8.0.4
-        version: 8.0.4(typescript@5.9.3)(zod@4.4.3)
       firebase:
         specifier: ^12.14.0
         version: 12.14.0
@@ -211,6 +211,9 @@ importers:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
     devDependencies:
+      '@kvartal/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tailwindcss/oxide-linux-x64-gnu':
         specifier: ^4.3.0
         version: 4.3.0
@@ -256,9 +259,9 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
-      '@safe-global/api-kit':
-        specifier: ^5.0.1
-        version: 5.0.1(typescript@5.9.3)
+      viem:
+        specifier: ^2.38.0
+        version: 2.55.8(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20.17.10
@@ -388,7 +391,7 @@ importers:
     dependencies:
       viem:
         specifier: ^2.38.0
-        version: 2.55.8(typescript@5.9.3)(zod@4.4.3)
+        version: 2.55.8(typescript@5.9.3)
     devDependencies:
       '@types/node':
         specifier: ^20.17.10
@@ -2465,24 +2468,6 @@ packages:
     resolution: {integrity: sha512-Ly6SlsVJ3mj+b18W3R8gNufB7dTICT105fJhodGAGgyC2oqnBAhqSiNDJ8V8DLY05cCz81GLI0CU5vNYA1EC/w==}
     dev: true
 
-  /@peculiar/asn1-schema@2.8.0:
-    resolution: {integrity: sha512-7YT0U/ze0tF2QOBbE15gKZwy5tvgGyLRiRHLzhlbOpf7BT032oBSd0haZqXn5W6l26WLlu3dyxzjM+2638/z2Q==}
-    requiresBuild: true
-    dependencies:
-      '@peculiar/utils': 2.0.3
-      asn1js: 3.0.10
-      tslib: 2.8.1
-    dev: false
-    optional: true
-
-  /@peculiar/utils@2.0.3:
-    resolution: {integrity: sha512-+oL3HPFRIZ1St2K50lWCXiioIgSoxzz7R1J3uF6neO2yl1sgmpgY6XXJH4BdpoDkMWznQTeYF6oWNDZLCdQ4eQ==}
-    requiresBuild: true
-    dependencies:
-      tslib: 2.8.1
-    dev: false
-    optional: true
-
   /@pkgjs/parseargs@0.11.0:
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
@@ -2765,60 +2750,6 @@ packages:
   /@rtsao/scc@1.1.0:
     resolution: {integrity: sha512-zt6OdqaDoOnJ1ZYsCYGt9YmWzDXl4vQdKTyJev62gFhRGKdx7mcT54V9KIjg+d2wi9EXsPvAPKe7i7WjfVWB8g==}
     dev: true
-
-  /@safe-global/api-kit@5.0.1(typescript@5.9.3):
-    resolution: {integrity: sha512-nbkSjrRTZh+LlD7e0A4fujKgLZnU5262e1iYTWsGx4ft6oo5kTAxc5pY0icls5PjmZI0UkMhYIv5izeBP7bcWg==}
-    dependencies:
-      '@safe-global/protocol-kit': 8.0.4(typescript@5.9.3)(zod@4.4.3)
-      '@safe-global/types-kit': 4.0.1(typescript@5.9.3)(zod@4.4.3)
-      node-fetch: 2.7.0
-      viem: 2.55.8(typescript@5.9.3)(zod@4.4.3)
-    transitivePeerDependencies:
-      - bufferutil
-      - encoding
-      - typescript
-      - utf-8-validate
-      - zod
-    dev: false
-
-  /@safe-global/protocol-kit@8.0.4(typescript@5.9.3)(zod@4.4.3):
-    resolution: {integrity: sha512-j6PXStIUYEGATdyE8CWMzE1uVAkDBta3o+3atwPTKVE5OIWuqk+QQ7s4kbm1x42yaMf9e5e7LxIJ8E8WmI3i0g==}
-    dependencies:
-      '@safe-global/safe-deployments': 1.37.60
-      '@safe-global/safe-modules-deployments': 3.0.8
-      '@safe-global/types-kit': 4.0.1(typescript@5.9.3)(zod@4.4.3)
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
-      semver: 7.8.0
-      viem: 2.55.8(typescript@5.9.3)(zod@4.4.3)
-    optionalDependencies:
-      '@noble/curves': 1.9.1
-      '@peculiar/asn1-schema': 2.8.0
-    transitivePeerDependencies:
-      - bufferutil
-      - typescript
-      - utf-8-validate
-      - zod
-    dev: false
-
-  /@safe-global/safe-deployments@1.37.60:
-    resolution: {integrity: sha512-PS+VLRm+FikrUNOutsIEE4Ytbtb+O57SHo8VSzYynR7lcSY1gfZ+7DUnKKLVDGCspoJIgh99jqJWGh9eqfn46Q==}
-    engines: {node: '>=22.0.0', pnpm: '>=10.16.0'}
-    dependencies:
-      semver: 7.8.0
-    dev: false
-
-  /@safe-global/safe-modules-deployments@3.0.8:
-    resolution: {integrity: sha512-RKct6dNFg4KbbpXchyosHmIygy58wLe+1WIATQ2VILGpcivBDcZdyvSl64BoocXCL2CroCBMJMzy0mW4iwZ0Zg==}
-    dev: false
-
-  /@safe-global/types-kit@4.0.1(typescript@5.9.3)(zod@4.4.3):
-    resolution: {integrity: sha512-zmIYyAH9mcBcqHszPgcfNjOJYuPSvWCcc/f8zeznh7N1HSA7jEoFErO06O4QDfwAAS4aEyoyjhPyfHbVYRheZg==}
-    dependencies:
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
-    transitivePeerDependencies:
-      - typescript
-      - zod
-    dev: false
 
   /@scure/base@1.1.9:
     resolution: {integrity: sha512-8YKhl8GHiNI/pU2VMaofa2Tor7PJRAjwQLBBuilkJ9L5+13yVbC7JO/wS7piioAvPSwR3JKM1IJ/u4xQzbcXKg==}
@@ -3774,7 +3705,7 @@ packages:
     resolution: {integrity: sha512-LEyx4aLEC3x6T0UguF6YILf+ntvmOaWsVfENmIW0E9H09vKlLDGelMjjSm0jkDHALj8A8quZ/HapKNigzwge+Q==}
     dev: true
 
-  /abitype@1.2.3(typescript@5.9.3)(zod@4.4.3):
+  /abitype@1.2.3(typescript@5.9.3):
     resolution: {integrity: sha512-Ofer5QUnuUdTFsBRwARMoWKOH1ND5ehwYhJ3OJ/BQO+StkwQjHw0XyVh4vDttzHB7QOFhPHa/o413PJ82gU/Tg==}
     peerDependencies:
       typescript: '>=5.0.4'
@@ -3786,7 +3717,6 @@ packages:
         optional: true
     dependencies:
       typescript: 5.9.3
-      zod: 4.4.3
 
   /abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -4087,17 +4017,6 @@ packages:
     dependencies:
       safer-buffer: 2.1.2
     dev: true
-
-  /asn1js@3.0.10:
-    resolution: {integrity: sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg==}
-    engines: {node: '>=12.0.0'}
-    requiresBuild: true
-    dependencies:
-      pvtsutils: 1.3.6
-      pvutils: 1.1.5
-      tslib: 2.8.1
-    dev: false
-    optional: true
 
   /assertion-error@1.1.0:
     resolution: {integrity: sha512-jgsaNduz+ndvGyFt3uSuWqvy4lCnIJiovtouQN5JZHOKCS2QuhEdbcQHFhVksz2N2U9hXJo8odG7ETyWlEeuDw==}
@@ -6398,7 +6317,7 @@ packages:
       lodash: 4.18.1
       markdown-table: 2.0.0
       sha1: 1.1.1
-      viem: 2.55.8(typescript@5.9.3)(zod@4.4.3)
+      viem: 2.55.8(typescript@5.9.3)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -7915,7 +7834,7 @@ packages:
       safe-push-apply: 1.0.0
     dev: true
 
-  /ox@0.14.32(typescript@5.9.3)(zod@4.4.3):
+  /ox@0.14.32(typescript@5.9.3):
     resolution: {integrity: sha512-EPB214GvtsP2TtAYZXkNdizLzGp6PXtfaHcRrD4pcBk/D0Y7ZCNv71QgwrjeCsZ+82moVeMlZZG+NDEIUfxMpw==}
     peerDependencies:
       typescript: '>=5.4.0'
@@ -7929,7 +7848,7 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
+      abitype: 1.2.3(typescript@5.9.3)
       eventemitter3: 5.0.1
       typescript: 5.9.3
     transitivePeerDependencies:
@@ -8208,21 +8127,6 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
     dev: true
-
-  /pvtsutils@1.3.6:
-    resolution: {integrity: sha512-PLgQXQ6H2FWCaeRak8vvk1GW462lMxB5s3Jm673N82zI4vqtVUPuZdffdZbPDFRoU8kAhItWFtPCWiPpp4/EDg==}
-    requiresBuild: true
-    dependencies:
-      tslib: 2.8.1
-    dev: false
-    optional: true
-
-  /pvutils@1.1.5:
-    resolution: {integrity: sha512-KTqnxsgGiQ6ZAzZCVlJH5eOjSnvlyEgx1m8bkRJfOhmGRqfo5KLvmAlACQkrjEtOQ4B7wF9TdSLIs9O90MX9xA==}
-    engines: {node: '>=16.0.0'}
-    requiresBuild: true
-    dev: false
-    optional: true
 
   /queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -9719,7 +9623,7 @@ packages:
     resolution: {integrity: sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==}
     dev: true
 
-  /viem@2.55.8(typescript@5.9.3)(zod@4.4.3):
+  /viem@2.55.8(typescript@5.9.3):
     resolution: {integrity: sha512-BHqtsmK4iMLuLnRyrPIB1jVrmFVliRIP/K0dnFT7gBOpfo8Ko4ozhkzUCRNfR+Z/ZZdnlnVrh04fAOuIm5Svkg==}
     peerDependencies:
       typescript: '>=5.0.4'
@@ -9731,9 +9635,9 @@ packages:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
+      abitype: 1.2.3(typescript@5.9.3)
       isows: 1.0.7(ws@8.21.0)
-      ox: 0.14.32(typescript@5.9.3)(zod@4.4.3)
+      ox: 0.14.32(typescript@5.9.3)
       typescript: 5.9.3
       ws: 8.21.0
     transitivePeerDependencies:
@@ -10181,3 +10085,4 @@ packages:
 
   /zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+    dev: true

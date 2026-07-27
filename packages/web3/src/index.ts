@@ -7,6 +7,7 @@ import {
   http,
   isAddress,
   keccak256,
+  recoverTypedDataAddress,
   stringToHex,
   type Address,
   type Hex,
@@ -101,6 +102,38 @@ export function corporateWalletChallenge(input: { chainId: SupportedChainId; saf
   return Object.freeze({ typedData, messageHash: hashTypedData(typedData) });
 }
 
+export function agencyWalletChallenge(input: { chainId: SupportedChainId; walletAddress: string; organizationId: string; actorUserId: string; nonce: string; expiresAt: Date }) {
+  const message = {
+    walletAddress: normalizeAddress(input.walletAddress),
+    organizationId: input.organizationId,
+    actorUserId: input.actorUserId,
+    nonce: input.nonce,
+    expiresAt: String(Math.floor(input.expiresAt.getTime() / 1000)),
+    purpose: "BIND_AGENCY_CORPORATE_WALLET",
+  } as const;
+  const typedData = {
+    domain: { name: "Fixer.guru Property Identity Registry", version: "2", chainId: input.chainId },
+    types: {
+      AgencyWalletBinding: [
+        { name: "walletAddress", type: "address" },
+        { name: "organizationId", type: "string" },
+        { name: "actorUserId", type: "string" },
+        { name: "nonce", type: "string" },
+        { name: "expiresAt", type: "uint256" },
+        { name: "purpose", type: "string" },
+      ],
+    },
+    primaryType: "AgencyWalletBinding" as const,
+    message,
+  };
+  return Object.freeze({ typedData, messageHash: hashTypedData(typedData) });
+}
+
+export async function verifyAgencyWalletSignature(input: ReturnType<typeof agencyWalletChallenge> & { signature: Hex }) {
+  const recovered = await recoverTypedDataAddress({ ...input.typedData, signature: input.signature });
+  return recovered === input.typedData.message.walletAddress;
+}
+
 export type SafeState = Readonly<{ address: Address; owners: readonly Address[]; threshold: number; version: string | null }>;
 
 export interface CorporateWalletAdapter {
@@ -152,6 +185,11 @@ const registryAbi = [
   { type: "function", name: "unsuspend", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },
   { type: "function", name: "revoke", inputs: [{ name: "tokenId", type: "uint256" }], outputs: [] },
   { type: "function", name: "registryReassign", inputs: [{ name: "tokenId", type: "uint256" }, { name: "to", type: "address" }], outputs: [] },
+  { type: "function", name: "representationOf", stateMutability: "view", inputs: [{ name: "tokenId", type: "uint256" }, { name: "agencyWallet", type: "address" }], outputs: [{ name: "evidenceHash", type: "bytes32" }, { name: "validFrom", type: "uint64" }, { name: "validUntil", type: "uint64" }, { name: "status", type: "uint8" }] },
+  { type: "function", name: "attestRepresentation", inputs: [{ name: "tokenId", type: "uint256" }, { name: "agencyWallet", type: "address" }, { name: "evidenceHash", type: "bytes32" }, { name: "validFrom", type: "uint64" }, { name: "validUntil", type: "uint64" }], outputs: [] },
+  { type: "function", name: "suspendRepresentation", inputs: [{ name: "tokenId", type: "uint256" }, { name: "agencyWallet", type: "address" }], outputs: [] },
+  { type: "function", name: "reactivateRepresentation", inputs: [{ name: "tokenId", type: "uint256" }, { name: "agencyWallet", type: "address" }], outputs: [] },
+  { type: "function", name: "revokeRepresentation", inputs: [{ name: "tokenId", type: "uint256" }, { name: "agencyWallet", type: "address" }], outputs: [] },
 ] as const;
 
 export class RegistryRpcAdapter {
@@ -161,9 +199,9 @@ export class RegistryRpcAdapter {
     this.client = client ?? createPublicClient({ transport: http(rpcUrl) });
   }
 
-  async verifyDeployment(input: { contractAddress: string; deploymentTxHash: Hex; registryAdminSafe: string }) {
+  async verifyDeployment(input: { contractAddress: string; deploymentTxHash: Hex; registryAdminWallet: string }) {
     const contractAddress = normalizeAddress(input.contractAddress);
-    const registryAdminSafe = normalizeAddress(input.registryAdminSafe);
+    const registryAdminWallet = normalizeAddress(input.registryAdminWallet);
     const [bytecode, receipt] = await Promise.all([
       this.client.getBytecode({ address: contractAddress }),
       this.client.getTransactionReceipt({ hash: input.deploymentTxHash }),
@@ -180,18 +218,19 @@ export class RegistryRpcAdapter {
       keccak256(stringToHex("REVOKER_ROLE")),
       keccak256(stringToHex("REASSIGNER_ROLE")),
       keccak256(stringToHex("PAUSER_ROLE")),
+      keccak256(stringToHex("REPRESENTATION_ROLE")),
     ] as const;
     const [name, symbol, supportsErc721, ...roleChecks] = await Promise.all([
       this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "name" }),
       this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "symbol" }),
       this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "supportsInterface", args: ["0x80ac58cd"] }),
-      ...roles.map((role) => this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "hasRole", args: [role, registryAdminSafe] })),
+      ...roles.map((role) => this.client.readContract({ address: contractAddress, abi: registryAbi, functionName: "hasRole", args: [role, registryAdminWallet] })),
     ]);
     if (name !== "IREPN Property Identity" || symbol !== "IREPN-ID" || supportsErc721 !== true) throw new Error("REGISTRY_CONTRACT_INTERFACE_INVALID");
-    if (roleChecks.some((granted) => granted !== true)) throw new Error("REGISTRY_ADMIN_SAFE_ROLES_MISSING");
+    if (roleChecks.some((granted) => granted !== true)) throw new Error("REGISTRY_ADMIN_WALLET_ROLES_MISSING");
     return Object.freeze({
       contractAddress,
-      registryAdminSafe,
+      registryAdminWallet,
       deploymentTxHash: receipt.transactionHash,
       deploymentBlockNumber: receipt.blockNumber,
       bytecodeHash: keccak256(bytecode),
@@ -219,13 +258,23 @@ export class RegistryRpcAdapter {
       blockNumber,
     });
   }
+
+  async readRepresentation(contractAddress: string, tokenId: bigint, agencyWallet: string) {
+    const result = await this.client.readContract({ address: normalizeAddress(contractAddress), abi: registryAbi, functionName: "representationOf", args: [tokenId, normalizeAddress(agencyWallet)] });
+    const record = result as readonly [Hex, bigint, bigint, number];
+    return Object.freeze({ evidenceHash: record[0], validFrom: record[1], validUntil: record[2], status: Number(record[3]) });
+  }
 }
 
-export function encodeRegistryOperation(operation: "MINT" | "UPDATE_HASHES" | "SUSPEND" | "UNSUSPEND" | "REVOKE" | "REASSIGN", payload: Record<string, unknown>): Hex {
+export function encodeRegistryOperation(operation: "MINT" | "UPDATE_HASHES" | "SUSPEND" | "UNSUSPEND" | "REVOKE" | "REASSIGN" | "ATTEST_REPRESENTATION" | "SUSPEND_REPRESENTATION" | "REACTIVATE_REPRESENTATION" | "REVOKE_REPRESENTATION", payload: Record<string, unknown>): Hex {
   const tokenId = BigInt(String(payload.tokenId));
   if (operation === "MINT") return encodeFunctionData({ abi: registryAbi, functionName: "mintIdentity", args: [normalizeAddress(String(payload.to)), tokenId, String(payload.propertyReferenceHash) as Hex, String(payload.canonicalVersionHash) as Hex, String(payload.evidencePackageHash) as Hex, String(payload.uri ?? "")] });
   if (operation === "UPDATE_HASHES") return encodeFunctionData({ abi: registryAbi, functionName: "updateHashes", args: [tokenId, String(payload.canonicalVersionHash) as Hex, String(payload.evidencePackageHash) as Hex] });
   if (operation === "REASSIGN") return encodeFunctionData({ abi: registryAbi, functionName: "registryReassign", args: [tokenId, normalizeAddress(String(payload.to))] });
+  if (operation === "ATTEST_REPRESENTATION") return encodeFunctionData({ abi: registryAbi, functionName: "attestRepresentation", args: [tokenId, normalizeAddress(String(payload.agencyWallet)), String(payload.evidenceHash) as Hex, BigInt(String(payload.validFrom)), BigInt(String(payload.validUntil ?? 0))] });
+  if (operation === "SUSPEND_REPRESENTATION") return encodeFunctionData({ abi: registryAbi, functionName: "suspendRepresentation", args: [tokenId, normalizeAddress(String(payload.agencyWallet))] });
+  if (operation === "REACTIVATE_REPRESENTATION") return encodeFunctionData({ abi: registryAbi, functionName: "reactivateRepresentation", args: [tokenId, normalizeAddress(String(payload.agencyWallet))] });
+  if (operation === "REVOKE_REPRESENTATION") return encodeFunctionData({ abi: registryAbi, functionName: "revokeRepresentation", args: [tokenId, normalizeAddress(String(payload.agencyWallet))] });
   const functionName = operation === "SUSPEND" ? "suspend" : operation === "UNSUSPEND" ? "unsuspend" : "revoke";
   return encodeFunctionData({ abi: registryAbi, functionName, args: [tokenId] });
 }

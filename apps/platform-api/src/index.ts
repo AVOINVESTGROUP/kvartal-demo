@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PrismaClient } from "@prisma/client";
-import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ApiAuthPolicy } from "@kvartal/auth";
+import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID } from "node:crypto";
 import { handleExternalIdentityRoute } from "./external-identity.js";
 import { handlePropertyIdentityMonitoringRoute } from "./property-identity-monitoring.js";
@@ -28,8 +28,7 @@ export const ownedRoutes = [
 
 export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
   { matches: (path) => path === "/healthz" || path === "/readyz", policy: "PUBLIC" },
-  { matches: (path) => path === "/api/v1/platform/actor-context" || path.startsWith("/api/v1/platform/external-identit") || path.startsWith("/api/v1/platform/property-identity/"), policy: "ACTOR_AUTH_REQUIRED" },
-  { matches: (path) => path.startsWith("/api/v1/platform/"), policy: "LEGACY_SERVICE_AUTH" },
+  { matches: (path) => path.startsWith("/api/v1/platform/"), policy: "ACTOR_AUTH_REQUIRED" },
 ];
 
 export function authPolicyForPath(path: string) { return routeAuthPolicies.find((entry) => entry.matches(path))?.policy; }
@@ -114,51 +113,15 @@ function normalizeEmail(value: unknown) {
   return optionalString(value)?.toLowerCase();
 }
 
-function hasPlatformWriteAccess(request: IncomingMessage) {
-  const expectedToken = process.env.PLATFORM_WRITE_TOKEN ?? process.env.ADMIN_WRITE_TOKEN;
-  const suppliedToken = request.headers["x-kvartal-admin-write-token"];
-
-  if (!expectedToken) {
-    return false;
-  }
-
-  return typeof suppliedToken === "string" && suppliedToken.trim() === expectedToken.trim();
-}
-
-function bootstrapOwnerEmails() {
-  return (process.env.FIXER_PLATFORM_OWNER_EMAILS ?? process.env.KVARTAL_PLATFORM_OWNER_EMAIL ?? "")
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-async function ensureBootstrapOwner(email: string, displayName?: string) {
-  if (!bootstrapOwnerEmails().includes(email.toLowerCase())) {
-    return;
-  }
-
-  const user = await prisma.appUser.upsert({
-    where: { email },
-    update: { firebaseUid: `google:${email}`, displayName, active: true },
-    create: {
-      firebaseUid: `google:${email}`,
-      email,
-      displayName,
-      active: true,
-    },
-  });
-
-  await prisma.platformRoleAssignment.upsert({
-    where: { userId_role: { userId: user.id, role: "platform_owner" } },
-    update: { active: true },
-    create: { userId: user.id, role: "platform_owner", active: true },
-  });
+function hasPlatformWriteAccess(actor: ActorContext | null) {
+  return actor?.platformRoles.includes("platform_owner") === true;
 }
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   const correlationId = typeof request.headers["x-correlation-id"] === "string" ? request.headers["x-correlation-id"] : randomUUID();
   const policy = authPolicyForPath(url.pathname);
+  let actorContext: ActorContext | null = null;
 
   if (!policy) {
     sendError(response, 500, "DEPLOYMENT_PREREQUISITE_MISSING", "Route authentication policy is missing.");
@@ -176,7 +139,12 @@ const server = createServer(async (request, response) => {
           include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } },
         }),
       });
+      actorContext = actor;
       if (url.pathname === "/api/v1/platform/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
+      if (!actor.platformRoles.includes("platform_owner")) {
+        sendJson(response, 403, structuredAuthError("FORBIDDEN", "Platform administration is restricted to the platform owner.", correlationId));
+        return;
+      }
       if (await handleExternalIdentityRoute(request, response, url, prisma, actor)) return;
       if (await handlePropertyIdentityMonitoringRoute({ request, response, url, prisma, actor })) return;
       if (await handlePropertyIdentityWeb3Route({ request, response, url, prisma, actor })) return;
@@ -311,8 +279,6 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    await ensureBootstrapOwner(email, displayName);
-
     const user = await prisma.appUser.findUnique({
       where: { email },
       include: {
@@ -413,8 +379,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/platform/access/platform-member" && request.method === "POST") {
-    if (!hasPlatformWriteAccess(request)) {
-      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+    if (!hasPlatformWriteAccess(actorContext)) {
+      sendError(response, 403, "platform_write_forbidden", "Only the platform owner can change platform access.");
       return;
     }
 
@@ -429,6 +395,11 @@ const server = createServer(async (request, response) => {
 
     if (!email) {
       sendError(response, 400, "email_required", "Email is required.");
+      return;
+    }
+
+    if (role === "platform_owner") {
+      sendError(response, 409, "platform_owner_immutable", "The single platform owner cannot be assigned through HTTP.");
       return;
     }
 
@@ -462,8 +433,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/platform/access/platform-member" && request.method === "PATCH") {
-    if (!hasPlatformWriteAccess(request)) {
-      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+    if (!hasPlatformWriteAccess(actorContext)) {
+      sendError(response, 403, "platform_write_forbidden", "Only the platform owner can change platform access.");
       return;
     }
 
@@ -480,6 +451,12 @@ const server = createServer(async (request, response) => {
 
     if (!email || !role) {
       sendError(response, 400, "required_fields_missing", "email and role are required.");
+      return;
+    }
+
+
+    if (role === "platform_owner") {
+      sendError(response, 409, "platform_owner_immutable", "The single platform owner cannot be changed through HTTP.");
       return;
     }
 
@@ -520,8 +497,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/platform/access/organization-owner" && request.method === "POST") {
-    if (!hasPlatformWriteAccess(request)) {
-      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+    if (!hasPlatformWriteAccess(actorContext)) {
+      sendError(response, 403, "platform_write_forbidden", "Only the platform owner can change organization access.");
       return;
     }
 
@@ -583,8 +560,8 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/platform/access/organization-owner" && request.method === "PATCH") {
-    if (!hasPlatformWriteAccess(request)) {
-      sendError(response, 403, "platform_write_forbidden", "Platform write token is missing or invalid.");
+    if (!hasPlatformWriteAccess(actorContext)) {
+      sendError(response, 403, "platform_write_forbidden", "Only the platform owner can change organization access.");
       return;
     }
 
