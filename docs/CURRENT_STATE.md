@@ -891,3 +891,14 @@
 - Platform API image build `64121ebd-a8da-4448-bb6c-c317fb911d6b` succeeded. Cloud Run revision `kvartal-platform-api-safe-mint-2991e3a` serves 100% of traffic; authenticated `/readyz` returned `database=ready`, `organizationCount=7`.
 - Firebase App Hosting build `build-safe-mint-2991e3a` resolved the exact source SHA, regional Cloud Build `bf64feba-6bf0-47e4-b390-c7bf4fda618c` succeeded and rollout `rollout-safe-mint-2991e3a` reached `SUCCEEDED`.
 - Software deployment is complete through automatic post-receipt reconciliation. The remaining first Mainnet execution cannot be simulated or server-signed: it requires two actual public owner addresses, real BNB gas and explicit wallet confirmations.
+
+## Property Identity architecture correction in progress (2026-07-27)
+
+- BSC Mainnet writes were disabled before implementation. Cloud Run revision `kvartal-platform-api-00020-lhs` serves 100% of traffic with `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=false`; the previous change-ticket environment variable was removed. The latest automated Cloud SQL backup completed successfully before this change.
+- ADR 0009 is now authoritative and supersedes the Safe 2-of-N, multiple-owner, email-bootstrap, manual publication approval and object-owner-office routing described in historical entries above.
+- The only platform owner is `office@integrayachtsuae.com`. One BSC administration wallet bound to that account owns/administers the registry contract. Its signing key is server-side only through Google Secret Manager and a dedicated runtime identity.
+- Partner organizations connect and prove control of their own corporate BSC wallets. The platform never receives their private keys.
+- One physical object has one canonical `PropertyObject`, one IREPN identity and one BEP-721 token. Multiple agencies attach independent document-backed representations, offers and publication grants; the contract records token-to-agency-wallet representation relationships.
+- Ordinary publication is the agency's declaration that documentary authority exists. The platform performs completeness, uniqueness and technical checks without manually approving the ordinary publication; later audit may dispute, suspend or revoke it.
+- A buyer-side request targets an exact active `PartnerOffer`. The API derives the seller organization and office from the offer and preserves offer, representation and client-intent references through the Deal Room.
+- Code, database migration and dev deployment for this correction are not yet claimed complete. Mainnet writes remain disabled until migration, authorization, contract, routing and end-to-end tests pass.

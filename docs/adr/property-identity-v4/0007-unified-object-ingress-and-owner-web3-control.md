@@ -1,7 +1,7 @@
 # ADR 0007: Unified object ingress and owner-controlled Web3
 
 Date: 2026-07-26
-Status: accepted by product owner; supersedes conflicting UI placement in ADR 0004
+Status: accepted; Web3 governance and partner-right sections amended by ADR 0009
 
 ## Context
 
@@ -20,6 +20,8 @@ The current implementation is an off-chain PostgreSQL identity foundation only. 
 - Partners do not navigate to a separate Property Identity page and do not manage blockchain infrastructure.
 - A unique physical property creates one `PropertyObject` and one `PropertyIdentityProfile`.
 - An exact existing property does not create another physical object. It creates organisation-specific representation, offer and publication records when the relevant stage is implemented.
+- Publication is the partner organisation's declaration that its authority is supported by attached documents. It is not an application for platform-owner approval.
+- A buyer-side request targets a selected active offer; the server derives the seller-side organisation and office from that offer.
 - Partner users may see public-safe identity/token status on their object card. They do not receive contract administration or blockchain incident controls.
 
 ### Platform owner workflow
@@ -27,7 +29,7 @@ The current implementation is an off-chain PostgreSQL identity foundation only. 
 `apps/platform-admin` is the only management and monitoring surface for Web3 operations. The platform owner controls:
 
 - chain and contract registry configuration;
-- Registry/Admin Safe governance;
+- the one platform administration wallet bound to `office@integrayachtsuae.com`;
 - token mint, version update, suspend, revoke and reassignment operations;
 - organisation wallet binding/recovery policy;
 - transaction queues, confirmations, retries and dead letters;
@@ -35,7 +37,7 @@ The current implementation is an off-chain PostgreSQL identity foundation only. 
 - emergency freeze/pause controls;
 - complete audited operational history.
 
-An organisation Safe may remain the technical token holder under the approved token model, but ordinary partner employees do not administer the registry contract or blockchain operation queue.
+Each partner organisation binds its own corporate wallet from the partner cabinet. The canonical token is not a title token and representation is recorded as a separate token-to-wallet relation. Partner employees never administer the registry contract or the platform blockchain operation queue.
 
 ### Rollout
 
@@ -51,7 +53,7 @@ An organisation Safe may remain the technical token holder under the approved to
 3. Preserve the off-chain schema, encryption, digest uniqueness, audit history and recovered authentication foundation.
 4. Integrate secure ActorContext identity handling into the ordinary object workflow.
 5. Implement representation/offer/publication separation before enabling cross-partner exact-link publication.
-6. Implement the Web3 control plane in `platform-admin`/`platform-api` only, followed by BSC Testnet acceptance.
+6. Implement the Web3 control plane in `platform-admin`/`platform-api` only and validate it before BSC Mainnet activation.
 
 ## Supersession
 

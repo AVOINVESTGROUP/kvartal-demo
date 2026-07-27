@@ -483,9 +483,7 @@ Request:
 
 ```json
 {
-  "propertyObjectId": "object_1",
-  "fromOfficeId": "office_tbilisi",
-  "toOfficeId": "office_moscow",
+  "partnerOfferId": "offer_1",
   "clientIntentId": "intent_1",
   "message": "Client is interested in this property."
 }
@@ -493,9 +491,11 @@ Request:
 
 Rules:
 
-- `toOfficeId` must match `propertyObject.ownerOfficeId`;
-- `fromOfficeId` must be current user's office;
-- object must allow inter-office requests.
+- `partnerOfferId` must identify an active, currently published offer;
+- source organization, office and actor come only from authenticated `ActorContext`;
+- target organization, office, representation and object come only from the offer and cannot be supplied or overridden by the caller;
+- the client intent must belong to the authenticated buyer-side organization;
+- the interaction stores immutable references to the offer and representation used at creation.
 
 ### PATCH `/api/v1/admin/cobroker-requests/{id}`
 
@@ -514,17 +514,34 @@ Request:
 ```json
 {
   "clientIntentId": "intent_1",
-  "propertyObjectIds": ["object_1"],
-  "sellerOfficeId": "office_moscow",
-  "buyerOfficeId": "office_tbilisi"
+  "partnerInteractionId": "interaction_1"
 }
 ```
 
 Rules:
 
-- seller office must own at least one selected object;
-- buyer office must own the client intent or be approved participant;
+- seller organization and office are copied from the interaction's exact partner offer;
+- buyer organization and office come from the authenticated actor and client intent;
+- property, representation right, publication grant and partner offer are snapshotted into the Deal Room;
+- buyer organization must own the client intent or be an explicit participant;
 - unrelated offices cannot create deal rooms.
+
+### Agency wallet and publication endpoints
+
+```text
+POST /api/v1/admin/corporate-wallets/challenge
+POST /api/v1/admin/corporate-wallets/verify
+GET  /api/v1/admin/corporate-wallets
+POST /api/v1/admin/properties/{propertyObjectId}/representations
+POST /api/v1/admin/representations/{representationRightId}/offers
+POST /api/v1/admin/offers/{partnerOfferId}/publish
+```
+
+All organization and office scope is derived from `ActorContext`. Wallet verification uses a short-lived nonce-bound typed signature for the exact organization, address and BSC chain ID. Publication requires an active verified corporate wallet, documentary evidence, an attested representation right, uniqueness clearance and an active offer. It does not call a platform approval endpoint.
+
+### Platform owner Web3 endpoints
+
+Contract deployment/activation, signer health, token queue, reconciliation, disputes and suspensions are available only to the single database-bound `platform_owner` account `office@integrayachtsuae.com`. User-facing mutations never accept a static admin token and email lists never grant access.
 
 ### GET `/api/v1/admin/deal-rooms/{id}`
 

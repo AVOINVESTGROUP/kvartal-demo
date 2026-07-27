@@ -1,7 +1,7 @@
 # ADR 0008 — BSC Mainnet is the Property Identity production registry
 
 Date: 2026-07-26  
-Status: accepted by product owner
+Status: accepted; governance requirements superseded by ADR 0009
 
 ## Decision
 
@@ -12,12 +12,12 @@ Mainnet writes require all of the following:
 - `PROPERTY_IDENTITY_CHAIN_ID=56`;
 - `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=true`;
 - an explicit `PROPERTY_IDENTITY_MAINNET_CHANGE_TICKET` tied to the owner decision;
-- an owner-controlled Registry/Admin Safe with at least two owners and threshold 2;
+- the single platform administration wallet bound to `office@integrayachtsuae.com`;
 - successful on-chain contract verification before registry activation;
-- wallet confirmation for every deployment and Safe execution;
+- dedicated server-side signing whose secret is read only from Google Secret Manager by the platform signer service account;
 - reconciliation before a token is shown as verified.
 
-The application never stores a private key or seed phrase. Browser deployment and execution use the owner's EIP-1193 wallet. The CLI deployment path is an emergency/operator fallback only.
+The private key is never returned to a browser, stored in PostgreSQL, committed to Git or logged. It is stored only in Google Secret Manager and exposed to the dedicated signer runtime identity. Partner corporate-wallet keys remain exclusively with the partner organisations.
 
 ## Environment fact
 
