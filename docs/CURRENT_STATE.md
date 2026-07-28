@@ -971,3 +971,6 @@
 - The same shared implementation is invoked by Office API and Platform API. Local verification passes: auth tests `24/24`, Office API tests `9/9`, Platform API tests `7/7`, and TypeScript builds for auth and both APIs.
 - Dev audit found six active role-bearing users without an active Firebase identity. Four already had a verified Google Firebase account and were backfilled through the same transactional binding function, including `avonft0@gmail.com`; the two users without a Firebase account will bind automatically on their first future Google login.
 - The binding transaction uses an explicit 15-second timeout and three serialization retries. A local Cloud SQL proxy run exposed and then verified this limit before the final API image build.
+- Source commits `a05c0ab`, `b2c3d76` and `c0b66db` were pushed. Final Cloud Builds `90cdc7d8-654a-434c-9ae9-51fe929cd532` (Office API) and `14d0ce05-6fe1-42a7-b77c-dc9d1cc392b8` (Platform API) succeeded.
+- Cloud Run revisions `kvartal-office-api-firstlogin-c0b66db` and `kvartal-platform-api-firstlogin-c0b66db` are ready and serve 100% of their respective traffic. No API `ERROR` log entries were present during the final deployment window.
+- The temporary operator Firebase Auth Viewer binding was removed and the local Cloud SQL Auth Proxy was stopped after the verified backfill.
