@@ -169,6 +169,16 @@ export function resolvePartnerScope(actor: ActorContext, requested: { organizati
   return { organizationId: candidate.organizationId, officeId: candidate.officeId };
 }
 
+export function hasPartnerOrganizationAccess(actor: ActorContext, organizationId: string) {
+  return actor.organizationMemberships.some((membership) =>
+    membership.organizationId === organizationId &&
+    membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"),
+  ) || actor.officeMemberships.some((membership) =>
+    membership.organizationId === organizationId &&
+    membership.roles.some((role) => role === "office_owner" || role === "office_admin"),
+  );
+}
+
 function assertSubmissionAuthor(actor: ActorContext, createdByUserId: string) {
   if (actor.appUserId !== createdByUserId) {
     throw new ActorAuthError("FORBIDDEN", 403, "Only the author can process this registration submission.");

@@ -5,7 +5,7 @@ import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
 import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
-import { createPropertyFromUnifiedIngress, handlePropertyIdentityRequest, publishPartnerProperty, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft, resolvePartnerScope, savePartnerPropertyOffer, withdrawPartnerProperty } from "./property-identity.js";
+import { createPropertyFromUnifiedIngress, handlePropertyIdentityRequest, hasPartnerOrganizationAccess, publishPartnerProperty, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft, resolvePartnerScope, savePartnerPropertyOffer, withdrawPartnerProperty } from "./property-identity.js";
 import { handleAgencyWalletRequest } from "./agency-wallets.js";
 
 export const serviceName = "office-api";
@@ -1892,8 +1892,12 @@ const server = createServer(async (request, response) => {
       requestActors.set(request, actor);
       if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") {
         const organizationIds = [...new Set([
-          ...actor.organizationMemberships.map((membership) => membership.organizationId),
-          ...actor.officeMemberships.map((membership) => membership.organizationId),
+          ...actor.organizationMemberships
+            .filter((membership) => membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"))
+            .map((membership) => membership.organizationId),
+          ...actor.officeMemberships
+            .filter((membership) => membership.roles.some((role) => role === "office_owner" || role === "office_admin"))
+            .map((membership) => membership.organizationId),
         ])];
         const organizations = organizationIds.length
           ? await prisma.organization.findMany({
@@ -2802,8 +2806,10 @@ const server = createServer(async (request, response) => {
     }
 
     if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
-    try { resolvePartnerScope(actorContext, { organizationId: organization.id }); }
-    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope."); return; }
+    if (!hasPartnerOrganizationAccess(actorContext, organization.id)) {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope.");
+      return;
+    }
 
     const sharedPublicInventoryCount = await prisma.propertyObject.count({
       where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
@@ -2950,8 +2956,10 @@ const server = createServer(async (request, response) => {
 
     const requestedOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, select: { id: true } });
     if (!requestedOrganization) { sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`); return; }
-    try { resolvePartnerScope(actorContext, { organizationId: requestedOrganization.id }); }
-    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope."); return; }
+    if (!hasPartnerOrganizationAccess(actorContext, requestedOrganization.id)) {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope.");
+      return;
+    }
 
     const objects = await prisma.propertyObject.findMany({
       where: {

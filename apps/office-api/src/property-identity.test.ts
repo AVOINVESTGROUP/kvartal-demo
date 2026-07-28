@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActorContext } from "@kvartal/auth";
-import { resolvePartnerScope, selectAuthorityPolicy, selectEffectivePropertyIdentityRollout } from "./property-identity.js";
+import { hasPartnerOrganizationAccess, resolvePartnerScope, selectAuthorityPolicy, selectEffectivePropertyIdentityRollout } from "./property-identity.js";
 
 const actor: ActorContext = Object.freeze({
   actorType: "USER",
@@ -32,6 +32,12 @@ describe("Property Identity partner scope", () => {
   it("rejects body selectors outside active write memberships", () => {
     expect(() => resolvePartnerScope(actor, { organizationId: "org-2", officeId: "office-2" })).toThrowError(/not permitted/i);
     expect(() => resolvePartnerScope(actor, { organizationId: "org-3", officeId: "office-3" })).toThrowError(/not permitted/i);
+  });
+
+  it("exposes only organisations where the actor can administer partner data", () => {
+    expect(hasPartnerOrganizationAccess(actor, "org-1")).toBe(true);
+    expect(hasPartnerOrganizationAccess(actor, "org-2")).toBe(false);
+    expect(hasPartnerOrganizationAccess(actor, "org-3")).toBe(false);
   });
 });
 
