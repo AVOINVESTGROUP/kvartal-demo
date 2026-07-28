@@ -247,7 +247,7 @@ export async function bindPreprovisionedFirebaseIdentity(prisma: PrismaClient, c
         },
       });
       return findActorIdentity(tx, claim.provider, claim.subject);
-      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, maxWait: 5_000, timeout: 15_000 });
     } catch (caught) {
       if (caught instanceof Prisma.PrismaClientKnownRequestError && caught.code === "P2002") return findActorIdentity(prisma, claim.provider, claim.subject);
       if (caught instanceof Prisma.PrismaClientKnownRequestError && caught.code === "P2034" && attempt < 2) continue;
