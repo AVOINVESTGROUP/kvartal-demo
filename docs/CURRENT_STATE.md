@@ -953,3 +953,12 @@
 - Hosted unauthenticated smoke checks passed on all three surfaces: `/login` returned `200` with Google sign-in, `/logout` returned `200` with the automatic-logout UI, `/api/auth/csrf` returned `200`, the CSRF-protected logout POST returned `200`, an empty credential was rejected with `401`, and `/` redirected to `/login` with `307`.
 - No `ERROR` Cloud Run log entries were present for the four deployed services during the deployment and smoke-test window.
 - The real Google popup and account-selection step cannot be automated without an interactive Google browser session. The deployed session endpoint nevertheless performs a live Office/Platform ActorContext preflight before setting a cookie, so an authorised browser session cannot be created on the wrong surface silently. Final human acceptance is one fresh Google sign-in as `office@integrayachtsuae.com` on each host, followed by one automatic logout on each host.
+
+## Explicit Google account selection follow-up (2026-07-28)
+
+- A real Partner Admin attempt with correlation ID `5bae431b-349e-4f11-a670-17a418f7e4b3` returned `IDENTITY_BINDING_REQUIRED`. Firebase audit data proved that the browser had signed in as `avonft0@gmail.com`, not `office@integrayachtsuae.com`.
+- The primary account was verified without mutation: Firebase UID `gvadN5827sXTewwKreXbaBSSA4d2` exactly matches the active PostgreSQL external-identity binding; `platform_owner` and the `kvartal-moscow` `organization_owner` membership are active.
+- All three Google providers now set `prompt=select_account`, preventing the popup from silently reusing the last Google account. Source commit `25a9bafa68b2cc6c6c92cd851dd527f9b55e864d` was pushed.
+- Production builds passed locally. App Hosting builds/rollouts reached `READY`/`SUCCEEDED`: Partner Admin `build-2026-07-28-003`, KVARTAL Admin `build-2026-07-28-002`, Platform Admin `build-2026-07-28-002`. Live JavaScript on all three `/login` pages contains the explicit account-selection parameter.
+- The first Partner cloud build failed only because GitHub returned repeated `500` responses while the Google buildpack downloaded pnpm; retry build `25d939a3-238e-4d87-8d15-f573669d84b0` succeeded. No failed revision received traffic.
+- Temporary diagnostic `roles/firebaseauth.viewer` access for the operator account was removed and the local Cloud SQL Auth Proxy was stopped after verification.
