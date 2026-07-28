@@ -13,8 +13,6 @@ env:
     value: "https://kvartal-office-api-544286782827.europe-west4.run.app"
   - variable: PLATFORM_API_BASE_URL
     value: "https://kvartal-platform-api-544286782827.europe-west4.run.app"
-  - variable: PLATFORM_ADMIN_ORIGIN
-    value: "https://fixer-platform-admin-dev--kvartal-dev.europe-west4.hosted.app"
   - variable: PARTNER_ORGANIZATION_SLUG
     value: "apart4u-tbilisi"
   - variable: PARTNER_ADMIN_ORIGIN

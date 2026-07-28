@@ -933,3 +933,14 @@
 - Deployment: Cloud Build `31cf407f-8817-46f6-8d49-9f6f6761db2d` succeeded; Office API revision `kvartal-office-api-tenant-36007e6` is ready; Firebase App Hosting build `build-2026-07-27-002` created ready revision `partner-admin-dev-build-2026-07-27-002`, which serves 100% of Partner Admin traffic.
 - Hosted smoke check: `/login` returns `200` with Google sign-in and no generic server-error page; an unauthenticated `/` request resolves safely to `/login`.
 - Follow-up correction (2026-07-28): actor-context tenant discovery had still included read-only office memberships, so a platform owner with a viewer membership could select a tenant that the write-oriented Partner Admin routes then rejected. Tenant discovery and organisation-level admin checks now use the same organisation/office owner-or-admin policy. Office API tests pass 8/8; Cloud Build `80966b5a-8e7a-4e6d-83fb-ae89831b523a` succeeded; ready revision `kvartal-office-api-scope-38e5714` serves 100% of Office API traffic.
+
+## Unified admin authentication lifecycle prepared (2026-07-28)
+
+- ADR 0008 fixes the access contract: `office@integrayachtsuae.com` is authorised on Platform Admin, shared Partner Admin and KVARTAL Admin. In Partner Admin the platform owner can explicitly select every active organisation; Office API access through global owner authority is audit logged.
+- Removed the incorrect Partner Admin redirect that expelled a platform owner to Platform Admin and removed the ignored organisation selector from the login request.
+- Added one shared auth policy for all three surfaces, shared strict cookie/CSRF primitives, ActorContext preflight before a session cookie is returned, and distinct forbidden/service-unavailable responses with correlation IDs.
+- Removed the unused parallel hand-written admin-session implementations. The authoritative browser session is the host-only HttpOnly Firebase session cookie.
+- Partner Admin now has a server-validated active-organisation selector. A deployment slug remains only a preference and cannot grant access.
+- `/logout` now executes automatically, clears current-host auth/CSRF/compatibility cookies, hard-navigates to login and exposes a visible retry error instead of an ambiguous blank confirmation screen.
+- Added error and unauthorised surfaces to all three admin applications. Backend failures are no longer collapsed into a false missing-session redirect.
+- Local verification: auth tests `21/21`, Office API tests `9/9`, auth and Office API TypeScript builds, production builds for all three admin applications, and all three ESLint runs pass without errors.

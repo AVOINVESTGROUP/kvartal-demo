@@ -39,6 +39,13 @@ describe("Property Identity partner scope", () => {
     expect(hasPartnerOrganizationAccess(actor, "org-2")).toBe(false);
     expect(hasPartnerOrganizationAccess(actor, "org-3")).toBe(false);
   });
+
+  it("allows the platform owner only with an explicit audited partner scope", () => {
+    const owner = { ...actor, platformRoles: Object.freeze(["platform_owner" as const]), organizationMemberships: Object.freeze([]), officeMemberships: Object.freeze([]) };
+    expect(hasPartnerOrganizationAccess(owner, "org-9")).toBe(true);
+    expect(resolvePartnerScope(owner, { organizationId: "org-9", officeId: "office-9" })).toEqual({ organizationId: "org-9", officeId: "office-9" });
+    expect(() => resolvePartnerScope(owner, { organizationId: "org-9" })).toThrowError(/explicit organisation and office/i);
+  });
 });
 
 describe("Property Identity rollout policy", () => {

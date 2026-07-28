@@ -11,6 +11,46 @@ export const CSRF_COOKIE = "__Host-kvartal_csrf";
 export const FIREBASE_SESSION_MAX_AGE_SECONDS = 432_000;
 export const CSRF_MAX_AGE_SECONDS = 900;
 
+export const firebaseSessionCookieOptions = Object.freeze({
+  httpOnly: true,
+  secure: true,
+  sameSite: "strict" as const,
+  path: "/",
+  maxAge: FIREBASE_SESSION_MAX_AGE_SECONDS,
+});
+
+export const csrfCookieOptions = Object.freeze({
+  httpOnly: false,
+  secure: true,
+  sameSite: "strict" as const,
+  path: "/",
+  maxAge: CSRF_MAX_AGE_SECONDS,
+});
+
+export const expiredAuthCookieOptions = Object.freeze({
+  secure: true,
+  sameSite: "strict" as const,
+  path: "/",
+  maxAge: 0,
+});
+
+export function readCookieHeader(cookieHeader: string | null | undefined, name: string) {
+  if (!cookieHeader) return undefined;
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return cookieHeader.match(new RegExp(`(?:^|;\\s*)${escapedName}=([^;]+)`))?.[1];
+}
+
+export function assertValidSameOriginCsrf(input: { cookieHeader?: string | null; header?: string | null; origin?: string | null; allowedOrigin?: string | null }) {
+  if (!input.allowedOrigin || !validateCsrf({
+    cookie: readCookieHeader(input.cookieHeader, CSRF_COOKIE),
+    header: input.header,
+    origin: input.origin,
+    allowedOrigin: input.allowedOrigin,
+  })) {
+    throw new ActorAuthError("CSRF_INVALID", 403, "The request could not be validated.");
+  }
+}
+
 export type ApiAuthPolicy = "PUBLIC" | "LEGACY_SERVICE_AUTH" | "ACTOR_AUTH_REQUIRED" | "SYSTEM_SERVICE_ONLY";
 export type ActorType = "USER" | "SYSTEM_SERVICE" | "BOOTSTRAP_SYSTEM";
 
@@ -25,6 +65,20 @@ export type ActorContext = Readonly<{
   officeMemberships: ReadonlyArray<Readonly<{ organizationId: string; officeId: string; roles: readonly OfficeRole[] }>>;
   correlationId: string;
 }>;
+
+export type AdminSurface = "platform" | "partner" | "kvartal";
+
+export function canAccessAdminSurface(actor: Pick<ActorContext, "platformRoles" | "organizationMemberships" | "officeMemberships">, surface: AdminSurface, organizationId?: string) {
+  if (surface === "platform") return actor.platformRoles.includes("platform_owner");
+  if (actor.platformRoles.includes("platform_owner")) return true;
+  return actor.organizationMemberships.some((membership) =>
+    (!organizationId || membership.organizationId === organizationId) &&
+    membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"),
+  ) || actor.officeMemberships.some((membership) =>
+    (!organizationId || membership.organizationId === organizationId) &&
+    membership.roles.some((role) => role === "office_owner" || role === "office_admin"),
+  );
+}
 
 export type SystemActorContext = Readonly<{
   actorType: "SYSTEM_SERVICE";

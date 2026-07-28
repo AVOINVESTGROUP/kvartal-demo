@@ -16,16 +16,19 @@ describe("browser session source contracts", () => {
       const source = read(`apps/${app}/src/app/login/LoginClient.tsx`);
       expect(source).toContain("inMemoryPersistence"); expect(source).not.toContain("browserSessionPersistence");
       expect(source).toContain("signInWithPopup"); expect(source).not.toContain("signInWithRedirect");
-      expect(source).toContain("signOut("); expect(source).toContain('"x-csrf-token"'); expect(source).not.toContain("browserLocalPersistence");
+      expect(source).toContain("signOut("); expect(source).toContain('"x-csrf-token"'); expect(source).toContain('window.location.replace("/")'); expect(source).not.toContain("browserLocalPersistence");
       expect(read(`apps/${app}/next.config.ts`)).toContain('Cross-Origin-Opener-Policy", value: "same-origin-allow-popups"');
+      const errorBoundary = read(`apps/${app}/src/app/error.tsx`);
+      expect(errorBoundary).toContain("error.digest"); expect(errorBoundary).toContain("reset");
     });
     it(`${app} session and logout routes enforce strict cookies and POST`, () => {
       const session = read(`apps/${app}/src/app/api/auth/firebase/session/route.ts`);
       const logout = read(`apps/${app}/src/app/api/auth/logout/route.ts`);
-      expect(session).toContain('httpOnly: true, secure: true, sameSite: "strict", path: "/"');
-      expect(session).toContain("assertRecentLogin"); expect(session).toContain("createSessionCookie");
-      expect(logout).toContain("export async function POST"); expect(logout).toContain("validateCsrf");
-      expect(read(`apps/${app}/src/app/logout/page.tsx`)).not.toContain("clearAdminSession");
+      expect(session).toContain("firebaseSessionCookieOptions"); expect(session).toContain("assertValidSameOriginCsrf");
+      expect(session).toContain("assertRecentLogin"); expect(session).toContain("createSessionCookie"); expect(session).toContain("fetchActorContextForSession");
+      expect(logout).toContain("export async function POST"); expect(logout).toContain("assertValidSameOriginCsrf"); expect(logout).toContain("expiredAuthCookieOptions");
+      const logoutPage = read(`apps/${app}/src/app/logout/page.tsx`);
+      expect(logoutPage).not.toContain("clearAdminSession"); expect(logoutPage).toContain("useEffect"); expect(logoutPage).toContain("Повторить выход");
     });
     it(`${app} declares its exact production origin`, () => {
       expect(read(`apps/${app}/apphosting.yaml`)).toContain(`variable: ${originVariables[app]}`);
@@ -53,5 +56,16 @@ describe("API policy registry source contracts", () => {
     expect(monitoringHandler).not.toMatch(/confirm-create|confirm-link|approve|reject/);
     const monitoringPage = read("apps/platform-admin/src/app/property-identity/page.tsx");
     expect(monitoringPage).not.toMatch(/approveSubmission|rejectSubmission|\/approve|\/reject/);
+  });
+
+  it("keeps the single platform owner inside every approved admin surface with audited partner access", () => {
+    const partnerAuth = read("apps/partner-admin/src/lib/auth.ts");
+    const office = read("apps/office-api/src/index.ts");
+    const scope = read("apps/office-api/src/property-identity.ts");
+    expect(partnerAuth).not.toContain("redirect(process.env.PLATFORM_ADMIN_ORIGIN");
+    expect(partnerAuth).toContain("setActiveOrganization");
+    expect(office).toContain("PLATFORM_OWNER_OFFICE_API_ACCESS");
+    expect(office).toContain('where: platformOwnerAccess ? { status: "active" }');
+    expect(scope).toContain('canAccessAdminSurface(actor, "partner", organizationId)');
   });
 });

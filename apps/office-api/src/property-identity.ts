@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import {
   ActorAuthError,
+  canAccessAdminSurface,
   parseIfMatch,
   requestHash,
   validateIdempotencyKey,
@@ -148,6 +149,12 @@ function assertAssetClass(value: unknown) {
 export function resolvePartnerScope(actor: ActorContext, requested: { organizationId?: unknown; officeId?: unknown }): PartnerScope {
   const organizationId = typeof requested.organizationId === "string" ? requested.organizationId : undefined;
   const officeId = typeof requested.officeId === "string" ? requested.officeId : undefined;
+  if (actor.platformRoles.includes("platform_owner")) {
+    if (!organizationId || !officeId) {
+      throw new ActorAuthError("FORBIDDEN", 403, "Platform-owner partner access requires an explicit organisation and office.");
+    }
+    return { organizationId, officeId };
+  }
   const officeMemberships = actor.officeMemberships.filter((membership) =>
     (!organizationId || membership.organizationId === organizationId) &&
     (!officeId || membership.officeId === officeId) &&
@@ -170,13 +177,7 @@ export function resolvePartnerScope(actor: ActorContext, requested: { organizati
 }
 
 export function hasPartnerOrganizationAccess(actor: ActorContext, organizationId: string) {
-  return actor.organizationMemberships.some((membership) =>
-    membership.organizationId === organizationId &&
-    membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"),
-  ) || actor.officeMemberships.some((membership) =>
-    membership.organizationId === organizationId &&
-    membership.roles.some((role) => role === "office_owner" || role === "office_admin"),
-  );
+  return canAccessAdminSurface(actor, "partner", organizationId);
 }
 
 function assertSubmissionAuthor(actor: ActorContext, createdByUserId: string) {

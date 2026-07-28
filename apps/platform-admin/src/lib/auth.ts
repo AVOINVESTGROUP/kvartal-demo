@@ -1,8 +1,7 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createHmac, createVerify } from "node:crypto";
-import { fetchSecureActorBackendJson } from "./server-api";
 import { FIREBASE_SESSION_COOKIE, firebaseAdminAuth, type ActorContext } from "@kvartal/auth";
+import { fetchSecureActorBackendJson } from "./server-api";
 
 export type PlatformSession = {
   email: string;
@@ -10,204 +9,32 @@ export type PlatformSession = {
   picture?: string;
 };
 
-export type PlatformAccess = {
-  authorized: boolean;
-  platformRoles: string[];
-  organizationMemberships: Array<{
-    organizationSlug: string;
-    organizationName: string;
-    roles: string[];
-  }>;
-};
-
-const sessionCookieName = "fixer_platform_session";
-let cachedCookieSecret: string | null = null;
-let cachedFirebaseCerts: Record<string, string> | null = null;
-
-async function getAccessToken() {
-  try {
-    const response = await fetch(
-      "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
-      { headers: { "Metadata-Flavor": "Google" }, cache: "no-store" },
-    );
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json()) as { access_token?: string };
-    return payload.access_token ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function getSecretValue(secretName: string) {
-  const token = await getAccessToken();
-
-  if (!token) {
-    return null;
-  }
-
-  const response = await fetch(`https://secretmanager.googleapis.com/v1/projects/kvartal-dev/secrets/${secretName}/versions/latest:access`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const payload = (await response.json()) as { payload?: { data?: string } };
-  return payload.payload?.data ? Buffer.from(payload.payload.data, "base64").toString("utf8").trim() : null;
-}
-
-async function authSecret() {
-  if (cachedCookieSecret) {
-    return cachedCookieSecret;
-  }
-
-  cachedCookieSecret =
-    process.env["FIXER_AUTH_COOKIE_SECRET"] ??
-    (await getSecretValue("fixer-auth-cookie-secret")) ??
-    process.env["GOOGLE_OAUTH_CLIENT_SECRET"] ??
-    (await getSecretValue("fixer-google-oauth-client-secret")) ??
-    "";
-
-  return cachedCookieSecret;
-}
-
-async function sign(payload: string) {
-  return createHmac("sha256", await authSecret()).update(payload).digest("hex");
-}
-
-async function encodeSession(session: PlatformSession) {
-  const payload = Buffer.from(JSON.stringify(session), "utf8").toString("base64url");
-  return `${payload}.${await sign(payload)}`;
-}
-
-export async function getPlatformSession() {
-  const cookieStore = await cookies();
-  const value = cookieStore.get(FIREBASE_SESSION_COOKIE)?.value;
+export async function getPlatformSession(): Promise<PlatformSession | null> {
+  const value = (await cookies()).get(FIREBASE_SESSION_COOKIE)?.value;
   if (!value) return null;
   try {
     const decoded = await firebaseAdminAuth().verifySessionCookie(value, true);
     return { email: decoded.email ?? decoded.uid, name: decoded.name, picture: decoded.picture };
-  } catch { return null; }
-}
-
-export async function setPlatformSession(session: PlatformSession) {
-  const cookieStore = await cookies();
-  cookieStore.set(sessionCookieName, await encodeSession(session), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: true,
-    path: "/",
-    maxAge: 60 * 60 * 10,
-  });
-}
-
-function decodeBase64Url(value: string) {
-  return Buffer.from(value.replace(/-/g, "+").replace(/_/g, "/"), "base64");
-}
-
-function decodeJwtPart<T>(value: string) {
-  return JSON.parse(decodeBase64Url(value).toString("utf8")) as T;
-}
-
-async function getFirebaseCerts() {
-  if (cachedFirebaseCerts) {
-    return cachedFirebaseCerts;
-  }
-
-  const response = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com", {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Firebase token certificates are unavailable.");
-  }
-
-  cachedFirebaseCerts = (await response.json()) as Record<string, string>;
-  return cachedFirebaseCerts;
-}
-
-export async function verifyFirebaseIdToken(idToken: string): Promise<PlatformSession | null> {
-  const [encodedHeader, encodedPayload, encodedSignature] = idToken.split(".");
-
-  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+  } catch {
     return null;
   }
-
-  const header = decodeJwtPart<{ alg?: string; kid?: string }>(encodedHeader);
-  const payload = decodeJwtPart<{
-    aud?: string;
-    iss?: string;
-    exp?: number;
-    email?: string;
-    email_verified?: boolean;
-    name?: string;
-    picture?: string;
-  }>(encodedPayload);
-
-  if (header.alg !== "RS256" || !header.kid) {
-    return null;
-  }
-
-  const projectId = process.env["NEXT_PUBLIC_FIREBASE_PROJECT_ID"] ?? "kvartal-dev";
-  const now = Math.floor(Date.now() / 1000);
-
-  if (
-    payload.aud !== projectId ||
-    payload.iss !== `https://securetoken.google.com/${projectId}` ||
-    !payload.exp ||
-    payload.exp <= now ||
-    !payload.email ||
-    payload.email_verified !== true
-  ) {
-    return null;
-  }
-
-  const cert = (await getFirebaseCerts())[header.kid];
-
-  if (!cert) {
-    return null;
-  }
-
-  const verifier = createVerify("RSA-SHA256");
-  verifier.update(`${encodedHeader}.${encodedPayload}`);
-  verifier.end();
-
-  if (!verifier.verify(cert, decodeBase64Url(encodedSignature))) {
-    return null;
-  }
-
-  return {
-    email: payload.email.toLowerCase(),
-    name: payload.name,
-    picture: payload.picture,
-  };
 }
-
-export async function clearPlatformSession() {
-  const cookieStore = await cookies();
-  cookieStore.delete(sessionCookieName);
-}
-
 export async function requirePlatformOwner() {
   const session = await getPlatformSession();
-
-  if (!session) {
-    redirect("/login");
-  }
+  if (!session) redirect("/login");
 
   let actor: ActorContext;
-  try { actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/actor-context")).actor; }
-  catch { redirect("/unauthorized"); }
-
-  if (!actor.platformRoles.includes("platform_owner")) {
-    redirect("/unauthorized");
+  try {
+    actor = (await fetchSecureActorBackendJson<{ actor: ActorContext }>(
+      process.env.PLATFORM_API_BASE_URL,
+      "/api/v1/platform/actor-context",
+    )).actor;
+  } catch (caught) {
+    if ((caught as { status?: number }).status === 401 || (caught as { status?: number }).status === 403) redirect("/unauthorized");
+    throw caught;
   }
+
+  if (!actor.platformRoles.includes("platform_owner")) redirect("/unauthorized");
 
   return {
     session,
@@ -217,12 +44,4 @@ export async function requirePlatformOwner() {
       organizationMemberships: [],
     },
   };
-}
-
-export async function currentOrigin() {
-  const headerStore = await headers();
-  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host") ?? "localhost:3000";
-  const proto = headerStore.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-
-  return `${proto}://${host}`;
 }

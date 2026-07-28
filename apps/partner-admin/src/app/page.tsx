@@ -1,5 +1,6 @@
 import { revalidatePath } from "next/cache";
-import { requireAdminSession } from "../lib/auth";
+import { redirect } from "next/navigation";
+import { requireAdminSession, setActiveOrganization } from "../lib/auth";
 import { deleteBackendJson, fetchBackendJson, fetchSecureActorBackendJson, writeBackendJson, writeSecureActorBackendJson } from "../lib/server-api";
 import { MediaUploadForm } from "./MediaUploadForm";
 import { DocumentUploadForm } from "./DocumentUploadForm";
@@ -307,6 +308,13 @@ function formPayload(formData: FormData, organizationSlug: string) {
   };
 }
 
+async function switchOrganizationAction(formData: FormData) {
+  "use server";
+  const organizationSlug = formValue(formData, "organizationSlug");
+  if (!(await setActiveOrganization(organizationSlug))) redirect("/login?error=organization_access_required");
+  redirect("/");
+}
+
 async function createObjectAction(formData: FormData) {
   "use server";
 
@@ -526,6 +534,17 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
           <div className="flex max-w-[360px] flex-col gap-2 rounded-md border border-kv-line bg-kv-bg p-3 text-[13px]">
             <div className="font-black text-kv-navy">{session.name ?? session.email}</div>
             <div className="text-kv-muted">{session.email}</div>
+            {session.organizations.length > 1 ? (
+              <form action={switchOrganizationAction} className="flex gap-2">
+                <label className="sr-only" htmlFor="active-organization">Организация</label>
+                <select id="active-organization" name="organizationSlug" defaultValue={organizationSlug} className="min-w-0 flex-1 rounded-md border border-kv-line bg-white px-2 py-2 text-[12px] font-bold text-kv-navy">
+                  {session.organizations.map((availableOrganization) => (
+                    <option key={availableOrganization.id} value={availableOrganization.slug}>{availableOrganization.legalName}</option>
+                  ))}
+                </select>
+                <button type="submit" className="rounded-full bg-kv-navy px-3 py-2 text-[12px] font-black text-white">Открыть</button>
+              </form>
+            ) : null}
             <div className="flex flex-wrap gap-2">
             <Badge tone="dark">{organization?.status ?? "loading"}</Badge>
             <Badge>{organization?.countryOfRegistration ?? "RU"}</Badge>

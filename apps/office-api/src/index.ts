@@ -1890,6 +1890,19 @@ const server = createServer(async (request, response) => {
       });
       actorContext = actor;
       requestActors.set(request, actor);
+      const platformOwnerAccess = actor.platformRoles.includes("platform_owner");
+      if (platformOwnerAccess) {
+        await prisma.auditLog.create({
+          data: {
+            actorUserId: actor.appUserId,
+            actorUid: actor.subject,
+            action: "PLATFORM_OWNER_OFFICE_API_ACCESS",
+            entityType: "OfficeApiRoute",
+            entityId: url.pathname,
+            after: { method: request.method ?? "GET", correlationId },
+          },
+        });
+      }
       if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") {
         const organizationIds = [...new Set([
           ...actor.organizationMemberships
@@ -1899,9 +1912,9 @@ const server = createServer(async (request, response) => {
             .filter((membership) => membership.roles.some((role) => role === "office_owner" || role === "office_admin"))
             .map((membership) => membership.organizationId),
         ])];
-        const organizations = organizationIds.length
+        const organizations = platformOwnerAccess || organizationIds.length
           ? await prisma.organization.findMany({
-              where: { id: { in: organizationIds } },
+              where: platformOwnerAccess ? { status: "active" } : { id: { in: organizationIds }, status: "active" },
               select: { id: true, slug: true, legalName: true },
               orderBy: { legalName: "asc" },
             })

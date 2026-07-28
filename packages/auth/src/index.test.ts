@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE, assertRecentLogin, createCsrfToken,
-  hasExternalIdentityBindingReview, parseIfMatch, readRetentionConfig, requestHash, resolveUserActor,
-  secureActorHeaders, validateCsrf, validateIdempotencyKey, validateReason,
+  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE, assertRecentLogin, assertValidSameOriginCsrf, createCsrfToken,
+  canAccessAdminSurface, hasExternalIdentityBindingReview, parseIfMatch, readRetentionConfig, requestHash, resolveUserActor,
+  readCookieHeader, secureActorHeaders, validateCsrf, validateIdempotencyKey, validateReason,
 } from "./index.js";
 
 describe("session and CSRF contract", () => {
@@ -18,6 +18,12 @@ describe("session and CSRF contract", () => {
     expect(() => assertRecentLogin(1_000, 1_360)).not.toThrow();
     expect(() => assertRecentLogin(1_061, 1_000)).toThrowError(ActorAuthError);
     expect(() => assertRecentLogin(999, 1_360)).toThrowError(/recent/i);
+  });
+  it("shares cookie parsing and CSRF rejection across every BFF", () => {
+    const token = createCsrfToken((size) => Buffer.alloc(size, 9));
+    expect(readCookieHeader(`a=1; ${CSRF_COOKIE}=token-1; b=2`, CSRF_COOKIE)).toBe("token-1");
+    expect(() => assertValidSameOriginCsrf({ cookieHeader: `${CSRF_COOKIE}=${token}`, header: token, origin: "https://admin.test", allowedOrigin: "https://admin.test" })).not.toThrow();
+    expect(() => assertValidSameOriginCsrf({ cookieHeader: `${CSRF_COOKIE}=${token}`, header: createCsrfToken((size) => Buffer.alloc(size, 8)), origin: "https://admin.test", allowedOrigin: "https://admin.test" })).toThrowError(ActorAuthError);
   });
 });
 
@@ -37,6 +43,18 @@ describe("actor SSOT and permissions", () => {
   it("allows review only to platform_owner", () => {
     expect(hasExternalIdentityBindingReview({platformRoles:["platform_owner"]})).toBe(true);
     expect(hasExternalIdentityBindingReview({platformRoles:["platform_admin"]})).toBe(false);
+  });
+  it("enforces the approved admin-surface matrix", () => {
+    const owner = { platformRoles: ["platform_owner" as const], organizationMemberships: [], officeMemberships: [] };
+    const organizationAdmin = { platformRoles: [], organizationMemberships: [{ organizationId: "org-1", roles: ["organization_admin" as const] }], officeMemberships: [] };
+    const viewer = { platformRoles: [], organizationMemberships: [], officeMemberships: [{ organizationId: "org-1", officeId: "office-1", roles: ["office_viewer" as const] }] };
+    expect(canAccessAdminSurface(owner, "platform")).toBe(true);
+    expect(canAccessAdminSurface(owner, "partner", "org-9")).toBe(true);
+    expect(canAccessAdminSurface(owner, "kvartal", "org-1")).toBe(true);
+    expect(canAccessAdminSurface(organizationAdmin, "platform")).toBe(false);
+    expect(canAccessAdminSurface(organizationAdmin, "partner", "org-1")).toBe(true);
+    expect(canAccessAdminSurface(organizationAdmin, "partner", "org-2")).toBe(false);
+    expect(canAccessAdminSurface(viewer, "partner", "org-1")).toBe(false);
   });
 });
 

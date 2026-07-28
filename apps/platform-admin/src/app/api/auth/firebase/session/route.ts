@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import {
-  ActorAuthError, CSRF_COOKIE, CSRF_MAX_AGE_SECONDS, FIREBASE_SESSION_COOKIE,
+  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE,
   FIREBASE_SESSION_MAX_AGE_SECONDS, assertRecentLogin, createCsrfToken, firebaseAdminAuth,
-  structuredAuthError, validateCsrf,
+  assertValidSameOriginCsrf, canAccessAdminSurface, csrfCookieOptions, firebaseSessionCookieOptions, structuredAuthError, type ActorContext,
 } from "@kvartal/auth";
+import { fetchActorContextForSession } from "@/lib/server-api";
 
 function configuredOrigin(request: Request) {
   const configured = process.env.PLATFORM_ADMIN_ORIGIN;
@@ -16,10 +17,7 @@ export async function POST(request: Request) {
   const correlationId = request.headers.get("x-correlation-id") ?? crypto.randomUUID();
   try {
     const origin = configuredOrigin(request);
-    if (!validateCsrf({
-      cookie: request.headers.get("cookie")?.match(/(?:^|;\s*)__Host-kvartal_csrf=([^;]+)/)?.[1],
-      header: request.headers.get("x-csrf-token"), origin: request.headers.get("origin"), allowedOrigin: origin,
-    })) throw new ActorAuthError("CSRF_INVALID", 403, "The request could not be validated.");
+    assertValidSameOriginCsrf({ cookieHeader: request.headers.get("cookie"), header: request.headers.get("x-csrf-token"), origin: request.headers.get("origin"), allowedOrigin: origin });
     const body = await request.json().catch(() => null) as { idToken?: string } | null;
     if (!body?.idToken) throw new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
     const auth = firebaseAdminAuth();
@@ -27,12 +25,15 @@ export async function POST(request: Request) {
     assertRecentLogin(decoded.auth_time, Math.floor(Date.now() / 1000));
     if (decoded.email_verified !== true) throw new ActorAuthError("EMAIL_NOT_VERIFIED", 403, "A verified email is required.");
     const sessionCookie = await auth.createSessionCookie(body.idToken, { expiresIn: FIREBASE_SESSION_MAX_AGE_SECONDS * 1000 });
+    const actor = (await fetchActorContextForSession<{ actor: ActorContext }>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/actor-context", sessionCookie)).actor;
+    if (!canAccessAdminSurface(actor, "platform")) throw new ActorAuthError("FORBIDDEN", 403, "This account is not the platform owner.");
     const response = NextResponse.json({ ok: true, correlationId });
-    response.cookies.set(FIREBASE_SESSION_COOKIE, sessionCookie, { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: FIREBASE_SESSION_MAX_AGE_SECONDS });
-    response.cookies.set(CSRF_COOKIE, createCsrfToken(), { httpOnly: false, secure: true, sameSite: "strict", path: "/", maxAge: CSRF_MAX_AGE_SECONDS });
+    response.cookies.set(FIREBASE_SESSION_COOKIE, sessionCookie, firebaseSessionCookieOptions);
+    response.cookies.set(CSRF_COOKIE, createCsrfToken(), csrfCookieOptions);
     return response;
   } catch (caught) {
-    const error = caught instanceof ActorAuthError ? caught : new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
+    const status = (caught as { status?: number }).status;
+    const error = caught instanceof ActorAuthError ? caught : status === 403 ? new ActorAuthError("FORBIDDEN", 403, (caught as Error).message) : status && status >= 500 ? new ActorAuthError("DEPLOYMENT_PREREQUISITE_MISSING", 503, "The authentication service is temporarily unavailable.") : new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
     return NextResponse.json(structuredAuthError(error.code, error.message, correlationId), { status: error.status });
   }
 }

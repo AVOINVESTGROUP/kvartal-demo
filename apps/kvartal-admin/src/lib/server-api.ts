@@ -17,6 +17,15 @@ export async function getIdentityToken(audience: string) {
   }
 }
 
+export async function fetchActorContextForSession<T>(baseUrl: string | undefined, path: string, sessionCookie: string): Promise<T> {
+  if (!baseUrl) throw new Error("Secure backend URL is not configured.");
+  const serviceToken = await getIdentityToken(baseUrl);
+  const response = await fetch(`${baseUrl}${path}`, { cache: "no-store", headers: secureActorHeaders(serviceToken, sessionCookie) });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw Object.assign(new Error(payload?.error?.message ?? `Backend request failed with ${response.status}`), { status: response.status, payload });
+  return payload as T;
+}
+
 export async function fetchSecureActorBackendJson<T>(baseUrl: string | undefined, path: string, init: RequestInit = {}): Promise<T> {
   const response = await secureActorBackendFetch(baseUrl, path, init);
   const payload = await response.json().catch(() => null);

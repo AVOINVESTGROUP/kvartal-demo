@@ -1,12 +1,10 @@
 "use client";
 
 import { inMemoryPersistence, setPersistence, signInWithPopup, signOut, type UserCredential } from "firebase/auth";
-import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
 export default function LoginClient({ error }: { error?: string }) {
-  const router = useRouter();
   const configured = isFirebaseConfigured();
   const [busy, setBusy] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -19,7 +17,11 @@ export default function LoginClient({ error }: { error?: string }) {
       headers: { "content-type": "application/json", "x-csrf-token": csrf.csrfToken },
       body: JSON.stringify({ idToken }),
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: { message?: string; correlationId?: string } } | null;
+      const suffix = payload?.error?.correlationId ? ` ID: ${payload.error.correlationId}` : "";
+      throw new Error(`${payload?.error?.message ?? "Вход не завершён."}${suffix}`);
+    }
   }, []);
 
   async function signIn() {
@@ -31,7 +33,7 @@ export default function LoginClient({ error }: { error?: string }) {
       const credential = await signInWithPopup(auth, googleProvider);
       await createServerSession(credential);
       await signOut(auth);
-      router.replace("/");
+      window.location.replace("/");
     } catch (caught) {
       setClientError(caught instanceof Error ? caught.message : "Вход не завершён.");
     } finally { setBusy(false); }

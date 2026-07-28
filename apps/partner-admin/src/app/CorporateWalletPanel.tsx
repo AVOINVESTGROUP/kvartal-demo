@@ -17,7 +17,17 @@ export function CorporateWalletPanel() {
     setWallets(payload.wallets ?? []);
   }
 
-  useEffect(() => { load().catch((error) => setMessage(error instanceof Error ? error.message : "Ошибка загрузки.")); }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/v1/admin/corporate-wallets", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message ?? "Не удалось загрузить корпоративные кошельки.");
+        if (active) setWallets(payload.wallets ?? []);
+      })
+      .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : "Ошибка загрузки."); });
+    return () => { active = false; };
+  }, []);
 
   async function connect() {
     setBusy(true);

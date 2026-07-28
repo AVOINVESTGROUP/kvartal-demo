@@ -22,6 +22,7 @@ function requiredString(value: unknown, field: string) {
 }
 
 function assertAgencyWalletAdmin(actor: ActorContext, organizationId: string) {
+  if (actor.platformRoles.includes("platform_owner")) return;
   const membership = actor.organizationMemberships.find((item) => item.organizationId === organizationId);
   if (!membership?.roles.some((role) => role === "organization_owner" || role === "organization_admin")) {
     throw new ActorAuthError("FORBIDDEN", 403, "Only an owner or administrator of this organization can connect its corporate wallet.");
