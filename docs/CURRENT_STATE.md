@@ -944,3 +944,12 @@
 - `/logout` now executes automatically, clears current-host auth/CSRF/compatibility cookies, hard-navigates to login and exposes a visible retry error instead of an ambiguous blank confirmation screen.
 - Added error and unauthorised surfaces to all three admin applications. Backend failures are no longer collapsed into a false missing-session redirect.
 - Local verification: auth tests `21/21`, Office API tests `9/9`, auth and Office API TypeScript builds, production builds for all three admin applications, and all three ESLint runs pass without errors.
+
+## Unified admin authentication lifecycle deployed to dev (2026-07-28)
+
+- Source commit `07e3c1277e9780ff1bb480ae22e58ae91c9801ae` was pushed to `feature/property-identity-v4` in `AVOINVESTGROUP/kvartal-demo`.
+- Office API Cloud Build `3684e791-297e-497d-9724-3e65cc23be08` succeeded. Cloud Run revision `kvartal-office-api-auth-07e3c12` is ready and serves 100% of Office API traffic.
+- Firebase App Hosting build `build-2026-07-28-001` reached `READY` and rollout `build-2026-07-28-001` reached `SUCCEEDED` for `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`. Every build resolved the exact source SHA above; the regional Cloud Build IDs were `99988274-8582-49a4-a4b3-b35a847b0895`, `66639a35-4769-4a33-9c88-8c1bcf42c6c0` and `df044422-d2ba-40c2-9c8a-f8359c45418e` respectively.
+- Hosted unauthenticated smoke checks passed on all three surfaces: `/login` returned `200` with Google sign-in, `/logout` returned `200` with the automatic-logout UI, `/api/auth/csrf` returned `200`, the CSRF-protected logout POST returned `200`, an empty credential was rejected with `401`, and `/` redirected to `/login` with `307`.
+- No `ERROR` Cloud Run log entries were present for the four deployed services during the deployment and smoke-test window.
+- The real Google popup and account-selection step cannot be automated without an interactive Google browser session. The deployed session endpoint nevertheless performs a live Office/Platform ActorContext preflight before setting a cookie, so an authorised browser session cannot be created on the wrong surface silently. Final human acceptance is one fresh Google sign-in as `office@integrayachtsuae.com` on each host, followed by one automatic logout on each host.
