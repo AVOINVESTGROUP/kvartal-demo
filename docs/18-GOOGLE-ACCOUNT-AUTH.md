@@ -72,7 +72,7 @@ The server session still needs a cookie signing secret:
 2. Owner signs in with Google through Firebase Auth.
 3. Platform admin verifies the Firebase ID token.
 4. Platform API checks the Gmail in PostgreSQL.
-5. The API resolves the verified external identity to an existing `AppUser` and active database memberships. Email never grants or bootstraps a role at request time.
+5. The API resolves the verified external identity to an existing `AppUser` and active database memberships. For an active user already preprovisioned by Platform Admin but not yet bound, the first verified Google login may atomically bind the Firebase subject under ADR 0009. Email never creates a user, membership or role at request time.
 6. The only `platform_owner` account is `office@integrayachtsuae.com`. It is established by an audited one-time administrative procedure, not by an environment email list or an HTTP request.
 7. The owner adds partner organization users by Gmail. Organization roles never imply platform-owner rights.
 

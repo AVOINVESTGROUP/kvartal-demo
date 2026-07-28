@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { applicationDefault, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { Prisma, type PrismaClient } from "@prisma/client";
 
 export type PlatformRole = "platform_owner" | "platform_admin" | "platform_analyst" | "platform_viewer";
 export type OrganizationRole = "organization_owner" | "organization_admin";
@@ -203,18 +204,76 @@ export type ActorIdentityRecord = {
   };
 };
 
+export type VerifiedFirebaseSession = {
+  uid: string;
+  email?: string;
+  email_verified?: boolean;
+  firebase?: { sign_in_provider?: string };
+};
+
+const actorIdentityInclude = { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } } as const;
+
+async function findActorIdentity(client: PrismaClient | Prisma.TransactionClient, provider: "FIREBASE", subject: string) {
+  return client.appUserExternalIdentity.findUnique({ where: { provider_subject: { provider, subject } }, include: actorIdentityInclude });
+}
+
+export async function bindPreprovisionedFirebaseIdentity(prisma: PrismaClient, claim: { provider: "FIREBASE"; subject: string; verifiedEmail: string }) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+      const existing = await findActorIdentity(tx, claim.provider, claim.subject);
+      if (existing) return existing;
+      const candidates = await tx.appUser.findMany({ where: { email: { equals: claim.verifiedEmail, mode: "insensitive" } }, select: { id: true }, take: 2 });
+      if (candidates.length !== 1) return null;
+      await tx.$queryRawUnsafe('SELECT id FROM "AppUser" WHERE id = $1 FOR UPDATE', candidates[0].id);
+      const user = await tx.appUser.findUnique({
+        where: { id: candidates[0].id },
+        include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true },
+      });
+      const hasActiveAccess = Boolean(user?.active && (
+        user.platformRoleAssignments.some((assignment) => assignment.active)
+        || user.organizationMemberships.some((membership) => membership.active)
+        || user.officeMemberships.some((membership) => membership.active)
+      ));
+      if (!user || !hasActiveAccess) return null;
+      const userIdentity = await tx.appUserExternalIdentity.findFirst({ where: { appUserId: user.id, provider: claim.provider, status: "ACTIVE" } });
+      if (userIdentity) return null;
+      const identity = await tx.appUserExternalIdentity.create({ data: { appUserId: user.id, provider: claim.provider, subject: claim.subject } });
+      await tx.externalIdentityBindingEvent.create({
+        data: {
+          eventType: "APPROVED", externalIdentityId: identity.id, actorType: "SYSTEM_SERVICE",
+          previousStatus: null, nextStatus: "ACTIVE", reasonCode: "PREPROVISIONED_VERIFIED_GOOGLE_FIRST_LOGIN",
+          metadata: { emailMatched: true, correlationIndependent: true },
+        },
+      });
+      return findActorIdentity(tx, claim.provider, claim.subject);
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (caught) {
+      if (caught instanceof Prisma.PrismaClientKnownRequestError && caught.code === "P2002") return findActorIdentity(prisma, claim.provider, claim.subject);
+      if (caught instanceof Prisma.PrismaClientKnownRequestError && caught.code === "P2034" && attempt < 2) continue;
+      throw caught;
+    }
+  }
+  return null;
+}
+
 export async function resolveUserActor(input: {
   authorization?: string | null;
   correlationId: string;
-  verifySession: (token: string, checkRevoked: true) => Promise<{ uid: string }>;
+  verifySession: (token: string, checkRevoked: true) => Promise<VerifiedFirebaseSession>;
   findIdentity: (provider: "FIREBASE", subject: string) => Promise<ActorIdentityRecord | null>;
+  bindPreprovisionedIdentity?: (claim: { provider: "FIREBASE"; subject: string; verifiedEmail: string }) => Promise<ActorIdentityRecord | null>;
 }): Promise<ActorContext> {
   const match = input.authorization?.match(/^Bearer ([^\s]+)$/);
   if (!match) throw new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
-  let decoded: { uid: string };
+  let decoded: VerifiedFirebaseSession;
   try { decoded = await input.verifySession(match[1], true); }
   catch { throw new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again."); }
-  const identity = await input.findIdentity("FIREBASE", decoded.uid);
+  let identity = await input.findIdentity("FIREBASE", decoded.uid);
+  const verifiedEmail = decoded.email?.trim().toLowerCase();
+  if (!identity && input.bindPreprovisionedIdentity && decoded.email_verified === true && decoded.firebase?.sign_in_provider === "google.com" && verifiedEmail) {
+    identity = await input.bindPreprovisionedIdentity({ provider: "FIREBASE", subject: decoded.uid, verifiedEmail });
+  }
   if (!identity) throw new ActorAuthError("IDENTITY_BINDING_REQUIRED", 403, "An identity binding is required.");
   if (identity.status !== "ACTIVE") throw new ActorAuthError("IDENTITY_REVOKED", 403, "This identity is revoked.");
   if (!identity.appUser.active) throw new ActorAuthError("APP_USER_INACTIVE", 403, "This user is inactive.");

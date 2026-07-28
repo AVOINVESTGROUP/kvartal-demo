@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { PrismaClient } from "@prisma/client";
-import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
+import { bindPreprovisionedFirebaseIdentity, firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID } from "node:crypto";
 import { handleExternalIdentityRoute } from "./external-identity.js";
 import { handlePropertyIdentityMonitoringRoute } from "./property-identity-monitoring.js";
@@ -134,10 +134,8 @@ const server = createServer(async (request, response) => {
         authorization: request.headers.authorization,
         correlationId,
         verifySession: (token, checkRevoked) => firebaseAdminAuth().verifySessionCookie(token, checkRevoked),
-        findIdentity: async (provider, subject) => prisma.appUserExternalIdentity.findUnique({
-          where: { provider_subject: { provider, subject } },
-          include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } },
-        }),
+        findIdentity: (provider, subject) => prisma.appUserExternalIdentity.findUnique({ where: { provider_subject: { provider, subject } }, include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } } }),
+        bindPreprovisionedIdentity: (claim) => bindPreprovisionedFirebaseIdentity(prisma, claim),
       });
       actorContext = actor;
       if (url.pathname === "/api/v1/platform/actor-context" && request.method === "GET") { sendJson(response, 200, { actor }); return; }
@@ -150,7 +148,8 @@ const server = createServer(async (request, response) => {
       if (await handlePropertyIdentityWeb3Route({ request, response, url, prisma, actor })) return;
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
-      sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId));
+      const status = error.status ?? 503;
+      sendJson(response, status, structuredAuthError((error.code ?? "DEPLOYMENT_PREREQUISITE_MISSING") as never, error.status ? (error.message ?? "Sign in again.") : "The authentication service is temporarily unavailable.", correlationId));
       return;
     }
   }

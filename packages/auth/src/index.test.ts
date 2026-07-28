@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE, assertRecentLogin, assertValidSameOriginCsrf, createCsrfToken,
+  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE, assertRecentLogin, assertValidSameOriginCsrf, bindPreprovisionedFirebaseIdentity, createCsrfToken,
   canAccessAdminSurface, hasExternalIdentityBindingReview, parseIfMatch, readRetentionConfig, requestHash, resolveUserActor,
   readCookieHeader, secureActorHeaders, validateCsrf, validateIdempotencyKey, validateReason,
 } from "./index.js";
@@ -39,6 +39,56 @@ describe("actor SSOT and permissions", () => {
     await expect(resolveUserActor({...base,findIdentity:async()=>null})).rejects.toMatchObject({code:"IDENTITY_BINDING_REQUIRED"});
     await expect(resolveUserActor({...base,findIdentity:async()=>({...record,status:"REVOKED"})})).rejects.toMatchObject({code:"IDENTITY_REVOKED"});
     await expect(resolveUserActor({...base,findIdentity:async()=>({...record,appUser:{...record.appUser,active:false}})})).rejects.toMatchObject({code:"APP_USER_INACTIVE"});
+  });
+  it("binds only a verified Google identity to a preprovisioned user", async () => {
+    const claims = { uid:"first-login-uid", email:"Assigned.User@Example.com", email_verified:true, firebase:{sign_in_provider:"google.com"} };
+    let bindingClaim: unknown;
+    const actor = await resolveUserActor({ authorization:"Bearer session", correlationId:"c-first", verifySession:async()=>claims, findIdentity:async()=>null, bindPreprovisionedIdentity:async(claim)=>{bindingClaim=claim;return {...record,subject:claim.subject};} });
+    expect(bindingClaim).toEqual({provider:"FIREBASE",subject:"first-login-uid",verifiedEmail:"assigned.user@example.com"});
+    expect(actor.subject).toBe("first-login-uid");
+    for (const invalid of [
+      {...claims,email_verified:false},
+      {...claims,firebase:{sign_in_provider:"password"}},
+      {...claims,email:undefined},
+    ]) {
+      let called=false;
+      await expect(resolveUserActor({authorization:"Bearer session",correlationId:"c-invalid",verifySession:async()=>invalid,findIdentity:async()=>null,bindPreprovisionedIdentity:async()=>{called=true;return record;}})).rejects.toMatchObject({code:"IDENTITY_BINDING_REQUIRED"});
+      expect(called).toBe(false);
+    }
+  });
+  it("atomically binds only an active preprovisioned user with assigned access and audits it", async () => {
+    let created=false; let audit: Record<string,unknown>|undefined; let persisted=false;
+    const store = {
+      appUserExternalIdentity: {
+        findUnique: async()=>persisted ? {...record,subject:"first-login"} : null,
+        findFirst: async()=>null,
+        create: async()=>{created=true;persisted=true;return {id:"identity-1"};},
+      },
+      appUser: {
+        findMany: async()=>[{id:"user-1"}],
+        findUnique: async()=>({id:"user-1",active:true,platformRoleAssignments:[],organizationMemberships:[{active:true}],officeMemberships:[]}),
+      },
+      externalIdentityBindingEvent: { create: async({data}:{data:Record<string,unknown>})=>{audit=data;return data;} },
+      $queryRawUnsafe: async()=>[],
+    };
+    const prisma = { ...store, $transaction: async(callback:(tx:typeof store)=>Promise<unknown>)=>callback(store) };
+    const bound = await bindPreprovisionedFirebaseIdentity(prisma as never,{provider:"FIREBASE",subject:"first-login",verifiedEmail:"member@example.com"});
+    expect(bound?.subject).toBe("first-login"); expect(created).toBe(true);
+    expect(audit).toMatchObject({eventType:"APPROVED",actorType:"SYSTEM_SERVICE",reasonCode:"PREPROVISIONED_VERIFIED_GOOGLE_FIRST_LOGIN"});
+  });
+  it("does not bind an unassigned or ambiguous email", async () => {
+    let created=false;
+    const make = (candidates:Array<{id:string}>, activeAccess:boolean) => {
+      const store = {
+        appUserExternalIdentity:{findUnique:async()=>null,findFirst:async()=>null,create:async()=>{created=true;return {id:"i"};}},
+        appUser:{findMany:async()=>candidates,findUnique:async()=>({id:"u",active:true,platformRoleAssignments:[],organizationMemberships:[{active:activeAccess}],officeMemberships:[]})},
+        externalIdentityBindingEvent:{create:async()=>({})},$queryRawUnsafe:async()=>[],
+      };
+      return {...store,$transaction:async(callback:(tx:typeof store)=>Promise<unknown>)=>callback(store)};
+    };
+    await expect(bindPreprovisionedFirebaseIdentity(make([{id:"u"}],false) as never,{provider:"FIREBASE",subject:"s",verifiedEmail:"none@example.com"})).resolves.toBeNull();
+    await expect(bindPreprovisionedFirebaseIdentity(make([{id:"u1"},{id:"u2"}],true) as never,{provider:"FIREBASE",subject:"s",verifiedEmail:"duplicate@example.com"})).resolves.toBeNull();
+    expect(created).toBe(false);
   });
   it("allows review only to platform_owner", () => {
     expect(hasExternalIdentityBindingReview({platformRoles:["platform_owner"]})).toBe(true);

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
-import { firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
+import { bindPreprovisionedFirebaseIdentity, firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
 import { randomUUID as authRandomUUID } from "node:crypto";
 import { createPropertyFromUnifiedIngress, handlePropertyIdentityRequest, hasPartnerOrganizationAccess, publishPartnerProperty, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft, resolvePartnerScope, savePartnerPropertyOffer, withdrawPartnerProperty } from "./property-identity.js";
 import { handleAgencyWalletRequest } from "./agency-wallets.js";
@@ -52,6 +52,7 @@ export function authPolicyForPath(path: string) { return routeAuthPolicies.find(
 
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
+
 const storage = new Storage();
 const storageBucketName = process.env.STORAGE_BUCKET ?? "kvartal-dev-property-assets";
 const storageBucket = storage.bucket(storageBucketName);
@@ -1883,10 +1884,8 @@ const server = createServer(async (request, response) => {
       const actor = await resolveUserActor({
         authorization: request.headers.authorization, correlationId,
         verifySession: (token, checkRevoked) => firebaseAdminAuth().verifySessionCookie(token, checkRevoked),
-        findIdentity: async (provider, subject) => prisma.appUserExternalIdentity.findUnique({
-          where: { provider_subject: { provider, subject } },
-          include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } },
-        }),
+        findIdentity: (provider, subject) => prisma.appUserExternalIdentity.findUnique({ where: { provider_subject: { provider, subject } }, include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } } }),
+        bindPreprovisionedIdentity: (claim) => bindPreprovisionedFirebaseIdentity(prisma, claim),
       });
       actorContext = actor;
       requestActors.set(request, actor);
@@ -1924,7 +1923,8 @@ const server = createServer(async (request, response) => {
       }
     } catch (caught) {
       const error = caught as { code?: string; status?: number; message?: string };
-      sendJson(response, error.status ?? 401, structuredAuthError((error.code ?? "REAUTH_REQUIRED") as never, error.message ?? "Sign in again.", correlationId)); return;
+      const status = error.status ?? 503;
+      sendJson(response, status, structuredAuthError((error.code ?? "DEPLOYMENT_PREREQUISITE_MISSING") as never, error.status ? (error.message ?? "Sign in again.") : "The authentication service is temporarily unavailable.", correlationId)); return;
     }
   }
 

@@ -318,6 +318,9 @@ importers:
 
   packages/auth:
     dependencies:
+      '@prisma/client':
+        specifier: ^5.22.0
+        version: 5.22.0(prisma@5.22.0)
       firebase-admin:
         specifier: ^13.4.0
         version: 13.10.0

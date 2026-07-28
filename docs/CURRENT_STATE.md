@@ -962,3 +962,10 @@
 - Production builds passed locally. App Hosting builds/rollouts reached `READY`/`SUCCEEDED`: Partner Admin `build-2026-07-28-003`, KVARTAL Admin `build-2026-07-28-002`, Platform Admin `build-2026-07-28-002`. Live JavaScript on all three `/login` pages contains the explicit account-selection parameter.
 - The first Partner cloud build failed only because GitHub returned repeated `500` responses while the Google buildpack downloaded pnpm; retry build `25d939a3-238e-4d87-8d15-f573669d84b0` succeeded. No failed revision received traffic.
 - Temporary diagnostic `roles/firebaseauth.viewer` access for the operator account was removed and the local Cloud SQL Auth Proxy was stopped after verification.
+
+## Preprovisioned user first-login repair prepared (2026-07-28)
+
+- Confirmed the systemic regression on `avonft0@gmail.com`: the active `AppUser` and active `organization_owner` membership for `apart4u-tbilisi` existed, but `AppUserExternalIdentity` was empty. The strict identity cutover had removed legacy email/`firebaseUid` authentication without providing a first-login binding path for users assigned through Platform Admin.
+- ADR 0009 restores the expected lifecycle for all existing and future assigned users. A verified Google first login atomically binds the Firebase subject only to one active, preprovisioned, role-bearing user with the same normalized email. Login cannot create users, memberships or roles.
+- Binding uses a serializable transaction, row lock, subject/user uniqueness checks and a `SYSTEM_SERVICE` audit event. Unassigned, inactive, ambiguous, non-Google, unverified and conflicting identities remain denied; manual recovery remains available.
+- The same shared implementation is invoked by Office API and Platform API. Local verification passes: auth tests `24/24`, Office API tests `9/9`, Platform API tests `7/7`, and TypeScript builds for auth and both APIs.
