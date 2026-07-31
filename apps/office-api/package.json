@@ -7,13 +7,17 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit"
+    "property-identity:prepare-migration": "tsx src/prepare-property-identity-migration.ts",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
     "@kvartal/auth": "workspace:*",
     "@kvartal/db": "workspace:*",
     "@kvartal/domain": "workspace:*",
+    "@kvartal/property-identity": "workspace:*",
+    "@kvartal/web3": "workspace:*",
     "@prisma/client": "^5.22.0",
     "pdfkit": "^0.18.0"
   },
@@ -21,6 +25,7 @@
     "@types/node": "^20.17.10",
     "@types/pdfkit": "^0.17.6",
     "tsx": "^4.19.2",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

@@ -611,3 +611,366 @@
 - Verified live URLs:
   - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/` -> `200`
   - `https://partner-site-dev--kvartal-dev.europe-west4.hosted.app/apart4u` -> `200`
+# Local feature state: Auth Foundation Increment 1A (2026-07-25)
+
+- Feature worktree: `C:\Dev\_worktrees\Kvartal-property-identity-i1a-auth-v2`.
+- Branch: `feature/property-identity-i1a-auth-v2`, base `f8a96f97bd1b37408d4cb57bf5887c87d0a28f66`.
+- Implemented locally only: Firebase session-cookie BFF flow, strict CSRF/recent-login/logout, two-header Cloud Run client, external identity SSOT/migration, actor middleware/policy registries, owner binding API/UI, one-time bootstrap CLI, idempotency/concurrency, retention helpers and tests.
+- No production database migration, IAM edit, deployment, Firebase mutation or bootstrap execution was performed.
+- Production prerequisites remain: reauthenticate GCP operator; verify App Hosting/Cloud Run runtime IAM and ADC; configure retention, digest pepper, exact origins and protected bootstrap settings; apply migration through the approved deployment process.
+
+## Property Identity Registry v4 dev deployment (2026-07-25)
+
+- Source branch: `feature/property-identity-v4`.
+- Draft PR: `https://github.com/AVOINVESTGROUP/kvartal-demo/pull/1`.
+- App Hosting source commit: `96ed283aa5a1b2871dcd175ea33fa81aec814dcf`.
+- Pre-migration Cloud SQL backup:
+  - backup id: `1784983345803`;
+  - operation: `396d0eaf-4a90-4b90-8f89-dd9100000036`;
+  - status: `DONE`.
+- Secret Manager configuration created without exposing key material:
+  - `property-identity-encryption-key-v1`;
+  - `property-identity-digest-keys-json`;
+  - `external-identity-subject-digest-pepper`.
+- Incorrect initial secret versions were disabled before they were attached to any service. Correct cryptographically random version `2` is enabled for all three secrets and is selected through `latest`.
+- Cloud Build results:
+  - migration image build `068e3e0c-0137-4ece-ae40-d8e9d781c370`: `SUCCESS`;
+  - office API build `999954a4-7b35-46a8-acba-f3ec95729e0d`: `SUCCESS`;
+  - platform API build `d9824998-ab4a-4535-aaf8-63aef389661c`: `SUCCESS`.
+- Database migration:
+  - Cloud Run execution `kvartal-db-migrate-w95lf`;
+  - status: succeeded;
+  - initial crypto metadata version `v1` registered;
+  - no authority or rollout policy was seeded.
+- Cloud Run API deployment:
+  - `kvartal-office-api-00027-tkx`, 100% dev traffic;
+  - `kvartal-platform-api-00012-n74`, 100% dev traffic;
+  - both `/readyz` checks returned `database=ready`.
+- Firebase App Hosting builds from the feature branch:
+  - build id `build-property-identity-v4-001` on `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`;
+  - all build states: `READY`;
+  - rollout id `rollout-pi-v4-001` on all three backends;
+  - all rollout states: `SUCCEEDED`.
+- Live verification:
+  - all three `/login` pages return `200`;
+  - unauthenticated `/property-identity` redirects to `/login`;
+  - actor-protected registry and monitoring API routes return structured `REAUTH_REQUIRED` without a Firebase user session;
+  - the existing public object inventory still responds successfully.
+- Effective feature state: Property Identity Registry remains `DISABLED` because no rollout policy exists. Existing object creation/publication behaviour therefore remains unchanged until an explicitly approved organisation or market policy is added.
+- Remaining acceptance check: sign in with an authorised Firebase user and perform the first end-to-end author workflow after a test authority policy and test organisation rollout are explicitly approved.
+- SSOT merge remains blocked until the dirty main-worktree documentation edits are reconciled with this feature branch; see the external conflict report.
+
+## Hosted admin Google Auth dev correction attempt (2026-07-25, superseded)
+
+- Corrected the missing exact `KVARTAL_ADMIN_ORIGIN` App Hosting variable that caused `DEPLOYMENT_PREREQUISITE_MISSING` on the KVARTAL Admin login page.
+- A redirect-first Auth change was deployed in `partner-admin`, `kvartal-admin` and `platform-admin` but failed in the live `hosted.app` environment because no same-origin Firebase auth helper/proxy was configured. This approach is superseded and must not be reused as deployed.
+- Verified Firebase Auth authorized domains include all three dev `hosted.app` domains.
+- Verification passed:
+  - `@kvartal/auth`: 18 tests;
+  - production Next.js builds for all three admin apps;
+  - App Hosting build `build-auth-redirect-001` is `READY` on all three backends and resolves source commit `7cdcb5836e1197f4aee51d8442f3dfba829f3c09`;
+  - App Hosting rollout `rollout-auth-redirect-001` is `SUCCEEDED` on all three backends;
+  - all three live `/login` pages return `200`;
+  - effective environment contains each backend's exact origin variable.
+- This rollout is superseded by the subsequent popup Auth correction recorded below.
+
+## Hosted admin Google Auth popup correction (2026-07-25)
+
+- Restored Firebase `signInWithPopup` for `partner-admin`, `kvartal-admin` and `platform-admin`; removed redirect processing and browser session persistence from all three login clients.
+- Added `Cross-Origin-Opener-Policy: same-origin-allow-popups` to every admin `/login` response so Firebase can monitor the Google popup without the Chrome COOP conflict.
+- Preserved exact App Hosting origin variables, including `KVARTAL_ADMIN_ORIGIN`.
+- Added source-contract coverage requiring popup Auth, memory-only Firebase persistence, the compatible COOP header, CSRF exchange and Firebase browser sign-out.
+- Local verification passed: 18 auth tests and production Next.js builds for all three admin apps.
+- Corrective deployment:
+  - source commit `5a18c6b47918857f3979f2f60f66af4bca7f83a8`;
+  - build `build-auth-popup-001` is `READY` on all three admin backends;
+  - rollout `rollout-auth-popup-001` is `SUCCEEDED` on all three admin backends.
+- Live verification on every admin `/login` page:
+  - HTTP status `200`;
+  - `Cross-Origin-Opener-Policy: same-origin-allow-popups` is present;
+  - exact application origin is configured;
+  - a session request without a Firebase credential returns the expected `401`, not `DEPLOYMENT_PREREQUISITE_MISSING`.
+
+## Auth Foundation incident Stage 0 (2026-07-25)
+
+- Completed the approved read-only evidence and rollback-matrix stage; no IAM grant, bootstrap, code rollout or traffic change was performed.
+- Live tracing proves `POST /api/auth/firebase/session = 200`, followed by `office-api /api/v1/admin/actor-context = 401` and a return to `/login`.
+- Actual serving API service accounts have no effective `firebaseauth.users.get` grant at project or organization level. The exact underlying Firebase Admin exception is not logged because current code collapses it to `REAUTH_REQUIRED`; this limitation is recorded rather than inferred away.
+- Read-only Cloud SQL evidence: 11 `AppUser` rows, 0 external identities, 0 active external identities and no bootstrap state.
+- Created on-demand insurance backup `1785001724586`; status `SUCCESSFUL`.
+- Verified both July migrations are additive and prepared a matched rollback matrix covering all three App Hosting builds plus both API revisions and image digests.
+- Full evidence and Stage 1 gate: `docs/property-identity-v4/AUTH-INCIDENT-STAGE-0.md`.
+
+## Auth Foundation incident resolved in dev (2026-07-25)
+
+- Permanently granted the minimal read-only `roles/firebaseauth.viewer` role to the actual `kvartal-office-api` and `kvartal-platform-api` runtime service accounts.
+- Completed the controlled one-time Firebase platform-owner bootstrap for the existing `abtiurin@gmail.com` application user.
+- Verified the database contains one `ACTIVE` Firebase external identity, a `COMPLETED` bootstrap state and its `BOOTSTRAP_COMPLETED` audit event.
+- Verified authenticated readiness for both APIs and `200` responses from all three hosted login pages.
+- Synthetic end-to-end Firebase session verification passed twice against the currently serving office and platform `/actor-context` routes: both returned `200`, `platform_owner`, two organization memberships and one office membership.
+- Deleted temporary Cloud Run jobs, removed temporary operator and signing permissions, disabled the one-time bootstrap secret versions and stopped the local Cloud SQL proxy.
+- No application code deployment, traffic switch, rollback or migration reversal was required.
+- Resolution report: `docs/property-identity-v4/AUTH-INCIDENT-RESOLUTION.md`.
+
+## Property Identity Moscow usability activation (2026-07-25)
+
+- Recovered the primary `office@integrayachtsuae.com` account through an audited external-identity request approved by the already bound platform owner; both actor APIs return `200` for the primary account.
+- Added an explicit `organization_owner` membership for the primary account in `kvartal-moscow`; platform-wide role alone remains insufficient for implicit private organization-data access.
+- Corrected Property Identity office scoping so organization owners can use active offices in their organization and the dedicated KVARTAL cabinet cannot fall through to another organization.
+- Replaced ambiguous request-oriented screen copy with an explicit three-step author workflow and useful defaults for Russian cadastral registration.
+- Deployed office API revision `kvartal-office-api-piuse-a4d5bb5` from source commit `a4d5bb5`; authenticated readiness returned `200` with database ready.
+- App Hosting build `build-pi-usability-a4d5bb5` and rollout `rollout-pi-usability-a4d5bb5` completed successfully on `partner-admin-dev` and `kvartal-admin-dev`.
+- Activated only the `moscow-commercial` market in `NEW_SUBMISSIONS_ONLY`; publication gating remains off.
+- Activated reviewed `RU / CADASTRAL_ID / ROSREESTR` policies for land parcel, building, premise and unit scopes. Other markets remain disabled.
+- Full hosted-page Firebase-session checks returned `200` and rendered the working create-registration form for both `abtiurin@gmail.com` and `office@integrayachtsuae.com`.
+- Full report: `docs/property-identity-v4/DEV-USABILITY-ACTIVATION.md`.
+
+## Unified Property Identity correction prepared (2026-07-26)
+
+- The Moscow activation above was found to violate the platform architecture: it introduced a separate partner-facing registration surface and blocked the existing object form.
+- ADR 0007 now fixes the invariant: one physical property, one global identity, ordinary partner object form as the only ingress, partner-specific representation rights/offers/publication grants, and Web3 control only in platform-admin.
+- Removed partner links and UI for `/property-identity`; legacy URLs redirect to the ordinary cabinet.
+- Converted object create/read to ActorContext authentication. Organization and office selectors are validated against the signed-in user's memberships; the synthetic admin-console author is no longer used for new objects.
+- Added automatic identity resolution to ordinary object creation. An exact official-identifier match reuses the canonical object and creates a partner representation right/offer instead of a second physical object.
+- Added owner-only verification of representation rights, publication-grant activation and audited rollout-policy controls.
+- Added BSC Testnet/Safe/Web3 foundation, non-tradable BEP-721 contract, token-operation queue, reconciliation, and a privacy-safe public verification page.
+- Added a safety data migration that disables the incorrect rollout before the corrected services are deployed. Re-enable `NEW_SUBMISSIONS_ONLY` only after ordinary-form dev E2E passes; enable publish gate separately after grant E2E.
+- Deployment and safety-migration results are recorded in the following section.
+- User and verification instructions: `docs/property-identity-v4/UNIFIED-REGISTRY-USER-GUIDE.md`.
+
+## Unified Property Identity correction deployed to dev (2026-07-26)
+
+- Source branch: `feature/property-identity-v4`; deployed application commit: `3068cfeab0375cdcf9a1c5953977c19d3196701f`; final CI hardening commit: `67671d2a3c76e1aa47bd089f6f50f954331b7046`.
+- Pre-migration Cloud SQL backup `1785056857868` completed successfully (operation `5159f2c9-ec93-4680-8cd6-702d00000036`).
+- Cloud Build images succeeded:
+  - migration build `cabc2c64-b4b0-4918-a2ba-1d56a2da1a4d`;
+  - office API build `44ffba48-6f83-40cc-842c-583b5128c9c7`;
+  - platform API build `be256340-aac5-4356-a233-24ba1b59f722`.
+- Migration execution `kvartal-db-migrate-l8cj7` succeeded. The safety migration disabled the incorrect separate-registry rollout before the corrected APIs received traffic.
+- Cloud Run revisions now serve 100% of dev traffic:
+  - `kvartal-office-api-unified-3068cfe`;
+  - `kvartal-platform-api-unified-3068cfe` with explicit BSC Testnet chain id `97`.
+- Authenticated readiness returned `200` and database ready for both APIs; the existing public object inventory returned `200` after deployment.
+- App Hosting admin build `build-unified-pi-3068cfe` and rollout `rollout-unified-pi-3068cfe` succeeded on `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`.
+- The root `kvartal-web-dev` build exposed two clean-CI defects: integration tests were included in the database production compile and Prisma Client generation relied on local artifacts. Both were fixed in commits `3f7ae04` and `67671d2`; clean root build then passed all 13 tasks.
+- App Hosting public build `build-unified-pi-67671d2` and rollout `rollout-unified-pi-67671d2` succeeded on `kvartal-web-dev`.
+- Live verification:
+  - all three admin login pages return `200` with `Cross-Origin-Opener-Policy: same-origin-allow-popups`;
+  - legacy partner and KVARTAL `/property-identity` URLs redirect to `/`;
+  - unauthenticated platform-owner `/property-identity/web3` redirects to `/login`;
+  - public `/verify/{stableId}` is live and returns the privacy-safe not-found view for an unknown ID.
+- Effective feature state remains `DISABLED` by design. The next release gate is one authenticated ordinary-object create/edit check with `office@integrayachtsuae.com`; only then may the owner enable `NEW_SUBMISSIONS_ONLY` without publish gate and run duplicate/representation/offer E2E.
+
+## Property Identity real Web3 execution increment prepared (2026-07-26)
+
+- Added owner-only registration of a deployed BSC registry contract. Activation now verifies the successful deployment receipt, deployed bytecode, ERC-721 interface, contract identity, every Registry/Admin role, Safe owners and threshold directly through BSC RPC.
+- Contract registry records now preserve the Registry/Admin Safe address, bytecode hash, deployment block, verification time and registering platform user.
+- Added a browser-owned Safe 2-of-N deployment flow in `platform-admin`; private keys and seed phrases never reach the application.
+- Added Safe Protocol Kit transaction creation/signing and Safe API Kit proposal/status workflow. After enough confirmations, an owner can execute from the connected wallet and record the resulting BSC transaction automatically.
+- Token queue payloads now contain an explicit immutable Safe transaction envelope (`safe`, `to`, `value`, `data`, `operation`) rather than requiring the operator to reconstruct calldata.
+- The testnet deployment script now emits the ABI SHA-256 hash required by verified contract registration.
+- Local verification passed for Prisma generation, Web3 tests/build, Solidity tests, platform API build/tests, platform-admin production build and lint.
+- On-chain deployment is intentionally not claimed yet: no owner-controlled Registry/Admin Safe address, funded signer transaction or Safe API key currently exists in the project configuration. These are external signer/account prerequisites, not values the application may invent.
+
+## Property Identity Safe execution software deployed to dev (2026-07-26)
+
+- Source commit `5334a3702f0d5004a9b38a12e47be515568bc899` was pushed to `feature/property-identity-v4`.
+- Pre-migration Cloud SQL backup `1785067279757` completed successfully; operation `2479ab6e-7c6a-4dbf-aab7-bd2200000036` is `DONE`.
+- Migration image build `1613fd5b-1d1e-48eb-a7a1-3384c6f4e228` succeeded. Cloud Run execution `kvartal-db-migrate-7r4ch` completed successfully with one succeeded task.
+- Platform API image build `642b7b4e-adc2-4426-a80d-38b085e735b4` succeeded. Revision `kvartal-platform-api-web3-5334a37` serves 100% of dev traffic; authenticated `/readyz` returned `database=ready`.
+- Firebase App Hosting build `build-web3-5334a37` for `fixer-platform-admin-dev` resolved the exact source commit and reached `READY`.
+- Rollout `rollout-web3-5334a37` reached `SUCCEEDED`.
+- Live checks: platform-admin `/login` returns `200` with `Cross-Origin-Opener-Policy: same-origin-allow-popups`; unauthenticated `/property-identity/web3` returns `307` to `/login`.
+- The software deployment does not create a Safe or write a contract to BSC by itself. The next on-chain gate is an interactive owner-wallet transaction with funded tBNB and at least two owner addresses, followed by a separately issued Safe Developer API key for proposal coordination.
+
+## Browser-owned registry contract deployment prepared (2026-07-26)
+
+- Added direct `Bep721PropertyIdentityToken` deployment from the owner Web3 page through an EIP-1193 wallet.
+- The constructor is bound to the entered Registry/Admin Safe, so every registry role is assigned to the Safe at deployment.
+- The browser waits for the BSC Testnet receipt and returns contract address, deployment transaction hash, Registry Safe and ABI SHA-256 hash for the verified activation form.
+- The platform-admin build now compiles the Solidity package before Next.js so the checked contract artifact is always generated in clean CI; local production build and lint passed.
+
+## Browser-owned registry contract deployment released to dev (2026-07-26)
+
+- Source commit `2b65bf719ffefb28b656aef85f8a90fff4cd5dd6` was pushed to `feature/property-identity-v4`.
+- Firebase App Hosting build `build-web3-wallet-2b65bf7` resolved that exact commit and reached `READY`; underlying regional Cloud Build `a6efd8b5-25ee-4019-9163-e58740623114` succeeded.
+- Rollout `rollout-web3-wallet-2b65bf7` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- The remaining Registry Safe and contract deployment steps now require only interactive confirmations in the owner's wallet plus BSC Testnet gas; no deployer private key needs to be provided to the platform or operator.
+
+## BSC Mainnet product correction prepared (2026-07-26)
+
+- The product owner rejected BSC Testnet as the final result and required a working project. ADR 0008 therefore makes BNB Smart Chain Mainnet (`chainId 56`) the production Property Identity network.
+- Added an effective `writesAllowed` state and enforced `assertChainWriteAllowed` in verified contract registration, token-operation creation and Safe Transaction Service proposal. The previous mainnet guard existed only as an unused helper; this defect is corrected.
+- Mainnet activation now requires both `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=true` and an owner change ticket. The owner UI disables wallet writes when the backend has not enabled them.
+- Removed testnet-only copy from the active owner workflow and added explicit real-BNB/Mainnet warnings.
+- Added a guarded `deploy:mainnet` CLI fallback while keeping browser-owned deployment as the preferred path.
+- Preserved the required `cancun` compilation target because OpenZeppelin Contracts 5.4 uses the `MCOPY` instruction and cannot compile for `paris`; Solidity 0.8.26 and optimizer settings remain unchanged.
+- Current infrastructure fact: only GCP project `kvartal-dev` exists; there is no separately provisioned KVARTAL production project or production App Hosting/Cloud SQL stack.
+
+## BSC Mainnet software activated in the current owner console (2026-07-26)
+
+- Source commit `6be35d96b915182344bdb43806b6bf51e6c9d3f3` was pushed to `feature/property-identity-v4`.
+- Platform API build `59e60b4f-5048-490c-ac06-acb7682fcefa` succeeded.
+- The first environment update incorrectly combined the three Mainnet variables into one value because PowerShell split the gcloud argument. This was detected during effective-env verification before using the Web3 route and corrected in the next revision.
+- Revision `kvartal-platform-api-mainnetcfg-6be35d9` now serves 100% of traffic with separately verified values: chain ID `56`, Mainnet writes `true`, owner change ticket `OWNER-MAINNET-20260726`. Authenticated readiness returned `database=ready`.
+- Firebase App Hosting build `build-mainnet-6be35d9` resolved the exact commit and reached `READY`; rollout `rollout-mainnet-6be35d9` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- The owner UI and API now target BNB Smart Chain Mainnet. No Mainnet Safe, registry contract or token has been claimed or created yet because those require explicit wallet confirmations and real BNB gas.
+
+## BSC Mainnet wallet configuration released (2026-07-26)
+
+- Source commit `9eaae5dd9c8ef0fd7a5db1882b13a78b05044ca6` was pushed to `feature/property-identity-v4`.
+- The wallet flow now switches to BNB Smart Chain Mainnet and, when it is absent, requests MetaMask to add the official chain `56`, BNB currency, BNB Chain RPC and BscScan explorer configuration.
+- Firebase App Hosting build `build-mainnet-wallet-9eaae5d` resolved the exact commit; regional Cloud Build `41e68778-9c5b-4d12-ad80-301ba5978d76` succeeded and the App Hosting build reached `READY`.
+- Rollout `rollout-mainnet-wallet-9eaae5d` reached `SUCCEEDED`; live `/login` returned `200` with the required popup-compatible COOP header.
+
+## BSC Mainnet operational readiness prepared (2026-07-26)
+
+- The existing `kvartal-dev` GCP/Firebase project remains the runtime container; a separate GCP production project is not required to use BNB Smart Chain Mainnet. Blockchain network selection remains fixed by `PROPERTY_IDENTITY_CHAIN_ID=56`.
+- Added an owner-facing readiness result calculated by `platform-api` from effective chain configuration and PostgreSQL state. It reports Mainnet selection, write authorization, Safe Transaction Service configuration, active verified registry contract, active Corporate Safes, eligible identity profiles and reconciled active tokens.
+- The owner Web3 page now starts with a plain-language checklist and one factual next action. It does not claim that the registry works until at least one active token has been reconciled as `IN_SYNC` against BSC Mainnet.
+- Token-operation controls are disabled until the actual contract, Corporate Safe, eligible identity and Safe coordination prerequisites exist.
+- Added unit coverage for incomplete, mint-ready and first-token-live readiness states; platform API tests/build and platform-admin production build/lint pass locally.
+- Verified the current official BNB Safe Transaction Service through Safe API Kit 5.0.1 using `https://safe-transaction-bsc.safe.global/api`; it returned `Safe Transaction Service` version `6.6.1`. Runtime configuration and deployment remain the next release step.
+
+## BSC Mainnet operational readiness deployed (2026-07-26)
+
+- Source commit `dca6f5e5258184e7a81349043fec9219afabe8ac` was pushed to `feature/property-identity-v4`.
+- Platform API image build `4adb82f4-478a-45a9-aad9-a6af16c33432` succeeded and published `platform-api:readiness-dca6f5e`.
+- Cloud Run revision `kvartal-platform-api-readiness-dca6f5e` serves 100% of traffic. Its effective environment preserves chain ID `56`, Mainnet writes and the owner change ticket, and adds `SAFE_TRANSACTION_SERVICE_URL=https://safe-transaction-bsc.safe.global/api`.
+- Authenticated `/readyz` returned `ok=true`, `database=ready`, `organizationCount=7`.
+- Firebase App Hosting build `build-web3-ready-dca6f5e` resolved the exact source SHA and reached `READY`; regional Cloud Build `ede07228-d9f0-4bd2-ae11-2e3969872767` succeeded.
+- Rollout `rollout-web3-ready-dca6f5e` reached `SUCCEEDED` on `fixer-platform-admin-dev`.
+- A synthetic Firebase session for the existing verified `office@integrayachtsuae.com` identity returned `200` from session creation and `200` from `/property-identity/web3`. The rendered live page confirmed BNB Mainnet, Safe Transaction Service readiness and the factual next action to create the Registry/Admin Safe and deploy the registry contract.
+- No owner wallet address, private key or seed phrase was created, stored or inferred. Mainnet Safe and contract deployment still require explicit confirmation in an owner-controlled wallet and real BNB gas.
+
+## Unified BSC Mainnet registry bootstrap prepared (2026-07-26)
+
+- Replaced the three error-prone manual owner steps (Safe deployment, contract deployment and technical-field copy/paste registration) with one `RegistryBootstrapPanel` workflow.
+- The workflow switches/adds BNB Smart Chain Mainnet, requires at least two distinct public Safe-owner addresses with threshold 2, and requires the connected wallet to be one of those owners.
+- After explicit wallet confirmation it waits for successful Safe deployment, then requests explicit contract-deployment confirmation, waits for the receipt, computes the ABI SHA-256 hash and calls the existing server-side verified registration action.
+- Server activation still independently verifies the deployment receipt, bytecode, BEP-721 identity/interface, Registry/Admin roles, Safe owner count and threshold. Browser output is never trusted as proof by itself.
+- A partial-success recovery state prevents accidental duplicate contract deployment: if the contract is mined but API activation fails, the same button retries only verification/activation. A collapsed manual recovery form remains available for a previously mined deployment.
+- Platform-admin production build and lint pass locally.
+
+## Corporate Safe threshold-signature workflow prepared (2026-07-26)
+
+- Fixed a latent API serialization defect in `corporateWalletChallenge`: the EIP-712 `uint256 expiresAt` value is now represented as a precision-safe decimal string instead of a JavaScript `bigint`, so challenge responses can be serialized as JSON. Web3 tests now assert the exact expiry and JSON serialization.
+- Added an owner-only Safe message coordination endpoint backed by the configured Safe Transaction Service. It accepts only signatures from current on-chain Safe owners, binds them to the current unexpired organization/nonce/address challenge and ignores duplicate owner submissions.
+- The endpoint activates a Corporate Safe only after the Safe service contains signatures from at least the actual on-chain threshold, the service message structurally matches the current challenge and the aggregated `preparedSignature` passes an on-chain EIP-1271 call.
+- The owner UI signs the typed challenge through Protocol Kit and MetaMask, proposes the first signature, adds the second owner's signature on the next click and reports `n/threshold`. This removes the previous requirement to construct and paste a raw aggregate signature manually.
+- The raw-signature form remains collapsed as a recovery mechanism. The Registry/Admin Safe address is offered as the first-launch Corporate Safe default only when it is already verified and only if the owners intentionally use the same 2-of-N governance for that originator organization.
+- Verified locally: Web3 tests `5/5` and build, platform API tests `6/6` and build, platform-admin production build and lint.
+
+## Corporate Safe threshold-signature workflow deployed (2026-07-26)
+
+- Source commit `86f3ad4787efdee0e80539fbc55feed15435fbc4` was pushed to `feature/property-identity-v4`.
+- Platform API image build `db0971f9-7436-4fce-b2a9-2206d6db24cf` succeeded. Cloud Run revision `kvartal-platform-api-corp-safe-86f3ad4` serves 100% of traffic and authenticated `/readyz` returned `database=ready`, `organizationCount=7`.
+- Effective Cloud Run configuration still contains `SAFE_TRANSACTION_SERVICE_URL=https://safe-transaction-bsc.safe.global/api`.
+- Firebase App Hosting build `build-corporate-safe-86f3ad4` resolved the exact source SHA; regional Cloud Build `8e533016-1065-45b2-8301-4b1136b24bad` succeeded and rollout `rollout-corp-safe-86f3ad4` reached `SUCCEEDED`.
+- A synthetic session for the existing verified `office@integrayachtsuae.com` identity returned `200` for session creation and the live Web3 page. The rendered page contains the unified Registry bootstrap and the two-owner Corporate Safe challenge instructions.
+- No signing action was simulated: the remaining Safe creation, contract deployment and Safe-owner message signatures require the actual owner-controlled wallet addresses and explicit MetaMask confirmations.
+
+## Pre-Mainnet contract lifecycle audit (2026-07-26)
+
+- Re-read the final `Bep721PropertyIdentityToken` deployment source and compared every API operation encoder (`MINT`, `UPDATE_HASHES`, `SUSPEND`, `UNSUSPEND`, `REVOKE`, `REASSIGN`) with the Solidity ABI.
+- Expanded contract coverage from 3 to 8 lifecycle/security tests. Added checks for zero recipients/hashes, duplicate token IDs, both `safeTransferFrom` overloads, all approval paths, invalid lifecycle transitions, terminal revoke, reassignment data preservation, zero-address reassignment, unauthorized role use, pause/unpause and authorized hash updates.
+- All 8 contract tests pass. Creation bytecode is 8,301 bytes and deployed bytecode is 7,249 bytes, below the EVM 24,576-byte deployed-code limit.
+- No Solidity change was required by this audit; the artifact used by the published bootstrap remains unchanged.
+
+## End-to-end Safe mint completion workflow prepared (2026-07-26)
+
+- Added an owner-only confirmation endpoint for pending Registry/Admin Safe transactions. It accepts only a current on-chain Safe owner, prevents duplicate confirmation submission and uses Safe Transaction Service to add the second signature.
+- `SafeExecutionButton` now lets the second owner sign the exact existing `safeTxHash` from MetaMask, refreshes the threshold state, executes only after the Safe threshold is reached and waits for a successful Mainnet receipt.
+- After a confirmed receipt, both the integrated and manual transaction-recording paths immediately invoke the existing blockchain reconciliation endpoint. The UI reports the resulting `IN_SYNC` state instead of leaving the token in a manual `PENDING` step.
+- The server still validates the queued immutable transaction envelope before the first proposal, rechecks the connected signer against the on-chain Safe owners for the second signature and never receives a private key.
+- Verified locally: platform API tests `6/6` and build; platform-admin production build and lint.
+
+## End-to-end Safe mint completion workflow deployed (2026-07-26)
+
+- Source commit `2991e3a67f24ec6ea2b2c98b523db3b61db30627` was pushed to `feature/property-identity-v4`.
+- Platform API image build `64121ebd-a8da-4448-bb6c-c317fb911d6b` succeeded. Cloud Run revision `kvartal-platform-api-safe-mint-2991e3a` serves 100% of traffic; authenticated `/readyz` returned `database=ready`, `organizationCount=7`.
+- Firebase App Hosting build `build-safe-mint-2991e3a` resolved the exact source SHA, regional Cloud Build `bf64feba-6bf0-47e4-b390-c7bf4fda618c` succeeded and rollout `rollout-safe-mint-2991e3a` reached `SUCCEEDED`.
+- Software deployment is complete through automatic post-receipt reconciliation. The remaining first Mainnet execution cannot be simulated or server-signed: it requires two actual public owner addresses, real BNB gas and explicit wallet confirmations.
+
+## Property Identity architecture correction in progress (2026-07-27)
+
+- BSC Mainnet writes were disabled before implementation. Cloud Run revision `kvartal-platform-api-00020-lhs` serves 100% of traffic with `PROPERTY_IDENTITY_MAINNET_WRITE_ENABLED=false`; the previous change-ticket environment variable was removed. The latest automated Cloud SQL backup completed successfully before this change.
+- ADR 0009 is now authoritative and supersedes the Safe 2-of-N, multiple-owner, email-bootstrap, manual publication approval and object-owner-office routing described in historical entries above.
+- The only platform owner is `office@integrayachtsuae.com`. One BSC administration wallet bound to that account owns/administers the registry contract. Its signing key is server-side only through Google Secret Manager and a dedicated runtime identity.
+- Partner organizations connect and prove control of their own corporate BSC wallets. The platform never receives their private keys.
+- One physical object has one canonical `PropertyObject`, one IREPN identity and one BEP-721 token. Multiple agencies attach independent document-backed representations, offers and publication grants; the contract records token-to-agency-wallet representation relationships.
+- Ordinary publication is the agency's declaration that documentary authority exists. The platform performs completeness, uniqueness and technical checks without manually approving the ordinary publication; later audit may dispute, suspend or revoke it.
+- A buyer-side request targets an exact active `PartnerOffer`. The API derives the seller organization and office from the offer and preserves offer, representation and client-intent references through the Deal Room.
+- Code, database migration and dev deployment for this correction are not yet claimed complete. Mainnet writes remain disabled until migration, authorization, contract, routing and end-to-end tests pass.
+
+## Property Identity v4 implementation correction in progress (2026-07-27)
+
+- Ordinary agency publication now creates or updates the agency's own representation right, evidence package, offer and publication grants through the standard object form. There is no separate partner Registry application surface and no ordinary platform approval queue.
+- After a successful uniqueness result and publication, the backend automatically creates one idempotent BEP-721 mint operation for the canonical identity when an approved active registry contract is configured. The token recipient is always the single platform registry wallet. For an already active token, a new agency publication automatically queues that agency wallet's representation attestation.
+- Requests now bind to the exact active `PartnerOffer`, active representation right, active publication grant and buyer-side `ClientIntent`; the seller organisation and office are derived server-side from the selected offer.
+- An agency representing an existing identity can edit only its own commercial offer and publication state. It cannot overwrite the canonical physical object's address, characteristics or media.
+- Agencies can upload private representation-evidence documents directly as well as import them from Google Drive. Document metadata and download access are restricted to the document-owning agency.
+- Platform Web3 operations use one Google Secret Manager-backed signer wallet. Transaction hashes are persisted immediately after broadcast so a timeout cannot cause an automatic duplicate submission. Mainnet writes remain disabled pending verified dev/testnet E2E and an explicit release decision.
+- Dev PostgreSQL preflight found no duplicate live wallets, rights, offers or grants and no orphan representation authors. Migrations `20260727115500_property_identity_v4_enum_values` and `20260727120000_property_identity_v4_owner_wallet_offer_routing` were applied successfully; Prisma reports all 17 migrations current. Post-migration verification shows one active platform owner (`office@integrayachtsuae.com`), 7 organisations, 24 objects and the existing interaction preserved.
+- Local verification passes: auth `18/18`, Web3 `6/6`, Solidity `9/9`, platform API `7/7`, office API `7/7`; Prisma schema validation/build and production builds for partner-admin, kvartal-admin and platform-admin pass.
+- Approved contract build fingerprint: creation bytecode SHA-256 `0xf76f41e43882e72fc338bec3b25e797c254e606a49432677c50432475db30c38`; deployed runtime bytecode Keccak-256 `0x074bc7b7c8ba0c6ea907f6a876fe8f82fd6c89922995b8479a2d44de6cfce2b2`; ABI SHA-256 `0x27e6463fa9e4154bc4f4aa22df7f441a8466e982a22f0642670e9c77a831aa71`.
+
+## Property Identity v4 software deployed to dev (2026-07-27)
+
+- Source commits `1f3c404` and `40ea035` were pushed to `feature/property-identity-v4` in `AVOINVESTGROUP/kvartal-demo`.
+- Google Cloud builds `9e686c77-7418-471d-b250-cc2b8763cdf7` (platform API) and `8d9e34df-693f-4930-b412-5f7e9e45a12e` (office API) succeeded.
+- Cloud Run revisions `kvartal-platform-api-pi-v4-envfix` and `kvartal-office-api-pi-v4-40ea035` serve 100% of traffic. Platform configuration was read back after deployment: chain `56`, Mainnet writes `false`, all three approved artifact hashes present, and obsolete email-list/Safe Transaction Service variables absent.
+- Firebase App Hosting builds `build-2026-07-27-001` for `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev` reached `READY`. Their serving Cloud Run revisions use the matching build image, and all three hosted `/login` pages return `200`, contain the Google login control and contain no deployment-prerequisite/origin error.
+- No registry wallet or signer secret was invented. No BEP-721 contract was deployed and no blockchain write occurred. The remaining on-chain activation prerequisite is the actual owner-controlled wallet for `office@integrayachtsuae.com`, its Google Secret Manager secret version and gas; Mainnet remains blocked until those owner-provided prerequisites and the agreed E2E gate exist.
+
+## Partner Admin authenticated-root incident (2026-07-27)
+
+- Symptom: an authenticated request to `partner-admin-dev` failed with Next.js digest `3953254986` and the generic App Hosting server-error page.
+- Confirmed cause: the frontend still forced `PARTNER_ORGANIZATION_SLUG=apart4u-tbilisi`; the actor-aware Office API correctly rejected that tenant for an account without an Apart4u organization/office membership.
+- Immediate recovery: traffic was returned to `partner-admin-dev-build-unified-pi-3068cfe` while the forward fix was verified.
+- Forward fix: `/api/v1/admin/actor-context` returns only organizations derived from the authenticated actor's active memberships; Partner Admin selects a tenant only from that server-authorized list; organization/office admins can enter Partner Admin; a platform-only owner/admin is sent to Platform Admin instead of causing an SSR failure or impersonating a partner organization.
+- Verification: Office API tests (7/7), Office API TypeScript build, and Partner Admin production build passed locally.
+- Deployment: Cloud Build `31cf407f-8817-46f6-8d49-9f6f6761db2d` succeeded; Office API revision `kvartal-office-api-tenant-36007e6` is ready; Firebase App Hosting build `build-2026-07-27-002` created ready revision `partner-admin-dev-build-2026-07-27-002`, which serves 100% of Partner Admin traffic.
+- Hosted smoke check: `/login` returns `200` with Google sign-in and no generic server-error page; an unauthenticated `/` request resolves safely to `/login`.
+- Follow-up correction (2026-07-28): actor-context tenant discovery had still included read-only office memberships, so a platform owner with a viewer membership could select a tenant that the write-oriented Partner Admin routes then rejected. Tenant discovery and organisation-level admin checks now use the same organisation/office owner-or-admin policy. Office API tests pass 8/8; Cloud Build `80966b5a-8e7a-4e6d-83fb-ae89831b523a` succeeded; ready revision `kvartal-office-api-scope-38e5714` serves 100% of Office API traffic.
+
+## Unified admin authentication lifecycle prepared (2026-07-28)
+
+- ADR 0008 fixes the access contract: `office@integrayachtsuae.com` is authorised on Platform Admin, shared Partner Admin and KVARTAL Admin. In Partner Admin the platform owner can explicitly select every active organisation; Office API access through global owner authority is audit logged.
+- Removed the incorrect Partner Admin redirect that expelled a platform owner to Platform Admin and removed the ignored organisation selector from the login request.
+- Added one shared auth policy for all three surfaces, shared strict cookie/CSRF primitives, ActorContext preflight before a session cookie is returned, and distinct forbidden/service-unavailable responses with correlation IDs.
+- Removed the unused parallel hand-written admin-session implementations. The authoritative browser session is the host-only HttpOnly Firebase session cookie.
+- Partner Admin now has a server-validated active-organisation selector. A deployment slug remains only a preference and cannot grant access.
+- `/logout` now executes automatically, clears current-host auth/CSRF/compatibility cookies, hard-navigates to login and exposes a visible retry error instead of an ambiguous blank confirmation screen.
+- Added error and unauthorised surfaces to all three admin applications. Backend failures are no longer collapsed into a false missing-session redirect.
+- Local verification: auth tests `21/21`, Office API tests `9/9`, auth and Office API TypeScript builds, production builds for all three admin applications, and all three ESLint runs pass without errors.
+
+## Unified admin authentication lifecycle deployed to dev (2026-07-28)
+
+- Source commit `07e3c1277e9780ff1bb480ae22e58ae91c9801ae` was pushed to `feature/property-identity-v4` in `AVOINVESTGROUP/kvartal-demo`.
+- Office API Cloud Build `3684e791-297e-497d-9724-3e65cc23be08` succeeded. Cloud Run revision `kvartal-office-api-auth-07e3c12` is ready and serves 100% of Office API traffic.
+- Firebase App Hosting build `build-2026-07-28-001` reached `READY` and rollout `build-2026-07-28-001` reached `SUCCEEDED` for `partner-admin-dev`, `kvartal-admin-dev` and `fixer-platform-admin-dev`. Every build resolved the exact source SHA above; the regional Cloud Build IDs were `99988274-8582-49a4-a4b3-b35a847b0895`, `66639a35-4769-4a33-9c88-8c1bcf42c6c0` and `df044422-d2ba-40c2-9c8a-f8359c45418e` respectively.
+- Hosted unauthenticated smoke checks passed on all three surfaces: `/login` returned `200` with Google sign-in, `/logout` returned `200` with the automatic-logout UI, `/api/auth/csrf` returned `200`, the CSRF-protected logout POST returned `200`, an empty credential was rejected with `401`, and `/` redirected to `/login` with `307`.
+- No `ERROR` Cloud Run log entries were present for the four deployed services during the deployment and smoke-test window.
+- The real Google popup and account-selection step cannot be automated without an interactive Google browser session. The deployed session endpoint nevertheless performs a live Office/Platform ActorContext preflight before setting a cookie, so an authorised browser session cannot be created on the wrong surface silently. Final human acceptance is one fresh Google sign-in as `office@integrayachtsuae.com` on each host, followed by one automatic logout on each host.
+
+## Explicit Google account selection follow-up (2026-07-28)
+
+- A real Partner Admin attempt with correlation ID `5bae431b-349e-4f11-a670-17a418f7e4b3` returned `IDENTITY_BINDING_REQUIRED`. Firebase audit data proved that the browser had signed in as `avonft0@gmail.com`, not `office@integrayachtsuae.com`.
+- The primary account was verified without mutation: Firebase UID `gvadN5827sXTewwKreXbaBSSA4d2` exactly matches the active PostgreSQL external-identity binding; `platform_owner` and the `kvartal-moscow` `organization_owner` membership are active.
+- All three Google providers now set `prompt=select_account`, preventing the popup from silently reusing the last Google account. Source commit `25a9bafa68b2cc6c6c92cd851dd527f9b55e864d` was pushed.
+- Production builds passed locally. App Hosting builds/rollouts reached `READY`/`SUCCEEDED`: Partner Admin `build-2026-07-28-003`, KVARTAL Admin `build-2026-07-28-002`, Platform Admin `build-2026-07-28-002`. Live JavaScript on all three `/login` pages contains the explicit account-selection parameter.
+- The first Partner cloud build failed only because GitHub returned repeated `500` responses while the Google buildpack downloaded pnpm; retry build `25d939a3-238e-4d87-8d15-f573669d84b0` succeeded. No failed revision received traffic.
+- Temporary diagnostic `roles/firebaseauth.viewer` access for the operator account was removed and the local Cloud SQL Auth Proxy was stopped after verification.
+
+## Preprovisioned user first-login repair prepared (2026-07-28)
+
+- Confirmed the systemic regression on `avonft0@gmail.com`: the active `AppUser` and active `organization_owner` membership for `apart4u-tbilisi` existed, but `AppUserExternalIdentity` was empty. The strict identity cutover had removed legacy email/`firebaseUid` authentication without providing a first-login binding path for users assigned through Platform Admin.
+- ADR 0009 restores the expected lifecycle for all existing and future assigned users. A verified Google first login atomically binds the Firebase subject only to one active, preprovisioned, role-bearing user with the same normalized email. Login cannot create users, memberships or roles.
+- Binding uses a serializable transaction, row lock, subject/user uniqueness checks and a `SYSTEM_SERVICE` audit event. Unassigned, inactive, ambiguous, non-Google, unverified and conflicting identities remain denied; manual recovery remains available.
+- The same shared implementation is invoked by Office API and Platform API. Local verification passes: auth tests `24/24`, Office API tests `9/9`, Platform API tests `7/7`, and TypeScript builds for auth and both APIs.
+- Dev audit found six active role-bearing users without an active Firebase identity. Four already had a verified Google Firebase account and were backfilled through the same transactional binding function, including `avonft0@gmail.com`; the two users without a Firebase account will bind automatically on their first future Google login.
+- The binding transaction uses an explicit 15-second timeout and three serialization retries. A local Cloud SQL proxy run exposed and then verified this limit before the final API image build.
+- Source commits `a05c0ab`, `b2c3d76` and `c0b66db` were pushed. Final Cloud Builds `90cdc7d8-654a-434c-9ae9-51fe929cd532` (Office API) and `14d0ce05-6fe1-42a7-b77c-dc9d1cc392b8` (Platform API) succeeded.
+- Cloud Run revisions `kvartal-office-api-firstlogin-c0b66db` and `kvartal-platform-api-firstlogin-c0b66db` are ready and serve 100% of their respective traffic. No API `ERROR` log entries were present during the final deployment window.
+- The temporary operator Firebase Auth Viewer binding was removed and the local Cloud SQL Auth Proxy was stopped after the verified backfill.

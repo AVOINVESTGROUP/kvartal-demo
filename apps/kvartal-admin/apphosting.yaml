@@ -15,6 +15,8 @@ env:
     value: "https://kvartal-platform-api-544286782827.europe-west4.run.app"
   - variable: PARTNER_ORGANIZATION_SLUG
     value: "kvartal-moscow"
+  - variable: KVARTAL_ADMIN_ORIGIN
+    value: "https://kvartal-admin-dev--kvartal-dev.europe-west4.hosted.app"
   - variable: PUBLIC_SITE_BASE_URL
     value: "https://kvartal-web-dev--kvartal-dev.europe-west4.hosted.app"
   - variable: NEXT_PUBLIC_FIREBASE_API_KEY

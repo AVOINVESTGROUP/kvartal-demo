@@ -1,82 +1,29 @@
 "use client";
 
-import { getRedirectResult, signInWithPopup, signInWithRedirect, type UserCredential } from "firebase/auth";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { inMemoryPersistence, setPersistence, signInWithPopup, signOut, type UserCredential } from "firebase/auth";
+import { useCallback, useState } from "react";
 import { getFirebaseAuth, googleProvider, isFirebaseConfigured } from "../../lib/firebase-client";
 
-export default function LoginClient({ error, organizationSlug }: { error?: string; organizationSlug?: string }) {
-  const router = useRouter();
+export default function LoginClient({ error }: { error?: string }) {
   const configured = isFirebaseConfigured();
   const [busy, setBusy] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
 
-  async function createServerSession(credential: UserCredential) {
+  const createServerSession = useCallback(async (credential: UserCredential) => {
+    const csrf = await fetch("/api/auth/csrf", { cache: "no-store" }).then((response) => response.json()) as { csrfToken: string };
     const idToken = await credential.user.getIdToken();
     const response = await fetch("/api/auth/firebase/session", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ idToken, organizationSlug }),
+      headers: { "content-type": "application/json", "x-csrf-token": csrf.csrfToken },
+      body: JSON.stringify({ idToken }),
     });
 
     if (!response.ok) {
-      throw new Error(await response.text());
+      const payload = await response.json().catch(() => null) as { error?: { message?: string; correlationId?: string } } | null;
+      const suffix = payload?.error?.correlationId ? ` ID: ${payload.error.correlationId}` : "";
+      throw new Error(`${payload?.error?.message ?? "Вход не завершён."}${suffix}`);
     }
-  }
-
-  function shouldUseRedirectFirst() {
-    if (typeof navigator === "undefined") {
-      return false;
-    }
-
-    return /Android|iPhone|iPad|iPod|Mobile|FBAN|FBAV|Instagram|Line|WhatsApp|WA Business/i.test(navigator.userAgent);
-  }
-
-  function isPopupBlocked(caught: unknown) {
-    const message = caught instanceof Error ? caught.message : String(caught);
-    return message.includes("auth/popup-blocked") || message.includes("auth/cancelled-popup-request");
-  }
-
-  useEffect(() => {
-    if (!configured) {
-      return;
-    }
-
-    let cancelled = false;
-
-    async function finishRedirectSignIn() {
-      setBusy(true);
-      setClientError(null);
-
-      try {
-        const credential = await getRedirectResult(getFirebaseAuth());
-
-        if (!credential) {
-          return;
-        }
-
-        await createServerSession(credential);
-
-        if (!cancelled) {
-          router.replace("/");
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
-        }
-      } finally {
-        if (!cancelled) {
-          setBusy(false);
-        }
-      }
-    }
-
-    void finishRedirectSignIn();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [configured, router]);
+  }, []);
 
   async function signIn() {
     setBusy(true);
@@ -84,21 +31,12 @@ export default function LoginClient({ error, organizationSlug }: { error?: strin
 
     try {
       const auth = getFirebaseAuth();
-
-      if (shouldUseRedirectFirst()) {
-        await signInWithRedirect(auth, googleProvider);
-        return;
-      }
-
+      await setPersistence(auth, inMemoryPersistence);
       const credential = await signInWithPopup(auth, googleProvider);
       await createServerSession(credential);
-      router.replace("/");
+      await signOut(auth);
+      window.location.replace("/");
     } catch (caught) {
-      if (isPopupBlocked(caught)) {
-        await signInWithRedirect(getFirebaseAuth(), googleProvider);
-        return;
-      }
-
       setClientError(caught instanceof Error ? caught.message : "Вход не завершен.");
     } finally {
       setBusy(false);

@@ -243,7 +243,7 @@ function MarketSnapshotTicker({ snapshot, language }: { snapshot: MarketSnapshot
   );
 }
 
-export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }: ObjectsClientProps) {
+export function ObjectsClient({ objects, language, marketSnapshot }: ObjectsClientProps) {
   const [query, setQuery] = useState("");
   const [sessionCtx, setSessionCtx] = useState<SessionContext | null>(null);
   const [searchResult, setSearchResult] = useState<AiSearchResult | null>(null);
@@ -327,7 +327,7 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
     return sorted;
   })();
 
-  // Featured: one random object per country
+  // Featured: one stable object per country. Render output must stay deterministic.
   const featuredObjects = (() => {
     const byCountry = new Map<string, ObjectItem[]>();
     for (const obj of objects) {
@@ -335,9 +335,10 @@ export function ObjectsClient({ objects, language, marketSnapshot, apiBaseUrl }:
       list.push(obj);
       byCountry.set(obj.country, list);
     }
-    return Array.from(byCountry.values()).map((list) =>
-      list[Math.floor(Math.random() * list.length)]
-    ).filter((o): o is ObjectItem => o !== undefined).slice(0, 3);
+    return Array.from(byCountry.values())
+      .map((list) => list[0])
+      .filter((o): o is ObjectItem => o !== undefined)
+      .slice(0, 3);
   })();
 
   async function handleSearch(q: string) {

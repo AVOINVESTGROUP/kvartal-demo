@@ -3,6 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { Storage } from "@google-cloud/storage";
 import PDFDocument from "pdfkit";
+import { bindPreprovisionedFirebaseIdentity, firebaseAdminAuth, resolveUserActor, structuredAuthError, type ActorContext, type ApiAuthPolicy } from "@kvartal/auth";
+import { randomUUID as authRandomUUID } from "node:crypto";
+import { createPropertyFromUnifiedIngress, handlePropertyIdentityRequest, hasPartnerOrganizationAccess, publishPartnerProperty, readEffectivePropertyIdentityRollout, recordPropertyIdentityDriveDraft, resolvePartnerScope, savePartnerPropertyOffer, withdrawPartnerProperty } from "./property-identity.js";
+import { handleAgencyWalletRequest } from "./agency-wallets.js";
 
 export const serviceName = "office-api";
 
@@ -13,6 +17,7 @@ export const ownedRoutes = [
   "/api/v1/public/session-context",
   "/api/v1/public/ai-search",
   "/api/v1/public/client-intents",
+  "/api/v1/public/property-identity",
   "/api/v1/platform/market-insights/refresh",
   "/api/v1/admin/intake/process-drive-folder",
   "/api/v1/admin/context",
@@ -29,13 +34,25 @@ export const ownedRoutes = [
   "/api/v1/admin/partner-object-visibility",
   "/api/v1/admin/members",
   "/api/v1/admin/property-intakes",
+  "/api/v1/admin/property-identity/submissions",
   "/api/v1/admin/client-intents",
   "/api/v1/admin/cobroker-requests",
   "/api/v1/admin/deal-rooms",
+  "/api/v1/admin/actor-context",
+  "/api/v1/admin/corporate-wallets",
 ] as const;
+
+export const routeAuthPolicies: ReadonlyArray<{ matches: (path: string) => boolean; policy: ApiAuthPolicy }> = [
+  { matches: (path) => path === "/healthz" || path === "/readyz" || path.startsWith("/api/v1/public/"), policy: "PUBLIC" },
+  { matches: (path) => path === "/api/v1/platform/market-insights/refresh", policy: "LEGACY_SERVICE_AUTH" },
+  { matches: (path) => path.startsWith("/api/v1/admin/"), policy: "ACTOR_AUTH_REQUIRED" },
+];
+
+export function authPolicyForPath(path: string) { return routeAuthPolicies.find((entry) => entry.matches(path))?.policy; }
 
 const port = Number(process.env.PORT ?? 8080);
 const prisma = new PrismaClient();
+
 const storage = new Storage();
 const storageBucketName = process.env.STORAGE_BUCKET ?? "kvartal-dev-property-assets";
 const storageBucket = storage.bucket(storageBucketName);
@@ -95,6 +112,16 @@ const supportedDriveDocumentMimeTypes = new Set([
   "text/plain",
   "application/vnd.google-apps.document",
   "application/vnd.google-apps.spreadsheet",
+]);
+const allowedManualPropertyDocumentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/plain",
+  "image/jpeg",
+  "image/png",
 ]);
 const allowedInteractionAttachmentMimeTypes = new Set([
   "application/pdf",
@@ -249,15 +276,14 @@ function tagsFromBody(value: unknown) {
     .filter(Boolean) ?? [];
 }
 
+const requestActors = new WeakMap<IncomingMessage, ActorContext>();
+
 function hasAdminWriteAccess(request: IncomingMessage) {
-  const expectedToken = process.env.ADMIN_WRITE_TOKEN;
-  const suppliedToken = request.headers["x-kvartal-admin-write-token"];
-
-  if (!expectedToken) {
-    return false;
-  }
-
-  return typeof suppliedToken === "string" && suppliedToken.trim() === expectedToken.trim();
+  const actor = requestActors.get(request);
+  if (!actor) return false;
+  if (actor.platformRoles.some((role) => role === "platform_owner" || role === "platform_admin")) return true;
+  if (actor.organizationMemberships.some((membership) => membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"))) return true;
+  return actor.officeMemberships.some((membership) => membership.roles.some((role) => role === "office_owner" || role === "office_admin" || role === "broker"));
 }
 
 function hasAuthenticatedInvoker(request: IncomingMessage) {
@@ -1849,6 +1875,68 @@ async function getExchangeRates(): Promise<Record<string, number>> {
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const correlationId = typeof request.headers["x-correlation-id"] === "string" ? request.headers["x-correlation-id"] : authRandomUUID();
+  const policy = authPolicyForPath(url.pathname);
+  let actorContext: ActorContext | null = null;
+  if (!policy) { sendError(response, 500, "DEPLOYMENT_PREREQUISITE_MISSING", "Route authentication policy is missing."); return; }
+  if (policy === "ACTOR_AUTH_REQUIRED") {
+    try {
+      const actor = await resolveUserActor({
+        authorization: request.headers.authorization, correlationId,
+        verifySession: (token, checkRevoked) => firebaseAdminAuth().verifySessionCookie(token, checkRevoked),
+        findIdentity: (provider, subject) => prisma.appUserExternalIdentity.findUnique({ where: { provider_subject: { provider, subject } }, include: { appUser: { include: { platformRoleAssignments: true, organizationMemberships: true, officeMemberships: true } } } }),
+        bindPreprovisionedIdentity: (claim) => bindPreprovisionedFirebaseIdentity(prisma, claim),
+      });
+      actorContext = actor;
+      requestActors.set(request, actor);
+      const platformOwnerAccess = actor.platformRoles.includes("platform_owner");
+      if (platformOwnerAccess) {
+        await prisma.auditLog.create({
+          data: {
+            actorUserId: actor.appUserId,
+            actorUid: actor.subject,
+            action: "PLATFORM_OWNER_OFFICE_API_ACCESS",
+            entityType: "OfficeApiRoute",
+            entityId: url.pathname,
+            after: { method: request.method ?? "GET", correlationId },
+          },
+        });
+      }
+      if (url.pathname === "/api/v1/admin/actor-context" && request.method === "GET") {
+        const organizationIds = [...new Set([
+          ...actor.organizationMemberships
+            .filter((membership) => membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"))
+            .map((membership) => membership.organizationId),
+          ...actor.officeMemberships
+            .filter((membership) => membership.roles.some((role) => role === "office_owner" || role === "office_admin"))
+            .map((membership) => membership.organizationId),
+        ])];
+        const organizations = platformOwnerAccess || organizationIds.length
+          ? await prisma.organization.findMany({
+              where: platformOwnerAccess ? { status: "active" } : { id: { in: organizationIds }, status: "active" },
+              select: { id: true, slug: true, legalName: true },
+              orderBy: { legalName: "asc" },
+            })
+          : [];
+        sendJson(response, 200, { actor, organizations });
+        return;
+      }
+    } catch (caught) {
+      const error = caught as { code?: string; status?: number; message?: string };
+      const status = error.status ?? 503;
+      sendJson(response, status, structuredAuthError((error.code ?? "DEPLOYMENT_PREREQUISITE_MISSING") as never, error.status ? (error.message ?? "Sign in again.") : "The authentication service is temporarily unavailable.", correlationId)); return;
+    }
+  }
+
+  if (url.pathname.startsWith("/api/v1/admin/property-identity/")) {
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
+    if (await handlePropertyIdentityRequest({ request, response, url, prisma, actor: actorContext })) return;
+  }
+
+  if (url.pathname.startsWith("/api/v1/admin/corporate-wallets")) {
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
+    if (await handleAgencyWalletRequest({ request, response, url, prisma, actor: actorContext })) return;
+  }
 
   if (url.pathname === "/healthz") {
     sendJson(response, 200, { ok: true, service: serviceName });
@@ -2218,12 +2306,45 @@ const server = createServer(async (request, response) => {
     const hiddenObjectIds = hiddenOverrides.map((item: { propertyObjectId: string }) => item.propertyObjectId);
     const effectiveOwnerSlug = ownerSlug ?? (tenantSiteConfig?.showPartnerObjects === false ? tenantOrganizationSlug : undefined);
 
+    const activeGrants = tenantSiteConfig ? await prisma.propertyPublicationGrant.findMany({
+      where: {
+        status: "ACTIVE",
+        publicationSurface: { siteConfigId: tenantSiteConfig.id, status: "ACTIVE" },
+        identityProfile: { status: "VERIFIED_INTERNAL" },
+        partnerOffer: {
+          status: "ACTIVE",
+          ...(effectiveOwnerSlug ? { sellerOrganization: { slug: effectiveOwnerSlug } } : {}),
+          representationRight: { status: "VERIFIED" },
+        },
+        ...(hiddenObjectIds.length ? { propertyObjectId: { notIn: hiddenObjectIds } } : {}),
+      },
+      orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+      take,
+      include: {
+        identityProfile: true,
+        partnerOffer: { include: { sellerOrganization: true, sellerOffice: true } },
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+          },
+        },
+      },
+    }) : [];
+    const registryObjectIds = activeGrants.map((grant) => grant.propertyObjectId);
+    const excludedObjectIds = [...new Set([...hiddenObjectIds, ...registryObjectIds])];
+
     const objects = await prisma.propertyObject.findMany({
       where: {
         status: "published",
         visibility: "public",
         canBeShownByOtherOffices: true,
-        ...(hiddenObjectIds.length ? { id: { notIn: hiddenObjectIds } } : {}),
+        ...(excludedObjectIds.length ? { id: { notIn: excludedObjectIds } } : {}),
         ...(effectiveOwnerSlug ? { ownerOrganization: { slug: effectiveOwnerSlug } } : {}),
       },
       orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
@@ -2252,7 +2373,77 @@ const server = createServer(async (request, response) => {
       visibilityRule: effectiveOwnerSlug
         ? "status=published AND visibility=public AND canBeShownByOtherOffices=true AND ownerOrganization=tenant"
         : "status=published AND visibility=public AND canBeShownByOtherOffices=true",
-      objects: objects.map((object: PublicObjectRow) => serializeObject(object, language)),
+      objects: [
+        ...activeGrants.map((grant) => ({
+          ...serializeObject(grant.propertyObject, language),
+          priceAmount: decimalToString(grant.partnerOffer.priceAmount),
+          priceCurrency: grant.partnerOffer.priceCurrency,
+          sellerSide: {
+            organizationSlug: grant.partnerOffer.sellerOrganization.slug,
+            organizationName: grant.partnerOffer.sellerOrganization.legalName,
+            officeSlug: grant.partnerOffer.sellerOffice.slug,
+            officeName: grant.partnerOffer.sellerOffice.legalName,
+          },
+          propertyIdentityId: grant.identityProfile.stableId,
+          publicationGrantId: grant.id,
+          source: "PROPERTY_IDENTITY_REGISTRY",
+        })),
+        ...objects.map((object: PublicObjectRow) => ({ ...serializeObject(object, language), source: "LEGACY_GRANDFATHERED" })),
+      ].slice(0, take),
+    });
+    return;
+  }
+
+  const publicIdentityMatch = url.pathname.match(/^\/api\/v1\/public\/property-identity\/([^/]+)$/);
+  if (publicIdentityMatch && request.method === "GET") {
+    const stableId = decodeURIComponent(publicIdentityMatch[1]);
+    const profile = await prisma.propertyIdentityProfile.findUnique({
+      where: { stableId },
+      include: {
+        canonicalVersions: { where: { isCurrent: true }, orderBy: { versionNumber: "desc" }, take: 1 },
+        token: { include: { platformRegistryWallet: true } },
+        representationRights: {
+          where: { status: { in: ["ATTESTED", "VERIFIED"] } },
+          include: { organization: true, office: true, corporateWallet: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+    });
+    if (!profile) { sendError(response, 404, "property_identity_not_found", "Property Identity was not found."); return; }
+    const token = profile.token;
+    const publicStatus = profile.status === "SUSPENDED" || token?.status === "SUSPENDED" ? "SUSPENDED"
+      : profile.status === "REVOKED" || token?.status === "REVOKED" ? "REVOKED"
+      : token && ["ACTIVE", "REASSIGNED"].includes(token.status) && token.reconciliationStatus === "IN_SYNC" ? "VERIFIED"
+      : "VERIFICATION_PENDING";
+    const explorerBase = token?.chainId === 56 ? "https://bscscan.com" : "https://testnet.bscscan.com";
+    sendJson(response, 200, {
+      stableId: profile.stableId,
+      identityStatus: profile.status,
+      publicStatus,
+      subjectScope: profile.subjectScope,
+      jurisdiction: profile.jurisdiction,
+      canonicalVersion: profile.canonicalVersions[0] ? { versionNumber: profile.canonicalVersions[0].versionNumber, snapshotHash: profile.canonicalVersions[0].snapshotHash, createdAt: profile.canonicalVersions[0].createdAt } : null,
+      token: token ? {
+        tokenId: token.tokenId.toFixed(0),
+        chainId: token.chainId,
+        contractAddress: token.contractAddress,
+        registryWallet: token.platformRegistryWallet?.walletAddress ?? token.ownerAddress,
+        status: token.status,
+        reconciliationStatus: token.reconciliationStatus,
+        issuedAt: token.issuedAt,
+        lastReconciledAt: token.lastReconciledAt,
+        transactionUrl: token.lastTxHash ? `${explorerBase}/tx/${token.lastTxHash}` : null,
+        contractUrl: `${explorerBase}/address/${token.contractAddress}`,
+      } : null,
+      representations: profile.representationRights.map((right) => ({
+        organization: right.organization.legalName,
+        office: right.office.legalName,
+        walletAddress: right.corporateWallet?.walletAddress ?? null,
+        status: right.status,
+        validFrom: right.validFrom,
+        validUntil: right.validUntil,
+      })),
+      disclaimer: "This record confirms registry provenance only. It is not proof of legal title, ownership, valuation, or authority to sell.",
     });
     return;
   }
@@ -2627,6 +2818,12 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
+    if (!hasPartnerOrganizationAccess(actorContext, organization.id)) {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope.");
+      return;
+    }
+
     const sharedPublicInventoryCount = await prisma.propertyObject.count({
       where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
     });
@@ -2765,13 +2962,24 @@ const server = createServer(async (request, response) => {
   }
 
   if (url.pathname === "/api/v1/admin/objects" && request.method === "GET") {
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
     const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
     const language = url.searchParams.get("language") ?? "ru";
     const take = Math.min(Number(url.searchParams.get("limit") ?? 100), 200);
 
+    const requestedOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, select: { id: true } });
+    if (!requestedOrganization) { sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`); return; }
+    if (!hasPartnerOrganizationAccess(actorContext, requestedOrganization.id)) {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation is outside the signed-in user's access scope.");
+      return;
+    }
+
     const objects = await prisma.propertyObject.findMany({
       where: {
-        ownerOrganization: { slug: organizationSlug },
+        OR: [
+          { ownerOrganizationId: requestedOrganization.id },
+          { representationRights: { some: { organizationId: requestedOrganization.id, status: { in: ["DECLARED", "EVIDENCE_PENDING", "ATTESTED", "VERIFIED", "SUSPENDED", "DISPUTED"] } } } },
+        ],
       },
       orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
       take,
@@ -2787,6 +2995,7 @@ const server = createServer(async (request, response) => {
           take: 5,
         },
         documents: {
+          where: { ownerOrganizationId: requestedOrganization.id },
           orderBy: [{ documentType: "asc" }, { updatedAt: "desc" }],
           include: {
             versions: { orderBy: { versionNumber: "desc" }, take: 5 },
@@ -2802,6 +3011,17 @@ const server = createServer(async (request, response) => {
             },
           },
         },
+        identityProfile: true,
+        representationRights: {
+          where: { organizationId: requestedOrganization.id },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          include: {
+            organization: true,
+            office: true,
+            offers: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
+        },
       },
     });
 
@@ -2809,9 +3029,24 @@ const server = createServer(async (request, response) => {
       ok: true,
       service: serviceName,
       organizationSlug,
-      scopeRule: "ownerOrganization.slug = requested organization",
-      objects: objects.map((object: AdminObjectRow) => ({
+      scopeRule: "canonical owner or active representation right for requested organization",
+      objects: objects.map((object) => {
+        const representation = object.representationRights[0];
+        const offer = representation?.offers[0];
+        const commercialTerms = offer?.commercialTerms && typeof offer.commercialTerms === "object" && !Array.isArray(offer.commercialTerms)
+          ? offer.commercialTerms as Record<string, unknown>
+          : {};
+        return {
         ...serializeObject(object, language, "admin"),
+        priceAmount: offer?.priceAmount ? decimalToString(offer.priceAmount) : decimalToString(object.priceAmount),
+        priceCurrency: offer?.priceCurrency ?? object.priceCurrency,
+        priceDisplay: typeof commercialTerms.priceDisplay === "string" ? commercialTerms.priceDisplay : serializeObject(object, language, "admin").priceDisplay,
+        sellerSide: representation ? {
+          organizationSlug: representation.organization.slug,
+          organizationName: representation.organization.legalName,
+          officeSlug: representation.office.slug,
+          officeName: representation.office.legalName,
+        } : serializeObject(object, language, "admin").sellerSide,
         titleEn: object.localizations.find((item) => item.language === "en")?.title ?? null,
         descriptionEn: object.localizations.find((item) => item.language === "en")?.description ?? null,
         addressDisplayEn: object.localizations.find((item) => item.language === "en")?.addressDisplay ?? null,
@@ -2822,9 +3057,16 @@ const server = createServer(async (request, response) => {
         visibility: object.visibility,
         canBeShownByOtherOffices: object.canBeShownByOtherOffices,
         mediaCount: object.media.length,
+        identity: object.identityProfile ? {
+          stableId: object.identityProfile.stableId,
+          status: object.identityProfile.status,
+          representationStatus: object.representationRights[0]?.status ?? null,
+          offerStatus: object.representationRights[0]?.offers[0]?.status ?? null,
+          isOriginator: object.ownerOrganizationId === requestedOrganization.id,
+        } : null,
         createdAt: object.createdAt.toISOString(),
         updatedAt: object.updatedAt.toISOString(),
-      })),
+      }; }),
     });
     return;
   }
@@ -3097,6 +3339,8 @@ const server = createServer(async (request, response) => {
       sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
       return;
     }
+    try { resolvePartnerScope(actorContext!, { organizationId: context.organization.id, officeId: context.office.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope."); return; }
 
     const partners = await prisma.organization.findMany({
       where: {
@@ -3109,8 +3353,13 @@ const server = createServer(async (request, response) => {
         partnerMetrics: true,
         _count: {
           select: {
-            propertyObjects: {
-              where: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
+            propertyOffers: {
+              where: {
+                status: "ACTIVE",
+                representationRight: { status: { in: ["ATTESTED", "VERIFIED"] }, corporateWallet: { status: "ACTIVE" } },
+                publicationGrants: { some: { status: "ACTIVE", publicationSurface: { status: "ACTIVE" } } },
+                propertyObject: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
+              },
             },
           },
         },
@@ -3171,7 +3420,7 @@ const server = createServer(async (request, response) => {
           defaultLanguage: partner.defaultLanguage,
           status: partner.status,
           primaryOffice: office ? { id: office.id, slug: office.slug, legalName: office.legalName, city: office.city, country: office.country } : null,
-          sharedObjectCount: partner._count.propertyObjects,
+          sharedObjectCount: partner._count.propertyOffers,
           activeInteractionCount: activeByOrganization.get(partner.id) ?? 0,
           unreadMessageCount: unreadByOrganization.get(partner.id) ?? 0,
           metrics: {
@@ -3182,6 +3431,47 @@ const server = createServer(async (request, response) => {
           },
         };
       }),
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/v1/admin/client-intents" && request.method === "GET") {
+    const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
+    const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
+
+    if (!actorContext || !context) {
+      sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+    try {
+      resolvePartnerScope(actorContext, { organizationId: context.organization.id, officeId: context.office.id });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope.");
+      return;
+    }
+
+    const clientIntents = await prisma.clientIntent.findMany({
+      where: {
+        sourceOrganizationId: context.organization.id,
+        sourceOfficeId: context.office.id,
+        status: { notIn: ["closed", "archived"] },
+      },
+      include: { market: true },
+      orderBy: { updatedAt: "desc" },
+      take: Math.min(Number(url.searchParams.get("limit") ?? 100), 200),
+    });
+
+    sendJson(response, 200, {
+      ok: true,
+      clientIntents: clientIntents.map((intent) => ({
+        id: intent.id,
+        requirementText: intent.requirementText,
+        status: intent.status,
+        preferredLanguage: intent.preferredLanguage,
+        preferredCurrency: intent.preferredCurrency,
+        market: intent.market ? { id: intent.market.id, city: intent.market.city, country: intent.market.country } : null,
+        updatedAt: intent.updatedAt,
+      })),
     });
     return;
   }
@@ -3198,6 +3488,8 @@ const server = createServer(async (request, response) => {
       sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' was not found.`);
       return;
     }
+    try { resolvePartnerScope(actorContext!, { organizationId: context.organization.id, officeId: context.office.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope."); return; }
 
     const partner = await prisma.organization.findFirst({
       where: { OR: [{ id: partnerKey }, { slug: partnerKey }] },
@@ -3208,30 +3500,41 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const objects = await prisma.propertyObject.findMany({
+    const offerAccessTime = new Date();
+    const offers = await prisma.partnerOffer.findMany({
       where: {
-        ownerOrganizationId: partner.id,
-        status: "published",
-        visibility: "public",
-        canBeShownByOtherOffices: true,
+        sellerOrganizationId: partner.id,
+        status: "ACTIVE",
+        validFrom: { lte: offerAccessTime },
+        OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }],
+        representationRight: { status: { in: ["ATTESTED", "VERIFIED"] }, corporateWallet: { status: "ACTIVE" }, AND: [{ OR: [{ validFrom: null }, { validFrom: { lte: offerAccessTime } }] }, { OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }] }] },
+        publicationGrants: { some: { status: "ACTIVE", validFrom: { lte: offerAccessTime }, OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }], publicationSurface: { status: "ACTIVE" } } },
+        propertyObject: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
       },
-      orderBy: [{ publishedAt: "desc" }, { updatedAt: "desc" }],
+      orderBy: [{ validFrom: "desc" }, { updatedAt: "desc" }],
       take: Math.min(Number(url.searchParams.get("limit") ?? 50), 100),
       include: {
-        market: true,
-        ownerOrganization: true,
-        ownerOffice: true,
-        informationOwnerOrganization: true,
-        informationOwnerOffice: true,
-        localizations: true,
-        media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+        propertyObject: {
+          include: {
+            market: true,
+            ownerOrganization: true,
+            ownerOffice: true,
+            informationOwnerOrganization: true,
+            informationOwnerOffice: true,
+            localizations: true,
+            media: { where: { public: true }, orderBy: { sortOrder: "asc" }, take: 3 },
+          },
+        },
       },
     });
 
     sendJson(response, 200, {
       ok: true,
       partner: { id: partner.id, slug: partner.slug, legalName: partner.legalName, defaultLanguage: partner.defaultLanguage },
-      objects: objects.map((object) => serializeObject(object as PublicObjectRow, language, "admin")),
+      objects: offers.map((offer) => ({
+        ...serializeObject(offer.propertyObject as PublicObjectRow, language, "admin"),
+        partnerOfferId: offer.id,
+      })),
     });
     return;
   }
@@ -3243,8 +3546,14 @@ const server = createServer(async (request, response) => {
     const context = await getInteractionSideContext(organizationSlug, url.searchParams.get("officeSlug") ?? undefined);
     const attachmentId = decodeURIComponent(attachmentDownloadMatch[1]);
 
-    if (!context) {
+    if (!actorContext || !context) {
       sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+    try {
+      resolvePartnerScope(actorContext, { organizationId: context.organization.id, officeId: context.office.id });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope.");
       return;
     }
 
@@ -3591,9 +3900,8 @@ const server = createServer(async (request, response) => {
     type Body = {
       organizationSlug?: string;
       officeSlug?: string;
-      targetOrganizationId?: string;
-      targetOfficeId?: string;
-      propertyObjectId?: string;
+      partnerOfferId?: string;
+      clientIntentId?: string;
       type?: string;
       priority?: string;
       subject?: string;
@@ -3606,15 +3914,16 @@ const server = createServer(async (request, response) => {
 
     const body = await readJsonBody<Body>(request);
     const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
-    const propertyObjectId = optionalString(body.propertyObjectId);
-    const targetOrganizationId = optionalString(body.targetOrganizationId);
-    const targetOfficeId = optionalString(body.targetOfficeId);
+    const partnerOfferId = optionalString(body.partnerOfferId);
+    const clientIntentId = optionalString(body.clientIntentId);
     const message = optionalString(body.message);
 
-    if (!context || !propertyObjectId || !targetOrganizationId || !targetOfficeId || !message) {
-      sendError(response, 400, "required_fields_missing", "organization, target partner, object, and message are required.");
+    if (!actorContext || !context || !partnerOfferId || !clientIntentId || !message) {
+      sendError(response, 400, "required_fields_missing", "organization, partner offer, client intent, and message are required.");
       return;
     }
+    try { resolvePartnerScope(actorContext, { organizationId: context.organization.id, officeId: context.office.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected buyer-side organisation or office is outside the signed-in user's scope."); return; }
 
     if (message.length > 5000) {
       sendError(response, 400, "message_too_long", "Message must be 5000 characters or less.");
@@ -3636,18 +3945,45 @@ const server = createServer(async (request, response) => {
       };
     }
 
-    const [propertyObject, blocked, actor] = await Promise.all([
-      prisma.propertyObject.findFirst({
+    const offerAccessTime = new Date();
+    const [offer, clientIntent] = await Promise.all([
+      prisma.partnerOffer.findFirst({
         where: {
-          id: propertyObjectId,
-          ownerOrganizationId: targetOrganizationId,
-          ownerOfficeId: targetOfficeId,
-          status: "published",
-          visibility: "public",
-          canBeShownByOtherOffices: true,
+          id: partnerOfferId,
+          status: "ACTIVE",
+          validFrom: { lte: offerAccessTime },
+          OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }],
+          representationRight: { status: { in: ["ATTESTED", "VERIFIED"] }, corporateWallet: { status: "ACTIVE" }, AND: [{ OR: [{ validFrom: null }, { validFrom: { lte: offerAccessTime } }] }, { OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }] }] },
+          publicationGrants: { some: { status: "ACTIVE", validFrom: { lte: offerAccessTime }, OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }], publicationSurface: { status: "ACTIVE" } } },
+          propertyObject: { status: "published", visibility: "public", canBeShownByOtherOffices: true },
         },
+        include: { representationRight: true, publicationGrants: { where: { status: "ACTIVE", validFrom: { lte: offerAccessTime }, OR: [{ validUntil: null }, { validUntil: { gt: offerAccessTime } }] }, orderBy: { validFrom: "desc" }, take: 1 }, propertyObject: true },
       }),
-      prisma.blockedPartner.findFirst({
+      prisma.clientIntent.findFirst({ where: { id: clientIntentId, sourceOrganizationId: context.organization.id, sourceOfficeId: context.office.id, status: { notIn: ["closed", "archived"] } } }),
+    ]);
+
+    if (!offer) {
+      sendError(response, 404, "active_partner_offer_not_found", "The selected published partner offer is no longer available.");
+      return;
+    }
+    if (!clientIntent) {
+      sendError(response, 404, "client_intent_not_found", "The buyer-side client intent was not found for the selected office.");
+      return;
+    }
+    if (offer.sellerOrganizationId === context.organization.id) {
+      sendError(response, 409, "self_interaction_forbidden", "A partner request must target another agency's offer.");
+      return;
+    }
+
+    const targetOrganizationId = offer.sellerOrganizationId;
+    const targetOfficeId = offer.sellerOfficeId;
+    const propertyObjectId = offer.propertyObjectId;
+    const publicationGrant = offer.publicationGrants[0];
+    if (!publicationGrant) {
+      sendError(response, 409, "publication_grant_unavailable", "The exact publication grant for this offer is no longer active.");
+      return;
+    }
+    const blocked = await prisma.blockedPartner.findFirst({
         where: {
           OR: [
             {
@@ -3660,14 +3996,7 @@ const server = createServer(async (request, response) => {
             },
           ],
         },
-      }),
-      upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName)),
-    ]);
-
-    if (!propertyObject) {
-      sendError(response, 404, "public_object_not_found", "Object is not available in the shared public inventory for this partner.");
-      return;
-    }
+      });
 
     if (blocked) {
       sendError(response, 403, "partner_unavailable", "Partner is unavailable for new requests.");
@@ -3682,7 +4011,11 @@ const server = createServer(async (request, response) => {
           targetOrganizationId,
           targetOfficeId,
           propertyObjectId,
-          createdByUserId: actor.id,
+          partnerOfferId: offer.id,
+          representationRightId: offer.representationRightId,
+          publicationGrantId: publicationGrant.id,
+          clientIntentId: clientIntent.id,
+          createdByUserId: actorContext.appUserId,
           type: (["info_request", "commercial", "cooperation"].includes(optionalString(body.type) ?? "") ? body.type : "info_request") as never,
           priority: (["normal", "urgent", "critical"].includes(optionalString(body.priority) ?? "") ? body.priority : "normal") as never,
           conversationLanguage: conversationLanguage as never,
@@ -3690,7 +4023,7 @@ const server = createServer(async (request, response) => {
           initialMessage: message,
           messages: {
             create: {
-              senderUserId: actor.id,
+              senderUserId: actorContext.appUserId,
               senderOrganizationId: context.organization.id,
               senderOfficeId: context.office.id,
               originalText: message,
@@ -3705,14 +4038,14 @@ const server = createServer(async (request, response) => {
             create: [
               {
                 eventType: "created",
-                actorUserId: actor.id,
+                actorUserId: actorContext.appUserId,
                 actorOrganizationId: context.organization.id,
                 actorOfficeId: context.office.id,
-                payload: { priority: optionalString(body.priority) ?? "normal", type: optionalString(body.type) ?? "info_request" },
+                payload: { priority: optionalString(body.priority) ?? "normal", type: optionalString(body.type) ?? "info_request", partnerOfferId: offer.id, representationRightId: offer.representationRightId, clientIntentId: clientIntent.id },
               },
               {
                 eventType: "message_sent",
-                actorUserId: actor.id,
+                actorUserId: actorContext.appUserId,
                 actorOrganizationId: context.organization.id,
                 actorOfficeId: context.office.id,
                 payload: { initial: true },
@@ -4285,8 +4618,14 @@ const server = createServer(async (request, response) => {
     const context = await getInteractionSideContext(optionalString(body.organizationSlug) ?? "kvartal-moscow", optionalString(body.officeSlug));
     const interactionId = decodeURIComponent(interactionDealRoomMatch[1]);
 
-    if (!context) {
+    if (!actorContext || !context) {
       sendError(response, 404, "organization_not_found", "Organization was not found.");
+      return;
+    }
+    try {
+      resolvePartnerScope(actorContext, { organizationId: context.organization.id, officeId: context.office.id });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope.");
       return;
     }
 
@@ -4318,33 +4657,23 @@ const server = createServer(async (request, response) => {
       return;
     }
 
-    const actor = await upsertInteractionActor(optionalString(body.actorEmail), optionalString(body.actorName));
-    const localization =
-      interaction.propertyObject.localizations.find((item) => item.language === interaction.conversationLanguage) ??
-      interaction.propertyObject.localizations.find((item) => item.language === "ru") ??
-      interaction.propertyObject.localizations[0];
-    const requirementText = [
-      interaction.subject ?? `Deal room from partner interaction ${interaction.id}`,
-      localization?.title ? `Object: ${localization.title}` : null,
-      interaction.initialMessage ? `Initial message: ${interaction.initialMessage}` : null,
-      optionalString(body.note) ? `Note: ${optionalString(body.note)}` : null,
-    ].filter(Boolean).join("\n\n");
+    if (!interaction.clientIntentId || !interaction.partnerOfferId || !interaction.representationRightId || !interaction.publicationGrantId) {
+      sendError(response, 409, "interaction_identity_snapshot_missing", "This legacy interaction has no exact offer and client-intent snapshot and cannot open a deal room until migrated.");
+      return;
+    }
 
     const result = await prisma.$transaction(async (tx) => {
-      const clientIntent = await tx.clientIntent.create({
-        data: {
-          sourceOrganizationId: interaction.initiatingOrganizationId,
-          sourceOfficeId: interaction.initiatingOfficeId,
-          marketId: interaction.propertyObject.marketId,
-          preferredLanguage: interaction.conversationLanguage,
-          preferredCurrency: context.organization.defaultCurrency as never,
-          requirementText,
-          status: "in_deal_room",
-        },
+      const clientIntent = await tx.clientIntent.update({
+        where: { id: interaction.clientIntentId! },
+        data: { status: "in_deal_room" },
       });
       const dealRoom = await tx.dealRoom.create({
         data: {
           clientIntentId: clientIntent.id,
+          partnerInteractionId: interaction.id,
+          partnerOfferId: interaction.partnerOfferId,
+          representationRightId: interaction.representationRightId,
+          publicationGrantId: interaction.publicationGrantId,
           sellerOrganizationId: interaction.targetOrganizationId,
           sellerOfficeId: interaction.targetOfficeId,
           buyerOrganizationId: interaction.initiatingOrganizationId,
@@ -4363,6 +4692,11 @@ const server = createServer(async (request, response) => {
               payload: {
                 interactionId,
                 propertyObjectId: interaction.propertyObjectId,
+                partnerOfferId: interaction.partnerOfferId,
+                representationRightId: interaction.representationRightId,
+                publicationGrantId: interaction.publicationGrantId,
+                clientIntentId: interaction.clientIntentId,
+                note: optionalString(body.note),
               },
             },
           },
@@ -4378,7 +4712,7 @@ const server = createServer(async (request, response) => {
         data: {
           interactionId,
           eventType: "deal_room_opened",
-          actorUserId: actor.id,
+          actorUserId: actorContext.appUserId,
           actorOrganizationId: context.organization.id,
           actorOfficeId: context.office.id,
           payload: { dealRoomId: dealRoom.id, clientIntentId: clientIntent.id },
@@ -5622,16 +5956,69 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (url.pathname === "/api/v1/admin/intake/process-drive-folder" && request.method === "POST") {
-    if (!hasAdminWriteAccess(request)) {
+  const registryDriveMatch = url.pathname.match(/^\/api\/v1\/admin\/property-identity\/submissions\/([^/]+)\/process-drive-folder$/);
+  if ((url.pathname === "/api/v1/admin/intake/process-drive-folder" || registryDriveMatch) && request.method === "POST") {
+    if (!registryDriveMatch && !hasAdminWriteAccess(request)) {
       sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
       return;
     }
+    if (registryDriveMatch && !actorContext) {
+      sendError(response, 401, "REAUTH_REQUIRED", "Sign in again.");
+      return;
+    }
 
-    const body = await readJsonBody<{ organizationSlug?: string; driveFolderUrl?: string; objectId?: string }>(request);
-    const organizationSlug = body.organizationSlug ?? "kvartal-moscow";
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; driveFolderUrl?: string; objectId?: string }>(request);
     const driveFolderUrl = body.driveFolderUrl ?? "";
     const targetObjectId = optionalString(body.objectId);
+    let organizationSlug = body.organizationSlug ?? "kvartal-moscow";
+    let organization: { id: string; slug: string; offices?: Array<{ id: string }> };
+    let office: { id: string };
+    let market: Awaited<ReturnType<typeof prisma.market.findFirst>>;
+    const registrySubmissionId = registryDriveMatch ? decodeURIComponent(registryDriveMatch[1]) : null;
+
+    if (registrySubmissionId) {
+      const submission = await prisma.propertyRegistrationSubmission.findUnique({
+        where: { id: registrySubmissionId },
+        include: { organization: true, office: true, market: true },
+      });
+      const organisationAdmin = actorContext!.organizationMemberships.some((membership) => membership.organizationId === submission?.organizationId && membership.roles.some((role) => role === "organization_owner" || role === "organization_admin"));
+      const officeWriter = actorContext!.officeMemberships.some((membership) => membership.organizationId === submission?.organizationId && membership.officeId === submission?.officeId && membership.roles.some((role) => role === "office_owner" || role === "office_admin" || role === "broker"));
+      if (!submission || submission.createdByUserId !== actorContext!.appUserId || (!organisationAdmin && !officeWriter)) {
+        sendError(response, 403, "FORBIDDEN", "Only the active submission author can run Drive intake.");
+        return;
+      }
+      if (["CANCELLED", "CLOSED", "CONFIRMING", "CANONICAL_CREATED", "LINKED_EXISTING"].includes(submission.status)) {
+        sendError(response, 409, "SUBMISSION_STATE_INVALID", "Drive intake cannot update this submission.");
+        return;
+      }
+      organization = { ...submission.organization, offices: [{ id: submission.office.id }] };
+      office = submission.office;
+      market = submission.market;
+      organizationSlug = submission.organization.slug;
+    } else {
+      const legacyOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, include: { offices: { orderBy: { legalName: "asc" } } } });
+      const selectedOffice = legacyOrganization?.offices.find((candidate) => candidate.slug === optionalString(body.officeSlug)) ?? legacyOrganization?.offices[0];
+      if (!legacyOrganization || !selectedOffice) {
+        sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
+        return;
+      }
+      organization = legacyOrganization;
+      office = selectedOffice;
+      try { resolvePartnerScope(actorContext!, { organizationId: organization.id, officeId: office.id }); }
+      catch { sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope."); return; }
+      market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
+      if (!market) {
+        sendError(response, 400, "market_not_found", "An active market is required.");
+        return;
+      }
+    }
+    if (!targetObjectId && !registrySubmissionId) {
+      const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
+      if (rollout.registryEnabled) {
+        sendError(response, 409, "property_identity_submission_required", "Create the property through a Property Identity registration submission; Drive files can be attached to that submission.");
+        return;
+      }
+    }
 
     // Extract folder ID from Drive URL
     const folderIdMatch = driveFolderUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
@@ -5756,21 +6143,40 @@ Schema:
       } catch { /* use empty extracted */ }
     }
 
-    // Find organization and office
-    const organization = await prisma.organization.findUnique({
-      where: { slug: organizationSlug },
-      include: { offices: { take: 1 } },
-    });
-    if (!organization || !organization.offices[0]) {
-      sendError(response, 404, "organization_not_found", `Organization '${organizationSlug}' not found.`);
+    if (registrySubmissionId) {
+      const requiredFields = ["title", "addressDisplay", "assetClass"];
+      const missingFields = requiredFields.filter((field) => extracted[field] === null || extracted[field] === undefined || extracted[field] === "");
+      const confidenceValue = Number(extracted.confidence ?? 0);
+      const confidence = confidenceValue >= 0.8 ? "high" : confidenceValue >= 0.5 ? "medium" : "low";
+      try {
+        const result = await recordPropertyIdentityDriveDraft({
+          prisma,
+          actor: actorContext!,
+          request,
+          submissionId: registrySubmissionId,
+          driveFolderUrl,
+          fileRefs: driveFiles.map((file) => `google-drive:${file.id}`),
+          extracted,
+          confidence,
+          missingFields,
+        });
+        sendJson(response, result.status, { ...result.payload, driveFilesFound: driveFiles.length, idempotentReplay: result.replay });
+      } catch (caught) {
+        const error = caught as { status?: number; code?: string; message?: string };
+        sendJson(response, error.status ?? 500, { ok: false, error: { code: error.code ?? "DRIVE_INTAKE_FAILED", message: error.status && error.status < 500 ? error.message : "Drive intake failed.", correlationId: actorContext!.correlationId } });
+      }
       return;
     }
-    const office = organization.offices[0];
-    const market = await prisma.market.findFirst({ where: { active: true }, orderBy: { city: "asc" } });
 
     const existingObject = targetObjectId
       ? await prisma.propertyObject.findFirst({
-          where: { id: targetObjectId, ownerOrganization: { slug: organizationSlug } },
+          where: {
+            id: targetObjectId,
+            OR: [
+              { ownerOrganization: { slug: organizationSlug } },
+              { representationRights: { some: { organizationId: organization.id, officeId: office.id, status: { notIn: ["REVOKED", "EXPIRED"] } } } },
+            ],
+          },
           include: {
             localizations: true,
             ownerOrganization: true,
@@ -5800,7 +6206,7 @@ Schema:
           ownerOfficeId: office.id,
           informationOwnerOrganizationId: organization.id,
           informationOwnerOfficeId: office.id,
-          createdByUserId: (await prisma.appUser.findFirst())!.id,
+          createdByUserId: actorContext!.appUserId,
           marketId: market!.id,
           assetClass: (extracted.assetClass as string ?? "other") as never,
           assetSubtype: extracted.assetSubtype as string ?? null,
@@ -5918,9 +6324,9 @@ Schema:
       const extension = extensionForFileName(data.originalFileName, data.mimeType);
       const storagePath = [
         "organizations",
-        newObject.ownerOrganizationId,
+        organization.id,
         "offices",
-        newObject.ownerOfficeId,
+        office.id,
         "objects",
         newObject.id,
         "private",
@@ -5968,8 +6374,8 @@ Schema:
             data: {
               id: documentId,
               propertyObjectId: newObject.id,
-              ownerOrganizationId: newObject.ownerOrganizationId,
-              ownerOfficeId: newObject.ownerOfficeId,
+              ownerOrganizationId: organization.id,
+              ownerOfficeId: office.id,
               title: data.originalFileName,
               storagePath,
               documentType: documentType as never,
@@ -6112,10 +6518,7 @@ Schema:
   }
 
   if (url.pathname === "/api/v1/admin/objects" && request.method === "POST") {
-    if (!hasAdminWriteAccess(request)) {
-      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
-      return;
-    }
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
 
     type CreateObjectBody = {
       organizationSlug?: string;
@@ -6195,16 +6598,84 @@ Schema:
       return;
     }
 
-    const createdByUser = await prisma.appUser.upsert({
-      where: { firebaseUid: "admin-console-system-user" },
-      update: { email: "admin-console@fixer.guru", active: true },
-      create: {
-        firebaseUid: "admin-console-system-user",
-        email: "admin-console@fixer.guru",
-        displayName: "KVARTAL Admin Console",
-        active: true,
-      },
-    });
+    try {
+      resolvePartnerScope(actorContext, { organizationId: organization.id, officeId: office.id });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's access scope.");
+      return;
+    }
+
+    const rollout = await readEffectivePropertyIdentityRollout(prisma, organization.id, market.id);
+    if (rollout.registryEnabled) {
+      const cadastralNumber = optionalString(body.cadastralNumber);
+      if (!cadastralNumber) {
+        sendError(response, 400, "official_identifier_required", "An official property identifier is required for this market.");
+        return;
+      }
+      const country = market.country.trim().toLocaleUpperCase("und");
+      const jurisdiction = country === "RUSSIA" || country === "RUSSIAN FEDERATION" || country === "RU" ? "RU"
+        : country === "GEORGIA" || country === "GE" ? "GE"
+        : country === "UNITED ARAB EMIRATES" || country === "UAE" || country === "AE" ? "AE"
+        : country === "ARMENIA" || country === "AM" ? "AM"
+        : country.slice(0, 2);
+      const assetClass = optionalString(body.assetClass) ?? "land";
+      const subjectScope = assetClass === "land" ? "LAND_PARCEL"
+        : assetClass === "apartment" ? "UNIT"
+        : assetClass === "development_project" || assetClass === "investment_project" ? "PROJECT"
+        : assetClass === "office" || assetClass === "retail" ? "PREMISE"
+        : "BUILDING";
+      try {
+        const result = await createPropertyFromUnifiedIngress({
+          prisma,
+          actor: actorContext,
+          request,
+          organizationId: organization.id,
+          officeId: office.id,
+          marketId: market.id,
+          jurisdiction,
+          subjectScope,
+          assetClass,
+          identityInput: {
+            title,
+            titleEn: optionalString(body.titleEn),
+            description: optionalString(body.description),
+            descriptionEn: optionalString(body.descriptionEn),
+            addressDisplay,
+            addressDisplayEn: optionalString(body.addressDisplayEn),
+            assetSubtype: optionalString(body.assetSubtype),
+            areaSqm: optionalString(body.areaSqm),
+            landAreaSqm: optionalString(body.landAreaSqm),
+            buildingAreaSqm: optionalString(body.buildingAreaSqm),
+            rentableAreaSqm: optionalString(body.rentableAreaSqm),
+            floorNumber: optionalString(body.floorNumber),
+            floorsTotal: optionalString(body.floorsTotal),
+            roomsCount: optionalString(body.roomsCount),
+            bedroomsCount: optionalString(body.bedroomsCount),
+            bathroomsCount: optionalString(body.bathroomsCount),
+          },
+          identifiers: [{
+            scheme: "CADASTRAL_ID",
+            authorityNamespace: jurisdiction === "RU" ? "ROSREESTR" : `${jurisdiction}:LAND_REGISTRY`,
+            rawValue: cadastralNumber,
+            sourceType: "partner_object_form",
+          }],
+          commercialInput: {
+            priceAmount: optionalString(body.priceAmount),
+            priceCurrency: optionalString(body.priceCurrency),
+            priceDisplay: optionalString(body.priceDisplay),
+            priceDisplayEn: optionalString(body.priceDisplayEn),
+            requestPublication: false,
+          },
+        });
+        if (result.replay) response.setHeader("idempotent-replay", "true");
+        const publicationRequested = optionalString(body.status) === "published" && optionalString(body.visibility) === "public";
+        sendJson(response, result.status, publicationRequested ? { ...result.payload, publicationPending: true, nextAction: "ATTACH_REPRESENTATION_DOCUMENTS_CONNECT_WALLET_AND_PUBLISH" } : result.payload);
+      } catch (caught) {
+        const error = caught as { status?: number; code?: string; message?: string };
+        sendError(response, error.status ?? 500, error.code ?? "unified_property_ingress_failed", error.status && error.status < 500 ? error.message ?? "The object could not be saved." : "The object could not be saved.");
+      }
+      return;
+    }
 
     const status = optionalString(body.status) === "published" ? "published" : "draft";
     const visibility = optionalString(body.visibility) === "public" ? "public" : optionalString(body.visibility) === "office_network" ? "office_network" : "private";
@@ -6216,7 +6687,7 @@ Schema:
         ownerOfficeId: office.id,
         informationOwnerOrganizationId: organization.id,
         informationOwnerOfficeId: office.id,
-        createdByUserId: createdByUser.id,
+        createdByUserId: actorContext.appUserId,
         marketId: market.id,
         status,
         visibility,
@@ -6287,6 +6758,65 @@ Schema:
     });
 
     sendJson(response, 201, { ok: true, object: serializeObject(propertyObject as AdminObjectRow, "ru", "admin") });
+    return;
+  }
+
+  const documentUploadUrlMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)\/documents\/upload-url$/);
+
+  if (documentUploadUrlMatch && request.method === "POST") {
+    const objectId = decodeURIComponent(documentUploadUrlMatch[1]);
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; originalFileName?: string; mimeType?: string }>(request);
+    const organization = await prisma.organization.findUnique({ where: { slug: optionalString(body.organizationSlug) ?? "kvartal-moscow" }, include: { offices: true } });
+    const office = organization?.offices.find((candidate) => candidate.slug === optionalString(body.officeSlug)) ?? organization?.offices[0];
+    if (!actorContext || !organization || !office) { sendError(response, 404, "organization_not_found", "The acting organisation or office was not found."); return; }
+    try { resolvePartnerScope(actorContext, { organizationId: organization.id, officeId: office.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope."); return; }
+    const propertyObject = await prisma.propertyObject.findFirst({ where: { id: objectId, OR: [{ ownerOrganizationId: organization.id }, { representationRights: { some: { organizationId: organization.id, officeId: office.id, status: { notIn: ["REVOKED", "EXPIRED"] } } } }] }, select: { id: true } });
+    if (!propertyObject) { sendError(response, 404, "object_not_found", "The object is not available to the acting agency."); return; }
+    const originalFileName = optionalString(body.originalFileName) ?? "document";
+    const mimeType = optionalString(body.mimeType) ?? "application/octet-stream";
+    if (!allowedManualPropertyDocumentMimeTypes.has(mimeType)) { sendError(response, 400, "unsupported_document_type", `MIME type '${mimeType}' is not allowed for property evidence.`); return; }
+    const documentId = randomUUID();
+    const extension = extensionForFileName(originalFileName, mimeType);
+    const storagePath = ["organizations", organization.id, "offices", office.id, "objects", objectId, "private", "documents", documentId, "v1", `original.${extension}`].join("/");
+    const [policy] = await storageBucket.file(storagePath).generateSignedPostPolicyV4({ expires: Date.now() + 15 * 60 * 1000, conditions: [["eq", "$Content-Type", mimeType], ["content-length-range", 1, maxPropertyDocumentBytes]], fields: { "Content-Type": mimeType } });
+    sendJson(response, 200, { ok: true, upload: { documentId, storagePath, url: policy.url, fields: policy.fields, method: "POST", maxBytes: maxPropertyDocumentBytes } });
+    return;
+  }
+
+  const documentConfirmMatch = url.pathname.match(/^\/api\/v1\/admin\/objects\/([^/]+)\/documents\/confirm$/);
+
+  if (documentConfirmMatch && request.method === "POST") {
+    const objectId = decodeURIComponent(documentConfirmMatch[1]);
+    const body = await readJsonBody<{ organizationSlug?: string; officeSlug?: string; documentId?: string; storagePath?: string; originalFileName?: string; documentType?: string; title?: string }>(request);
+    const organization = await prisma.organization.findUnique({ where: { slug: optionalString(body.organizationSlug) ?? "kvartal-moscow" }, include: { offices: true } });
+    const office = organization?.offices.find((candidate) => candidate.slug === optionalString(body.officeSlug)) ?? organization?.offices[0];
+    if (!actorContext || !organization || !office) { sendError(response, 404, "organization_not_found", "The acting organisation or office was not found."); return; }
+    try { resolvePartnerScope(actorContext, { organizationId: organization.id, officeId: office.id }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The selected organisation or office is outside the signed-in user's scope."); return; }
+    const propertyObject = await prisma.propertyObject.findFirst({ where: { id: objectId, OR: [{ ownerOrganizationId: organization.id }, { representationRights: { some: { organizationId: organization.id, officeId: office.id, status: { notIn: ["REVOKED", "EXPIRED"] } } } }] }, select: { id: true } });
+    if (!propertyObject) { sendError(response, 404, "object_not_found", "The object is not available to the acting agency."); return; }
+    const documentId = optionalString(body.documentId);
+    const storagePath = optionalString(body.storagePath);
+    const originalFileName = optionalString(body.originalFileName) ?? "document";
+    if (!documentId || !storagePath) { sendError(response, 400, "document_upload_required", "documentId and storagePath are required."); return; }
+    const expectedPrefix = ["organizations", organization.id, "offices", office.id, "objects", objectId, "private", "documents", documentId, "v1"].join("/");
+    if (!storagePath.startsWith(`${expectedPrefix}/`)) { sendError(response, 400, "invalid_storage_path", "The uploaded document path does not belong to this agency and object."); return; }
+    const file = storageBucket.file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) { sendError(response, 404, "uploaded_file_not_found", "The uploaded document was not found in Cloud Storage."); return; }
+    const [metadata] = await file.getMetadata();
+    const mimeType = metadata.contentType ?? "application/octet-stream";
+    const sizeBytes = Number(metadata.size ?? 0);
+    if (!allowedManualPropertyDocumentMimeTypes.has(mimeType) || sizeBytes < 1 || sizeBytes > maxPropertyDocumentBytes) { await file.delete({ ignoreNotFound: true }); sendError(response, 400, "invalid_uploaded_file", "Uploaded document type or size is not allowed."); return; }
+    const checksum = typeof metadata.md5Hash === "string" ? metadata.md5Hash : null;
+    const documentType = normalizePropertyDocumentType(body.documentType, originalFileName);
+    const created = await prisma.$transaction(async (tx) => {
+      const document = await tx.propertyDocument.create({ data: { id: documentId, propertyObjectId: objectId, ownerOrganizationId: organization.id, ownerOfficeId: office.id, title: optionalString(body.title) ?? originalFileName, storagePath, documentType: documentType as never, source: "manual", currentVersion: 1, originalFileName, mimeType, sizeBytes: BigInt(sizeBytes), checksum, uploadedByUserId: actorContext.appUserId, analysisStatus: "pending" } });
+      await tx.propertyDocumentVersion.create({ data: { propertyDocumentId: document.id, versionNumber: 1, storagePath, originalFileName, mimeType, sizeBytes: BigInt(sizeBytes), checksum } });
+      return document;
+    });
+    sendJson(response, 201, { ok: true, document: serializePropertyDocument(created as PropertyDocumentRow) });
     return;
   }
 
@@ -6518,14 +7048,17 @@ Schema:
   if (adminDocumentMatch && request.method === "GET") {
     const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
     const documentId = decodeURIComponent(adminDocumentMatch[1]);
+    const documentOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, select: { id: true } });
     const document = await prisma.propertyDocument.findFirst({
-      where: { id: documentId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
+      where: { id: documentId, ownerOrganizationId: documentOrganization?.id ?? "" },
     });
 
     if (!document) {
       sendError(response, 404, "document_not_found", "Document was not found.");
       return;
     }
+    try { resolvePartnerScope(actorContext!, { organizationId: document.ownerOrganizationId, officeId: document.ownerOfficeId }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The document is outside the signed-in user's scope."); return; }
 
     const [metadata] = await storageBucket.file(document.storagePath).getMetadata();
     streamStorageFile(response, document.storagePath, metadata, "private, max-age=300");
@@ -6540,13 +7073,20 @@ Schema:
 
     const organizationSlug = url.searchParams.get("organizationSlug") ?? "kvartal-moscow";
     const documentId = decodeURIComponent(adminDocumentMatch[1]);
+    const documentOrganization = await prisma.organization.findUnique({ where: { slug: organizationSlug }, select: { id: true } });
     const document = await prisma.propertyDocument.findFirst({
-      where: { id: documentId, propertyObject: { ownerOrganization: { slug: organizationSlug } } },
-      include: { versions: true },
+      where: { id: documentId, ownerOrganizationId: documentOrganization?.id ?? "" },
+      include: { versions: true, representationEvidence: { select: { representationRightId: true }, take: 1 } },
     });
 
     if (!document) {
       sendError(response, 404, "document_not_found", "Document was not found.");
+      return;
+    }
+    try { resolvePartnerScope(actorContext!, { organizationId: document.ownerOrganizationId, officeId: document.ownerOfficeId }); }
+    catch { sendError(response, 403, "FORBIDDEN", "The document is outside the signed-in user's scope."); return; }
+    if (document.representationEvidence.length) {
+      sendError(response, 409, "representation_evidence_in_use", "This document is attached to an active representation declaration. Withdraw the offer before deleting the evidence.");
       return;
     }
 
@@ -6656,13 +7196,11 @@ Schema:
   }
 
   if (objectMatch && request.method === "PATCH") {
-    if (!hasAdminWriteAccess(request)) {
-      sendError(response, 403, "admin_write_forbidden", "Admin write token is missing or invalid.");
-      return;
-    }
+    if (!actorContext) { sendError(response, 401, "REAUTH_REQUIRED", "Sign in again."); return; }
 
     type UpdateObjectBody = {
       organizationSlug?: string;
+      officeSlug?: string;
       action?: "save" | "publish" | "unpublish" | "archive";
       marketSlug?: string;
       assetClass?: string;
@@ -6696,17 +7234,36 @@ Schema:
     const organizationSlug = optionalString(body.organizationSlug) ?? "kvartal-moscow";
 
     const existing = await prisma.propertyObject.findFirst({
-      where: { id: objectId, ownerOrganization: { slug: organizationSlug } },
+      where: { id: objectId },
       include: {
         ownerOrganization: true,
         ownerOffice: true,
         market: true,
         localizations: true,
+        identityProfile: {
+          include: { canonicalVersions: { where: { isCurrent: true }, select: { id: true } } },
+        },
+        representationRights: {
+          where: { organization: { slug: organizationSlug }, status: { notIn: ["REVOKED", "EXPIRED"] } },
+          include: { organization: true, office: true },
+          orderBy: { updatedAt: "desc" },
+        },
       },
     });
 
-    if (!existing) {
+    const actingRight = existing?.representationRights.find((right) => !optionalString(body.officeSlug) || right.office.slug === optionalString(body.officeSlug)) ?? existing?.representationRights[0];
+    const actingAsOwner = existing?.ownerOrganization.slug === organizationSlug;
+    if (!existing || (!actingAsOwner && !actingRight)) {
       sendError(response, 404, "object_not_found", `Object '${objectId}' was not found for '${organizationSlug}'.`);
+      return;
+    }
+    const actingOrganizationId = actingRight?.organizationId ?? existing.ownerOrganizationId;
+    const actingOfficeId = actingRight?.officeId ?? existing.ownerOfficeId;
+
+    try {
+      resolvePartnerScope(actorContext, { organizationId: actingOrganizationId, officeId: actingOfficeId });
+    } catch {
+      sendError(response, 403, "FORBIDDEN", "This object is outside the signed-in user's organisation or office access scope.");
       return;
     }
 
@@ -6714,9 +7271,49 @@ Schema:
       ? await prisma.market.findUnique({ where: { slug: optionalString(body.marketSlug) } })
       : null;
     const action = body.action ?? "save";
-    const status = action === "publish" ? "published" : action === "archive" ? "archived" : action === "unpublish" ? "draft" : optionalString(body.status);
-    const visibility = action === "publish" ? "public" : action === "unpublish" ? "private" : optionalString(body.visibility);
+    let status = action === "publish" ? "published" : action === "archive" ? "archived" : action === "unpublish" ? "draft" : optionalString(body.status);
+    let visibility = action === "publish" ? "public" : action === "unpublish" ? "private" : optionalString(body.visibility);
     const mediaUrl = optionalString(body.mediaUrl);
+    if (status === "published") {
+      const rollout = await readEffectivePropertyIdentityRollout(prisma, actingOrganizationId, (market ?? existing.market).id);
+      const registryManagedPublication = rollout.mode === "STRICT" || !rollout.activationAt || existing.createdAt >= rollout.activationAt;
+      if (rollout.publishGateEnabled && registryManagedPublication && (existing.identityProfile?.status !== "VERIFIED_INTERNAL" || existing.identityProfile.canonicalVersions.length !== 1)) {
+        sendError(response, 409, "property_identity_verification_required", "The property must have one verified Property Identity profile and one current canonical version before publication.");
+        return;
+      }
+      if (rollout.registryEnabled && registryManagedPublication) {
+        try {
+          await publishPartnerProperty({ prisma, actor: actorContext, propertyObjectId: existing.id, organizationId: actingOrganizationId, officeId: actingOfficeId, commercialInput: { priceAmount: optionalString(body.priceAmount), priceCurrency: optionalString(body.priceCurrency), priceDisplay: optionalString(body.priceDisplay), priceDisplayEn: optionalString(body.priceDisplayEn) } });
+        } catch (caught) {
+          const error = caught as { status?: number; code?: string; message?: string };
+          sendError(response, error.status ?? 500, error.code ?? "partner_publication_failed", error.message ?? "The partner offer could not be published.");
+          return;
+        }
+      }
+    }
+    if ((action === "unpublish" || action === "archive") && existing.identityProfile) {
+      await withdrawPartnerProperty({ prisma, actor: actorContext, propertyObjectId: existing.id, organizationId: actingOrganizationId, officeId: actingOfficeId });
+      status = undefined;
+      visibility = undefined;
+    }
+
+    if (!actingAsOwner) {
+      if (action === "save") {
+        try {
+          await savePartnerPropertyOffer({ prisma, actor: actorContext, propertyObjectId: existing.id, organizationId: actingOrganizationId, officeId: actingOfficeId, commercialInput: { priceAmount: optionalString(body.priceAmount), priceCurrency: optionalString(body.priceCurrency), priceDisplay: optionalString(body.priceDisplay), priceDisplayEn: optionalString(body.priceDisplayEn) } });
+        } catch (caught) {
+          const error = caught as { status?: number; code?: string; message?: string };
+          sendError(response, error.status ?? 500, error.code ?? "partner_offer_save_failed", error.message ?? "The agency offer could not be saved.");
+          return;
+        }
+      }
+      const unchanged = await prisma.propertyObject.findUnique({
+        where: { id: existing.id },
+        include: { market: true, ownerOrganization: true, ownerOffice: true, informationOwnerOrganization: true, informationOwnerOffice: true, localizations: true, media: { orderBy: { sortOrder: "asc" } } },
+      });
+      sendJson(response, 200, { ok: true, object: serializeObject(unchanged as AdminObjectRow, "ru", "admin"), canonicalObjectChanged: false });
+      return;
+    }
 
     const updated = await prisma.propertyObject.update({
       where: { id: existing.id },

@@ -1,38 +1,39 @@
 import { NextResponse } from "next/server";
-import { fetchBackendJson } from "../../../../../lib/server-api";
-import { setPlatformSession, verifyFirebaseIdToken, type PlatformAccess } from "../../../../../lib/auth";
+import {
+  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE,
+  FIREBASE_SESSION_MAX_AGE_SECONDS, assertRecentLogin, createCsrfToken, firebaseAdminAuth,
+  assertValidSameOriginCsrf, canAccessAdminSurface, csrfCookieOptions, firebaseSessionCookieOptions, structuredAuthError, type ActorContext,
+} from "@kvartal/auth";
+import { fetchActorContextForSession } from "@/lib/server-api";
 
-type SessionRequest = {
-  idToken?: string;
-};
-
-type PlatformAccessResponse = PlatformAccess & {
-  ok: boolean;
-  email: string;
-};
+function configuredOrigin(request: Request) {
+  const configured = process.env.PLATFORM_ADMIN_ORIGIN;
+  if (configured) return configured;
+  if (process.env.NODE_ENV !== "production") return new URL(request.url).origin;
+  throw new ActorAuthError("DEPLOYMENT_PREREQUISITE_MISSING", 503, "Application origin is not configured.");
+}
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => null)) as SessionRequest | null;
-
-  if (!body?.idToken) {
-    return new NextResponse("Firebase ID token is required.", { status: 400 });
+  const correlationId = request.headers.get("x-correlation-id") ?? crypto.randomUUID();
+  try {
+    const origin = configuredOrigin(request);
+    assertValidSameOriginCsrf({ cookieHeader: request.headers.get("cookie"), header: request.headers.get("x-csrf-token"), origin: request.headers.get("origin"), allowedOrigin: origin });
+    const body = await request.json().catch(() => null) as { idToken?: string } | null;
+    if (!body?.idToken) throw new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
+    const auth = firebaseAdminAuth();
+    const decoded = await auth.verifyIdToken(body.idToken, true);
+    assertRecentLogin(decoded.auth_time, Math.floor(Date.now() / 1000));
+    if (decoded.email_verified !== true) throw new ActorAuthError("EMAIL_NOT_VERIFIED", 403, "A verified email is required.");
+    const sessionCookie = await auth.createSessionCookie(body.idToken, { expiresIn: FIREBASE_SESSION_MAX_AGE_SECONDS * 1000 });
+    const actor = (await fetchActorContextForSession<{ actor: ActorContext }>(process.env.PLATFORM_API_BASE_URL, "/api/v1/platform/actor-context", sessionCookie)).actor;
+    if (!canAccessAdminSurface(actor, "platform")) throw new ActorAuthError("FORBIDDEN", 403, "This account is not the platform owner.");
+    const response = NextResponse.json({ ok: true, correlationId });
+    response.cookies.set(FIREBASE_SESSION_COOKIE, sessionCookie, firebaseSessionCookieOptions);
+    response.cookies.set(CSRF_COOKIE, createCsrfToken(), csrfCookieOptions);
+    return response;
+  } catch (caught) {
+    const status = (caught as { status?: number }).status;
+    const error = caught instanceof ActorAuthError ? caught : status === 403 ? new ActorAuthError("FORBIDDEN", 403, (caught as Error).message) : status && status >= 500 ? new ActorAuthError("DEPLOYMENT_PREREQUISITE_MISSING", 503, "The authentication service is temporarily unavailable.") : new ActorAuthError("REAUTH_REQUIRED", 401, "Sign in again.");
+    return NextResponse.json(structuredAuthError(error.code, error.message, correlationId), { status: error.status });
   }
-
-  const session = await verifyFirebaseIdToken(body.idToken);
-
-  if (!session) {
-    return new NextResponse("Firebase ID token is invalid.", { status: 401 });
-  }
-
-  const access = await fetchBackendJson<PlatformAccessResponse>(
-    process.env.PLATFORM_API_BASE_URL,
-    `/api/v1/platform/access?email=${encodeURIComponent(session.email)}&displayName=${encodeURIComponent(session.name ?? "")}`,
-  );
-
-  if (!access?.authorized) {
-    return new NextResponse("Access is not granted in Fixer.guru platform.", { status: 403 });
-  }
-
-  await setPlatformSession(session);
-  return NextResponse.json({ ok: true, email: session.email });
 }

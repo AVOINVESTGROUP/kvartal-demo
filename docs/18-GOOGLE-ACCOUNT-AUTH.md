@@ -72,8 +72,11 @@ The server session still needs a cookie signing secret:
 2. Owner signs in with Google through Firebase Auth.
 3. Platform admin verifies the Firebase ID token.
 4. Platform API checks the Gmail in PostgreSQL.
-5. If the Gmail is in `FIXER_PLATFORM_OWNER_EMAILS`, the API bootstraps `platform_owner`.
-6. Owner adds partner organization owners and Fixer.guru team members by Gmail.
+5. The API resolves the verified external identity to an existing `AppUser` and active database memberships. For an active user already preprovisioned by Platform Admin but not yet bound, the first verified Google login may atomically bind the Firebase subject under ADR 0009. Email never creates a user, membership or role at request time.
+6. The only `platform_owner` account is `office@integrayachtsuae.com`. It is established by an audited one-time administrative procedure, not by an environment email list or an HTTP request.
+7. The owner adds partner organization users by Gmail. Organization roles never imply platform-owner rights.
+
+`FIXER_PLATFORM_OWNER_EMAILS` is retired and must not be used by application authorization. Existing values must be removed from runtime configuration after the database role migration is verified.
 
 ## 2026-05-31 Partner Admin Domain Fix
 

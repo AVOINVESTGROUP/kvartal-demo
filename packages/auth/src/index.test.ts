@@ -1,0 +1,125 @@
+import { describe, expect, it } from "vitest";
+import {
+  ActorAuthError, CSRF_COOKIE, FIREBASE_SESSION_COOKIE, assertRecentLogin, assertValidSameOriginCsrf, bindPreprovisionedFirebaseIdentity, createCsrfToken,
+  canAccessAdminSurface, hasExternalIdentityBindingReview, parseIfMatch, readRetentionConfig, requestHash, resolveUserActor,
+  readCookieHeader, secureActorHeaders, validateCsrf, validateIdempotencyKey, validateReason,
+} from "./index.js";
+
+describe("session and CSRF contract", () => {
+  it("creates an exact 32-byte base64url token and validates origin/double submit", () => {
+    const token = createCsrfToken((size) => Buffer.alloc(size, 7));
+    expect(Buffer.from(token, "base64url")).toHaveLength(32);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(validateCsrf({ cookie: token, header: token, origin: "https://admin.test", allowedOrigin: "https://admin.test" })).toBe(true);
+    expect(validateCsrf({ cookie: token, header: token, origin: "https://evil.test", allowedOrigin: "https://admin.test" })).toBe(false);
+    expect(CSRF_COOKIE).toBe("__Host-kvartal_csrf"); expect(FIREBASE_SESSION_COOKIE).toBe("__Host-kvartal_session");
+  });
+  it("enforces the exact recent login window", () => {
+    expect(() => assertRecentLogin(1_000, 1_360)).not.toThrow();
+    expect(() => assertRecentLogin(1_061, 1_000)).toThrowError(ActorAuthError);
+    expect(() => assertRecentLogin(999, 1_360)).toThrowError(/recent/i);
+  });
+  it("shares cookie parsing and CSRF rejection across every BFF", () => {
+    const token = createCsrfToken((size) => Buffer.alloc(size, 9));
+    expect(readCookieHeader(`a=1; ${CSRF_COOKIE}=token-1; b=2`, CSRF_COOKIE)).toBe("token-1");
+    expect(() => assertValidSameOriginCsrf({ cookieHeader: `${CSRF_COOKIE}=${token}`, header: token, origin: "https://admin.test", allowedOrigin: "https://admin.test" })).not.toThrow();
+    expect(() => assertValidSameOriginCsrf({ cookieHeader: `${CSRF_COOKIE}=${token}`, header: createCsrfToken((size) => Buffer.alloc(size, 8)), origin: "https://admin.test", allowedOrigin: "https://admin.test" })).toThrowError(ActorAuthError);
+  });
+});
+
+describe("actor SSOT and permissions", () => {
+  const record = { id:"identity-1", provider:"FIREBASE" as const, subject:"real-uid", status:"ACTIVE" as const, appUser:{ id:"user-1", active:true, platformRoleAssignments:[{active:true,role:"platform_owner" as const}], organizationMemberships:[], officeMemberships:[] } };
+  it("resolves only provider+subject identity and never a legacy firebaseUid", async () => {
+    let lookedUp = "";
+    const actor = await resolveUserActor({ authorization:"Bearer session", correlationId:"c1", verifySession:async()=>({uid:"real-uid"}), findIdentity:async(_provider,subject)=>{lookedUp=subject;return record;} });
+    expect(lookedUp).toBe("real-uid"); expect(actor.appUserId).toBe("user-1"); expect(Object.isFrozen(actor)).toBe(true);
+  });
+  it("rejects absent, revoked and inactive bindings", async () => {
+    const base={authorization:"Bearer s",correlationId:"c",verifySession:async()=>({uid:"u"})};
+    await expect(resolveUserActor({...base,findIdentity:async()=>null})).rejects.toMatchObject({code:"IDENTITY_BINDING_REQUIRED"});
+    await expect(resolveUserActor({...base,findIdentity:async()=>({...record,status:"REVOKED"})})).rejects.toMatchObject({code:"IDENTITY_REVOKED"});
+    await expect(resolveUserActor({...base,findIdentity:async()=>({...record,appUser:{...record.appUser,active:false}})})).rejects.toMatchObject({code:"APP_USER_INACTIVE"});
+  });
+  it("binds only a verified Google identity to a preprovisioned user", async () => {
+    const claims = { uid:"first-login-uid", email:"Assigned.User@Example.com", email_verified:true, firebase:{sign_in_provider:"google.com"} };
+    let bindingClaim: unknown;
+    const actor = await resolveUserActor({ authorization:"Bearer session", correlationId:"c-first", verifySession:async()=>claims, findIdentity:async()=>null, bindPreprovisionedIdentity:async(claim)=>{bindingClaim=claim;return {...record,subject:claim.subject};} });
+    expect(bindingClaim).toEqual({provider:"FIREBASE",subject:"first-login-uid",verifiedEmail:"assigned.user@example.com"});
+    expect(actor.subject).toBe("first-login-uid");
+    for (const invalid of [
+      {...claims,email_verified:false},
+      {...claims,firebase:{sign_in_provider:"password"}},
+      {...claims,email:undefined},
+    ]) {
+      let called=false;
+      await expect(resolveUserActor({authorization:"Bearer session",correlationId:"c-invalid",verifySession:async()=>invalid,findIdentity:async()=>null,bindPreprovisionedIdentity:async()=>{called=true;return record;}})).rejects.toMatchObject({code:"IDENTITY_BINDING_REQUIRED"});
+      expect(called).toBe(false);
+    }
+  });
+  it("atomically binds only an active preprovisioned user with assigned access and audits it", async () => {
+    let created=false; let audit: Record<string,unknown>|undefined; let persisted=false;
+    const store = {
+      appUserExternalIdentity: {
+        findUnique: async()=>persisted ? {...record,subject:"first-login"} : null,
+        findFirst: async()=>null,
+        create: async()=>{created=true;persisted=true;return {id:"identity-1"};},
+      },
+      appUser: {
+        findMany: async()=>[{id:"user-1"}],
+        findUnique: async()=>({id:"user-1",active:true,platformRoleAssignments:[],organizationMemberships:[{active:true}],officeMemberships:[]}),
+      },
+      externalIdentityBindingEvent: { create: async({data}:{data:Record<string,unknown>})=>{audit=data;return data;} },
+      $queryRawUnsafe: async()=>[],
+    };
+    const prisma = { ...store, $transaction: async(callback:(tx:typeof store)=>Promise<unknown>)=>callback(store) };
+    const bound = await bindPreprovisionedFirebaseIdentity(prisma as never,{provider:"FIREBASE",subject:"first-login",verifiedEmail:"member@example.com"});
+    expect(bound?.subject).toBe("first-login"); expect(created).toBe(true);
+    expect(audit).toMatchObject({eventType:"APPROVED",actorType:"SYSTEM_SERVICE",reasonCode:"PREPROVISIONED_VERIFIED_GOOGLE_FIRST_LOGIN"});
+  });
+  it("does not bind an unassigned or ambiguous email", async () => {
+    let created=false;
+    const make = (candidates:Array<{id:string}>, activeAccess:boolean) => {
+      const store = {
+        appUserExternalIdentity:{findUnique:async()=>null,findFirst:async()=>null,create:async()=>{created=true;return {id:"i"};}},
+        appUser:{findMany:async()=>candidates,findUnique:async()=>({id:"u",active:true,platformRoleAssignments:[],organizationMemberships:[{active:activeAccess}],officeMemberships:[]})},
+        externalIdentityBindingEvent:{create:async()=>({})},$queryRawUnsafe:async()=>[],
+      };
+      return {...store,$transaction:async(callback:(tx:typeof store)=>Promise<unknown>)=>callback(store)};
+    };
+    await expect(bindPreprovisionedFirebaseIdentity(make([{id:"u"}],false) as never,{provider:"FIREBASE",subject:"s",verifiedEmail:"none@example.com"})).resolves.toBeNull();
+    await expect(bindPreprovisionedFirebaseIdentity(make([{id:"u1"},{id:"u2"}],true) as never,{provider:"FIREBASE",subject:"s",verifiedEmail:"duplicate@example.com"})).resolves.toBeNull();
+    expect(created).toBe(false);
+  });
+  it("allows review only to platform_owner", () => {
+    expect(hasExternalIdentityBindingReview({platformRoles:["platform_owner"]})).toBe(true);
+    expect(hasExternalIdentityBindingReview({platformRoles:["platform_admin"]})).toBe(false);
+  });
+  it("enforces the approved admin-surface matrix", () => {
+    const owner = { platformRoles: ["platform_owner" as const], organizationMemberships: [], officeMemberships: [] };
+    const organizationAdmin = { platformRoles: [], organizationMemberships: [{ organizationId: "org-1", roles: ["organization_admin" as const] }], officeMemberships: [] };
+    const viewer = { platformRoles: [], organizationMemberships: [], officeMemberships: [{ organizationId: "org-1", officeId: "office-1", roles: ["office_viewer" as const] }] };
+    expect(canAccessAdminSurface(owner, "platform")).toBe(true);
+    expect(canAccessAdminSurface(owner, "partner", "org-9")).toBe(true);
+    expect(canAccessAdminSurface(owner, "kvartal", "org-1")).toBe(true);
+    expect(canAccessAdminSurface(organizationAdmin, "platform")).toBe(false);
+    expect(canAccessAdminSurface(organizationAdmin, "partner", "org-1")).toBe(true);
+    expect(canAccessAdminSurface(organizationAdmin, "partner", "org-2")).toBe(false);
+    expect(canAccessAdminSurface(viewer, "partner", "org-1")).toBe(false);
+  });
+});
+
+describe("mutation and transport contracts", () => {
+  it("separates infrastructure and actor credentials", () => {
+    expect(secureActorHeaders("google-id","firebase-session")).toEqual({"X-Serverless-Authorization":"Bearer google-id",Authorization:"Bearer firebase-session"});
+  });
+  it("validates idempotency, versions, reasons and canonical hashes", () => {
+    expect(validateIdempotencyKey("actor:1234567890:key")).toBe(true); expect(validateIdempotencyKey("short")).toBe(false);
+    expect(parseIfMatch('"7"')).toBe(7); expect(parseIfMatch("7")).toBeNull();
+    expect(validateReason("0123456789")).toBe("0123456789"); expect(validateReason("short")).toBeNull();
+    expect(requestHash({b:2,a:1})).toBe(requestHash({a:1,b:2}));
+  });
+  it("requires explicit valid production retention", () => {
+    expect(()=>readRetentionConfig({},true)).toThrowError(ActorAuthError);
+    expect(readRetentionConfig({EXTERNAL_IDENTITY_REQUEST_PII_RETENTION_DAYS:"90",EXTERNAL_IDENTITY_AUDIT_RETENTION_DAYS:"365"},true)).toEqual({requestDays:90,auditDays:365});
+  });
+});

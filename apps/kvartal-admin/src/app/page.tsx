@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import { requireAdminSession } from "../lib/auth";
-import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
+import { fetchBackendJson, fetchSecureActorBackendJson, writeBackendJson, writeSecureActorBackendJson } from "../lib/server-api";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +63,13 @@ type AdminObjectsResponse = {
     buildingAreaSqm: string | null;
     priceDisplay: string | null;
     priceCurrency: string | null;
+    identity: null | {
+      stableId: string;
+      status: string;
+      representationStatus: string | null;
+      offerStatus: string | null;
+      isOriginator: boolean;
+    };
     titleEn: string | null;
     descriptionEn: string | null;
     addressDisplayEn: string | null;
@@ -193,7 +200,9 @@ async function createObjectAction(formData: FormData) {
   "use server";
 
   await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData));
+  await writeSecureActorBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData), {
+    "Idempotency-Key": `object-form:${crypto.randomUUID()}`,
+  });
   revalidatePath("/");
 }
 
@@ -204,10 +213,12 @@ async function updateObjectAction(formData: FormData) {
   const action = formValue(formData, "action") || "save";
 
   await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
+  await writeSecureActorBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
     ...formPayload(formData),
     action,
     clearMedia: formData.get("clearMedia") === "on",
+  }, {
+    "Idempotency-Key": `object-update:${objectId}:${crypto.randomUUID()}`,
   });
   revalidatePath("/");
 }
@@ -260,7 +271,7 @@ export default async function KvartalAdminHome() {
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/context?organizationSlug=${encodeURIComponent(organizationSlug)}`,
     ),
-    fetchBackendJson<AdminObjectsResponse>(
+    fetchSecureActorBackendJson<AdminObjectsResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/objects?organizationSlug=${encodeURIComponent(organizationSlug)}&language=ru&limit=100`,
     ),
@@ -646,6 +657,8 @@ export default async function KvartalAdminHome() {
                     <Badge tone={object.canBeShownByOtherOffices ? "good" : "neutral"}>
                       {object.canBeShownByOtherOffices ? "общая витрина" : "только KVARTAL"}
                     </Badge>
+                    {object.identity ? <Badge tone="good">IREPN {object.identity.stableId}</Badge> : <Badge>legacy</Badge>}
+                    {object.identity?.representationStatus ? <Badge tone={object.identity.representationStatus === "VERIFIED" ? "good" : "warn"}>право: {object.identity.representationStatus}</Badge> : null}
                   </div>
                   <h3 className="mt-3 text-lg font-black leading-tight text-kv-navy">{object.title}</h3>
                   <p className="mt-2 max-w-3xl text-[14px] leading-5 text-kv-muted">{object.description ?? "Описание не заполнено."}</p>

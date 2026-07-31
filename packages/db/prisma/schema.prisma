@@ -32,6 +32,249 @@ enum PlatformRole {
   platform_viewer
 }
 
+enum ExternalIdentityProvider {
+  FIREBASE
+}
+
+enum ExternalIdentityStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum ExternalIdentityBindingRequestType {
+  BIND
+  REACTIVATE
+}
+
+enum ExternalIdentityBindingRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ExternalIdentityBindingEventType {
+  REQUESTED
+  CANDIDATE_SELECTED
+  CANDIDATE_USER_CREATED
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  IDENTITY_REVOKED
+  REACTIVATION_REQUESTED
+  IDENTITY_REACTIVATED
+  LOGIN_BLOCKED
+  ACTION_DENIED
+  BOOTSTRAP_COMPLETED
+}
+
+enum ExternalIdentityAuditActorType {
+  USER
+  SYSTEM_SERVICE
+  BOOTSTRAP_SYSTEM
+}
+
+enum ExternalIdentityBootstrapStatus {
+  AVAILABLE
+  COMPLETED
+  DISABLED
+}
+
+enum MutationIdempotencyStatus {
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+}
+
+enum PropertyIdentitySubjectScope {
+  PROJECT
+  LAND_PARCEL
+  BUILDING
+  PREMISE
+  UNIT
+}
+
+enum PropertyRegistrationStatus {
+  DRAFT
+  READY_FOR_CHECK
+  CHECKING
+  NEEDS_CORRECTION
+  UNIQUE_CANDIDATE
+  EXACT_EXISTING
+  PROBABLE_DUPLICATE
+  STRONG_IDENTIFIER_CONFLICT
+  CONFIRMING
+  CANONICAL_CREATED
+  LINKED_EXISTING
+  CANCELLED
+  CLOSED
+}
+
+enum PropertyIdentityCheckRunStatus {
+  PENDING
+  RUNNING
+  RESOLVED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+  CANCELLED
+}
+
+enum PropertyIdentityCheckOutcome {
+  EXACT_EXISTING
+  UNIQUE_CANDIDATE
+  PROBABLE_DUPLICATE
+  INSUFFICIENT_EVIDENCE
+  DIFFERENT_SUBJECT_SCOPE
+  DIFFERENT_UNIT_SAME_PROJECT
+  STRONG_IDENTIFIER_CONFLICT
+}
+
+enum PropertyIdentifierObservationStatus {
+  DRAFT
+  READY
+  NEEDS_CORRECTION
+  ACCEPTED
+  REJECTED
+}
+
+enum PropertyIdentifierClaimStatus {
+  ACTIVE
+  REVOKED
+  SUPERSEDED
+}
+
+enum PropertyIdentityStatus {
+  PROVISIONAL
+  VERIFIED_INTERNAL
+  SUSPENDED
+  REVOKED
+  MERGED
+  ARCHIVED
+}
+
+enum PropertyIdentityAuthorResolution {
+  CREATE_NEW
+  LINK_EXISTING
+}
+
+enum PropertyIdentityPolicyScope {
+  GLOBAL
+  MARKET
+  ORGANISATION
+}
+
+enum PropertyIdentityRolloutMode {
+  DISABLED
+  NEW_SUBMISSIONS_ONLY
+  STRICT
+}
+
+enum PropertyIdentityJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+  CANCELLED
+}
+
+enum PropertyIdentityCryptoKeyStatus {
+  ACTIVE
+  RETIRING
+  RETIRED
+}
+
+enum PropertyOriginatorStatus {
+  RECORDED
+  REVOKED
+}
+
+enum PropertyRepresentationStatus {
+  DECLARED
+  ATTESTED
+  EVIDENCE_PENDING
+  VERIFIED
+  SUSPENDED
+  EXPIRED
+  REVOKED
+  DISPUTED
+}
+
+enum PropertyOfferStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  WITHDRAWN
+}
+
+enum PublicationSurfaceStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum PropertyPublicationGrantStatus {
+  DRAFT
+  ACTIVE
+  REPLACED
+  EXPIRED
+  REVOKED
+  SUSPENDED
+}
+
+enum CorporateWalletStatus {
+  DRAFT
+  CHALLENGE_ISSUED
+  VERIFIED
+  ACTIVE
+  FROZEN
+  ROTATION_PENDING
+  REPLACED
+  RECOVERY_PENDING
+}
+
+enum CorporateWalletOperationStatus {
+  PENDING_SAFE_SIGNATURE
+  READY_TO_EXECUTE
+  SUBMITTED
+  CONFIRMED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+  CANCELLED
+}
+
+enum PropertyTokenStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REVOKED
+  SUPERSEDED
+  REASSIGNED
+}
+
+enum PropertyTokenOperationStatus {
+  PENDING_REGISTRY_SAFE
+  PENDING_PLATFORM_SIGNER
+  READY_TO_EXECUTE
+  SUBMITTED
+  CONFIRMED
+  FAILED_RETRYABLE
+  FAILED_FINAL
+  CANCELLED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  IN_SYNC
+  STATE_MISMATCH
+  RPC_UNAVAILABLE
+  REORG_DETECTED
+  FAILED
+}
+
 enum OrganizationRole {
   organization_owner
   organization_admin
@@ -355,47 +598,57 @@ enum DocumentConfidentiality {
 }
 
 model Organization {
-  id                               String                          @id @default(cuid())
-  slug                             String                          @unique
-  legalName                        String
-  countryOfRegistration            String
-  operatingCountryCodes            String[]
-  defaultLanguage                  LanguageCode                    @default(ru)
-  supportedLanguages               LanguageCode[]                  @default([ru])
-  defaultCurrency                  CurrencyCode                    @default(USD)
-  supportedCurrencies              CurrencyCode[]                  @default([USD])
-  status                           LifecycleStatus                 @default(draft)
-  subscriptionPlanId               String?
-  createdAt                        DateTime                        @default(now())
-  updatedAt                        DateTime                        @updatedAt
-  offices                          Office[]
-  displayNames                     OrganizationLocalization[]
-  memberships                      OrganizationMembership[]
-  siteConfigs                      SiteConfig[]
-  siteObjectVisibilityOverrides    SiteObjectVisibilityOverride[]
-  propertyObjects                  PropertyObject[]                @relation("PropertyOwnerOrganization")
-  informationOwnedObjects          PropertyObject[]                @relation("PropertyInformationOwnerOrganization")
-  initiatedPartnerInteractions     PartnerInteraction[]            @relation("PartnerInteractionInitiatingOrganization")
-  targetedPartnerInteractions      PartnerInteraction[]            @relation("PartnerInteractionTargetOrganization")
-  sentInteractionMessages          InteractionMessage[]            @relation("InteractionMessageSenderOrganization")
-  ownedInteractionAttachments      InteractionAttachment[]         @relation("InteractionAttachmentOwnerOrganization")
-  interactionTypingStates          InteractionTypingState[]        @relation("InteractionTypingStateOrganization")
-  interactionNotificationSettings  InteractionNotificationSetting?
-  receivedInteractionNotifications InteractionNotification[]       @relation("InteractionNotificationRecipientOrganization")
-  interactionTemplates             InteractionTemplate[]
-  blockedPartners                  BlockedPartner[]                @relation("BlockedPartnerOrganization")
-  blockedByPartners                BlockedPartner[]                @relation("BlockedPartnerBlockedOrganization")
-  reviewedPartnerReviews           PartnerReview[]                 @relation("PartnerReviewReviewerOrganization")
-  receivedPartnerReviews           PartnerReview[]                 @relation("PartnerReviewReviewedOrganization")
-  partnerMetrics                   PartnerMetric[]
-  clientIntents                    ClientIntent[]
-  officeSubscriptions              OfficeSubscription[]
-  intakeSubmissions                PropertyIntakeSubmission[]
-  aiDrafts                         PropertyAIDraft[]
-  aiExternalChecks                 PropertyAIExternalCheck[]
-  propertyAIAnalyses               PropertyObjectAIAnalysis[]
-  propertyAIFieldProposals         PropertyObjectAIFieldProposal[]
-  legalDocuments                   LegalDocument[]
+  id                                String                            @id @default(cuid())
+  slug                              String                            @unique
+  legalName                         String
+  countryOfRegistration             String
+  operatingCountryCodes             String[]
+  defaultLanguage                   LanguageCode                      @default(ru)
+  supportedLanguages                LanguageCode[]                    @default([ru])
+  defaultCurrency                   CurrencyCode                      @default(USD)
+  supportedCurrencies               CurrencyCode[]                    @default([USD])
+  status                            LifecycleStatus                   @default(draft)
+  subscriptionPlanId                String?
+  createdAt                         DateTime                          @default(now())
+  updatedAt                         DateTime                          @updatedAt
+  offices                           Office[]
+  displayNames                      OrganizationLocalization[]
+  memberships                       OrganizationMembership[]
+  siteConfigs                       SiteConfig[]
+  siteObjectVisibilityOverrides     SiteObjectVisibilityOverride[]
+  propertyObjects                   PropertyObject[]                  @relation("PropertyOwnerOrganization")
+  informationOwnedObjects           PropertyObject[]                  @relation("PropertyInformationOwnerOrganization")
+  initiatedPartnerInteractions      PartnerInteraction[]              @relation("PartnerInteractionInitiatingOrganization")
+  targetedPartnerInteractions       PartnerInteraction[]              @relation("PartnerInteractionTargetOrganization")
+  sentInteractionMessages           InteractionMessage[]              @relation("InteractionMessageSenderOrganization")
+  ownedInteractionAttachments       InteractionAttachment[]           @relation("InteractionAttachmentOwnerOrganization")
+  interactionTypingStates           InteractionTypingState[]          @relation("InteractionTypingStateOrganization")
+  interactionNotificationSettings   InteractionNotificationSetting?
+  receivedInteractionNotifications  InteractionNotification[]         @relation("InteractionNotificationRecipientOrganization")
+  interactionTemplates              InteractionTemplate[]
+  blockedPartners                   BlockedPartner[]                  @relation("BlockedPartnerOrganization")
+  blockedByPartners                 BlockedPartner[]                  @relation("BlockedPartnerBlockedOrganization")
+  reviewedPartnerReviews            PartnerReview[]                   @relation("PartnerReviewReviewerOrganization")
+  receivedPartnerReviews            PartnerReview[]                   @relation("PartnerReviewReviewedOrganization")
+  partnerMetrics                    PartnerMetric[]
+  clientIntents                     ClientIntent[]
+  officeSubscriptions               OfficeSubscription[]
+  intakeSubmissions                 PropertyIntakeSubmission[]
+  aiDrafts                          PropertyAIDraft[]
+  aiExternalChecks                  PropertyAIExternalCheck[]
+  propertyAIAnalyses                PropertyObjectAIAnalysis[]
+  propertyAIFieldProposals          PropertyObjectAIFieldProposal[]
+  legalDocuments                    LegalDocument[]
+  propertyRegistrationSubmissions   PropertyRegistrationSubmission[]
+  propertyIdentityAuthorityPolicies PropertyIdentityAuthorityPolicy[]
+  propertyIdentityRolloutPolicies   PropertyIdentityRolloutPolicy[]
+  propertyOriginatorRecords         PropertyOriginatorRecord[]
+  propertyRepresentationRights      PropertyRepresentationRight[]
+  propertyOffers                    PartnerOffer[]
+  publicationSurfaces               PropertyPublicationSurface[]
+  publicationGrantsAsSeller         PropertyPublicationGrant[]        @relation("PublicationGrantSellerOrganization")
+  publicationGrantsAsBuyer          PropertyPublicationGrant[]        @relation("PublicationGrantBuyerOrganization")
+  corporateWallets                  OrganizationCorporateWallet[]
 }
 
 model OrganizationLocalization {
@@ -411,36 +664,36 @@ model OrganizationLocalization {
 }
 
 model Office {
-  id                               String                     @id @default(cuid())
+  id                               String                           @id @default(cuid())
   organizationId                   String
   slug                             String
   legalName                        String
   city                             String
   country                          String
   defaultMarketId                  String?
-  defaultLanguage                  LanguageCode               @default(ru)
-  supportedLanguages               LanguageCode[]             @default([ru])
-  defaultCurrency                  CurrencyCode               @default(USD)
-  supportedCurrencies              CurrencyCode[]             @default([USD])
-  status                           LifecycleStatus            @default(draft)
+  defaultLanguage                  LanguageCode                     @default(ru)
+  supportedLanguages               LanguageCode[]                   @default([ru])
+  defaultCurrency                  CurrencyCode                     @default(USD)
+  supportedCurrencies              CurrencyCode[]                   @default([USD])
+  status                           LifecycleStatus                  @default(draft)
   websiteConfigId                  String?
-  createdAt                        DateTime                   @default(now())
-  updatedAt                        DateTime                   @updatedAt
-  organization                     Organization               @relation(fields: [organizationId], references: [id])
-  defaultMarket                    Market?                    @relation(fields: [defaultMarketId], references: [id])
+  createdAt                        DateTime                         @default(now())
+  updatedAt                        DateTime                         @updatedAt
+  organization                     Organization                     @relation(fields: [organizationId], references: [id])
+  defaultMarket                    Market?                          @relation(fields: [defaultMarketId], references: [id])
   displayNames                     OfficeLocalization[]
   memberships                      OfficeMembership[]
   siteConfigs                      SiteConfig[]
-  propertyObjects                  PropertyObject[]           @relation("PropertyOwnerOffice")
-  informationOwnedObjects          PropertyObject[]           @relation("PropertyInformationOwnerOffice")
-  initiatedPartnerInteractions     PartnerInteraction[]       @relation("PartnerInteractionInitiatingOffice")
-  targetedPartnerInteractions      PartnerInteraction[]       @relation("PartnerInteractionTargetOffice")
-  sentInteractionMessages          InteractionMessage[]       @relation("InteractionMessageSenderOffice")
-  ownedInteractionAttachments      InteractionAttachment[]    @relation("InteractionAttachmentOwnerOffice")
-  interactionTypingStates          InteractionTypingState[]   @relation("InteractionTypingStateOffice")
-  receivedInteractionNotifications InteractionNotification[]  @relation("InteractionNotificationRecipientOffice")
-  reviewedPartnerReviews           PartnerReview[]            @relation("PartnerReviewReviewerOffice")
-  receivedPartnerReviews           PartnerReview[]            @relation("PartnerReviewReviewedOffice")
+  propertyObjects                  PropertyObject[]                 @relation("PropertyOwnerOffice")
+  informationOwnedObjects          PropertyObject[]                 @relation("PropertyInformationOwnerOffice")
+  initiatedPartnerInteractions     PartnerInteraction[]             @relation("PartnerInteractionInitiatingOffice")
+  targetedPartnerInteractions      PartnerInteraction[]             @relation("PartnerInteractionTargetOffice")
+  sentInteractionMessages          InteractionMessage[]             @relation("InteractionMessageSenderOffice")
+  ownedInteractionAttachments      InteractionAttachment[]          @relation("InteractionAttachmentOwnerOffice")
+  interactionTypingStates          InteractionTypingState[]         @relation("InteractionTypingStateOffice")
+  receivedInteractionNotifications InteractionNotification[]        @relation("InteractionNotificationRecipientOffice")
+  reviewedPartnerReviews           PartnerReview[]                  @relation("PartnerReviewReviewerOffice")
+  receivedPartnerReviews           PartnerReview[]                  @relation("PartnerReviewReviewedOffice")
   clientIntents                    ClientIntent[]
   officeSubscriptions              OfficeSubscription[]
   intakeSubmissions                PropertyIntakeSubmission[]
@@ -448,6 +701,13 @@ model Office {
   aiExternalChecks                 PropertyAIExternalCheck[]
   propertyAIAnalyses               PropertyObjectAIAnalysis[]
   legalDocuments                   LegalDocument[]
+  propertyRegistrationSubmissions  PropertyRegistrationSubmission[]
+  propertyOriginatorRecords        PropertyOriginatorRecord[]
+  propertyRepresentationRights     PropertyRepresentationRight[]
+  propertyOffers                   PartnerOffer[]
+  publicationSurfaces              PropertyPublicationSurface[]
+  publicationGrantsAsSeller        PropertyPublicationGrant[]       @relation("PublicationGrantSellerOffice")
+  publicationGrantsAsBuyer         PropertyPublicationGrant[]       @relation("PublicationGrantBuyerOffice")
 
   @@unique([organizationId, slug])
   @@index([organizationId])
@@ -466,49 +726,191 @@ model OfficeLocalization {
 }
 
 model Market {
-  id                  String            @id @default(cuid())
-  slug                String            @unique
-  city                String
-  country             String
-  defaultCurrency     CurrencyCode
-  supportedCurrencies CurrencyCode[]
-  supportedLanguages  LanguageCode[]
-  assetClasses        AssetClass[]
-  complianceRegion    String
-  active              Boolean           @default(true)
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
-  offices             Office[]
-  propertyObjects     PropertyObject[]
-  clientIntents       ClientIntent[]
-  indicators          MarketIndicator[]
-  insights            MarketInsight[]
+  id                                String                            @id @default(cuid())
+  slug                              String                            @unique
+  city                              String
+  country                           String
+  defaultCurrency                   CurrencyCode
+  supportedCurrencies               CurrencyCode[]
+  supportedLanguages                LanguageCode[]
+  assetClasses                      AssetClass[]
+  complianceRegion                  String
+  active                            Boolean                           @default(true)
+  createdAt                         DateTime                          @default(now())
+  updatedAt                         DateTime                          @updatedAt
+  offices                           Office[]
+  propertyObjects                   PropertyObject[]
+  clientIntents                     ClientIntent[]
+  indicators                        MarketIndicator[]
+  insights                          MarketInsight[]
+  propertyIdentityAuthorityPolicies PropertyIdentityAuthorityPolicy[]
+  propertyIdentityRolloutPolicies   PropertyIdentityRolloutPolicy[]
+  propertyRegistrationSubmissions   PropertyRegistrationSubmission[]
 }
 
 model AppUser {
-  id                             String                          @id @default(cuid())
-  firebaseUid                    String                          @unique
-  email                          String                          @unique
-  displayName                    String?
-  active                         Boolean                         @default(true)
-  createdAt                      DateTime                        @default(now())
-  updatedAt                      DateTime                        @updatedAt
-  platformRoleAssignments        PlatformRoleAssignment[]
-  organizationMemberships        OrganizationMembership[]
-  officeMemberships              OfficeMembership[]
-  createdPropertyObjects         PropertyObject[]
-  createdIntakeSubmissions       PropertyIntakeSubmission[]
-  createdAIDrafts                PropertyAIDraft[]
-  uploadedLegalDocuments         LegalDocument[]                 @relation("LegalDocumentUploadedBy")
-  uploadedPropertyMedia          PropertyMedia[]                 @relation("PropertyMediaUploadedBy")
-  uploadedPropertyDocuments      PropertyDocument[]              @relation("PropertyDocumentUploadedBy")
-  createdPartnerInteractions     PartnerInteraction[]            @relation("PartnerInteractionCreatedBy")
-  sentInteractionMessages        InteractionMessage[]            @relation("InteractionMessageSender")
-  uploadedInteractionAttachments InteractionAttachment[]         @relation("InteractionAttachmentUploadedBy")
-  decidedPropertyAIProposals     PropertyObjectAIFieldProposal[]
-  reviewedPartners               PartnerReview[]                 @relation("PartnerReviewReviewer")
-  reviewedLegalDocuments         LegalDocumentReview[]
-  auditLogs                      AuditLog[]
+  id                                 String                               @id @default(cuid())
+  firebaseUid                        String                               @unique
+  email                              String                               @unique
+  displayName                        String?
+  active                             Boolean                              @default(true)
+  createdAt                          DateTime                             @default(now())
+  updatedAt                          DateTime                             @updatedAt
+  platformRoleAssignments            PlatformRoleAssignment[]
+  organizationMemberships            OrganizationMembership[]
+  officeMemberships                  OfficeMembership[]
+  createdPropertyObjects             PropertyObject[]
+  createdIntakeSubmissions           PropertyIntakeSubmission[]
+  createdAIDrafts                    PropertyAIDraft[]
+  uploadedLegalDocuments             LegalDocument[]                      @relation("LegalDocumentUploadedBy")
+  uploadedPropertyMedia              PropertyMedia[]                      @relation("PropertyMediaUploadedBy")
+  uploadedPropertyDocuments          PropertyDocument[]                   @relation("PropertyDocumentUploadedBy")
+  createdPartnerInteractions         PartnerInteraction[]                 @relation("PartnerInteractionCreatedBy")
+  sentInteractionMessages            InteractionMessage[]                 @relation("InteractionMessageSender")
+  uploadedInteractionAttachments     InteractionAttachment[]              @relation("InteractionAttachmentUploadedBy")
+  decidedPropertyAIProposals         PropertyObjectAIFieldProposal[]
+  reviewedPartners                   PartnerReview[]                      @relation("PartnerReviewReviewer")
+  reviewedLegalDocuments             LegalDocumentReview[]
+  auditLogs                          AuditLog[]
+  externalIdentities                 AppUserExternalIdentity[]            @relation("ExternalIdentityUser")
+  boundExternalIdentities            AppUserExternalIdentity[]            @relation("ExternalIdentityBoundBy")
+  revokedExternalIdentities          AppUserExternalIdentity[]            @relation("ExternalIdentityRevokedBy")
+  reactivatedExternalIdentities      AppUserExternalIdentity[]            @relation("ExternalIdentityReactivatedBy")
+  requestedIdentityBindings          ExternalIdentityBindingRequest[]     @relation("BindingRequestedByUser")
+  candidateIdentityBindings          ExternalIdentityBindingRequest[]     @relation("BindingCandidateUser")
+  reviewedIdentityBindings           ExternalIdentityBindingRequest[]     @relation("BindingReviewedByUser")
+  externalIdentityEvents             ExternalIdentityBindingEvent[]       @relation("BindingEventActorUser")
+  bootstrapStates                    ExternalIdentityBootstrapState[]     @relation("BootstrapTargetUser")
+  createdPropertyRegistrations       PropertyRegistrationSubmission[]     @relation("PropertyRegistrationCreatedBy")
+  createdIdentifierObservations      PropertyIdentifierObservation[]      @relation("PropertyIdentifierObservationCreatedBy")
+  propertyIdentityConfirmations      PropertyIdentityAuthorConfirmation[] @relation("PropertyIdentityConfirmedBy")
+  propertyIdentityEvents             PropertyIdentityEvent[]              @relation("PropertyIdentityEventActor")
+  createdPropertyCanonicalVersions   PropertyCanonicalVersion[]           @relation("PropertyCanonicalVersionCreatedBy")
+  requestedCorporateWalletOperations CorporateWalletOperation[]           @relation("CorporateWalletOperationRequestedBy")
+  requestedPropertyTokenOperations   PropertyTokenOperation[]             @relation("PropertyTokenOperationRequestedBy")
+  verifiedCorporateWallets           OrganizationCorporateWallet[]        @relation("CorporateWalletVerifiedBy")
+  challengedCorporateWallets         OrganizationCorporateWallet[]        @relation("CorporateWalletChallengedBy")
+  attestedRepresentationRights       PropertyRepresentationRight[]        @relation("RepresentationAttestedBy")
+  auditedRepresentationRights        PropertyRepresentationRight[]        @relation("RepresentationAuditedBy")
+  createdPartnerOffers               PartnerOffer[]                       @relation("PartnerOfferCreatedBy")
+  ownedPlatformRegistryWallets       PlatformRegistryWallet[]             @relation("PlatformRegistryWalletOwner")
+  boundPlatformRegistryWallets       PlatformRegistryWallet[]             @relation("PlatformRegistryWalletBoundBy")
+}
+
+model AppUserExternalIdentity {
+  id                    String                           @id @default(cuid())
+  appUserId             String
+  provider              ExternalIdentityProvider
+  subject               String
+  status                ExternalIdentityStatus           @default(ACTIVE)
+  boundAt               DateTime                         @default(now())
+  boundByUserId         String?
+  revokedAt             DateTime?
+  revokedByUserId       String?
+  revocationReason      String?                          @db.Text
+  reactivatedAt         DateTime?
+  reactivatedByUserId   String?
+  rowVersion            Int                              @default(1)
+  createdAt             DateTime                         @default(now())
+  updatedAt             DateTime                         @updatedAt
+  appUser               AppUser                          @relation("ExternalIdentityUser", fields: [appUserId], references: [id])
+  boundByUser           AppUser?                         @relation("ExternalIdentityBoundBy", fields: [boundByUserId], references: [id], onDelete: SetNull)
+  revokedByUser         AppUser?                         @relation("ExternalIdentityRevokedBy", fields: [revokedByUserId], references: [id], onDelete: SetNull)
+  reactivatedByUser     AppUser?                         @relation("ExternalIdentityReactivatedBy", fields: [reactivatedByUserId], references: [id], onDelete: SetNull)
+  targetBindingRequests ExternalIdentityBindingRequest[]
+  events                ExternalIdentityBindingEvent[]
+  bootstrapStates       ExternalIdentityBootstrapState[]
+
+  @@unique([provider, subject])
+  @@index([appUserId, status])
+  @@index([updatedAt, id])
+}
+
+model ExternalIdentityBindingRequest {
+  id                       String                               @id @default(cuid())
+  requestType              ExternalIdentityBindingRequestType
+  provider                 ExternalIdentityProvider
+  subject                  String
+  subjectDigest            String
+  verifiedEmail            String?
+  emailVerified            Boolean                              @default(false)
+  candidateAppUserId       String?
+  targetExternalIdentityId String?
+  requestedByProvider      ExternalIdentityProvider
+  requestedBySubject       String
+  requestedBySubjectDigest String
+  requestedByAppUserId     String?
+  requestedAt              DateTime                             @default(now())
+  status                   ExternalIdentityBindingRequestStatus @default(PENDING)
+  rowVersion               Int                                  @default(1)
+  reviewedByUserId         String?
+  reviewedBySubject        String?
+  reviewedAt               DateTime?
+  reason                   String?                              @db.Text
+  expiresAt                DateTime
+  createdAt                DateTime                             @default(now())
+  updatedAt                DateTime                             @updatedAt
+  candidateAppUser         AppUser?                             @relation("BindingCandidateUser", fields: [candidateAppUserId], references: [id], onDelete: SetNull)
+  targetExternalIdentity   AppUserExternalIdentity?             @relation(fields: [targetExternalIdentityId], references: [id])
+  requestedByAppUser       AppUser?                             @relation("BindingRequestedByUser", fields: [requestedByAppUserId], references: [id], onDelete: SetNull)
+  reviewedByUser           AppUser?                             @relation("BindingReviewedByUser", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  events                   ExternalIdentityBindingEvent[]
+
+  @@index([requestType, provider, subject, status])
+  @@index([requestedAt, id])
+  @@index([expiresAt, status])
+}
+
+model ExternalIdentityBindingEvent {
+  id                 String                           @id @default(cuid())
+  eventType          ExternalIdentityBindingEventType
+  requestId          String?
+  externalIdentityId String?
+  actorType          ExternalIdentityAuditActorType
+  actorAppUserId     String?
+  actorProvider      ExternalIdentityProvider?
+  actorSubjectDigest String?
+  previousStatus     String?
+  nextStatus         String?
+  reasonCode         String?
+  metadata           Json?
+  createdAt          DateTime                         @default(now())
+  request            ExternalIdentityBindingRequest?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  externalIdentity   AppUserExternalIdentity?         @relation(fields: [externalIdentityId], references: [id])
+  actorAppUser       AppUser?                         @relation("BindingEventActorUser", fields: [actorAppUserId], references: [id], onDelete: SetNull)
+
+  @@index([requestId, createdAt])
+  @@index([externalIdentityId, createdAt])
+  @@index([createdAt])
+}
+
+model ExternalIdentityBootstrapState {
+  key                String                          @id
+  status             ExternalIdentityBootstrapStatus @default(AVAILABLE)
+  targetAppUserId    String?
+  externalIdentityId String?
+  completedAt        DateTime?
+  auditEventId       String?
+  rowVersion         Int                             @default(1)
+  createdAt          DateTime                        @default(now())
+  updatedAt          DateTime                        @updatedAt
+  targetAppUser      AppUser?                        @relation("BootstrapTargetUser", fields: [targetAppUserId], references: [id])
+  externalIdentity   AppUserExternalIdentity?        @relation(fields: [externalIdentityId], references: [id])
+}
+
+model MutationIdempotency {
+  id              String                    @id @default(cuid())
+  scope           String                    @unique
+  requestHash     String
+  status          MutationIdempotencyStatus @default(IN_PROGRESS)
+  responseStatus  Int?
+  responseBody    Json?
+  responseHeaders Json?
+  terminalAt      DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([status, terminalAt])
 }
 
 model PlatformRoleAssignment {
@@ -555,7 +957,7 @@ model OfficeMembership {
 }
 
 model SiteConfig {
-  id                  String                   @id @default(cuid())
+  id                  String                      @id @default(cuid())
   organizationId      String
   officeId            String
   domain              String?
@@ -565,15 +967,16 @@ model SiteConfig {
   defaultCurrency     CurrencyCode
   supportedCurrencies CurrencyCode[]
   primaryMarketIds    String[]
-  showPartnerObjects  Boolean                  @default(true)
+  showPartnerObjects  Boolean                     @default(true)
   contactEmail        String?
   contactPhone        String?
-  active              Boolean                  @default(true)
-  createdAt           DateTime                 @default(now())
-  updatedAt           DateTime                 @updatedAt
-  organization        Organization             @relation(fields: [organizationId], references: [id])
-  office              Office                   @relation(fields: [officeId], references: [id])
+  active              Boolean                     @default(true)
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  organization        Organization                @relation(fields: [organizationId], references: [id])
+  office              Office                      @relation(fields: [officeId], references: [id])
   localizations       SiteConfigLocalization[]
+  publicationSurface  PropertyPublicationSurface?
 
   @@index([organizationId])
   @@index([officeId])
@@ -607,50 +1010,50 @@ model SiteObjectVisibilityOverride {
 }
 
 model PropertyObject {
-  id                                 String                          @id @default(cuid())
+  id                                 String                           @id @default(cuid())
   ownerOrganizationId                String
   ownerOfficeId                      String
   informationOwnerOrganizationId     String
   informationOwnerOfficeId           String
   createdByUserId                    String
   marketId                           String
-  status                             PublicationStatus               @default(draft)
-  visibility                         Visibility                      @default(private)
+  status                             PublicationStatus                @default(draft)
+  visibility                         Visibility                       @default(private)
   assetClass                         AssetClass
   assetSubtype                       String?
   addressPrivate                     String?
-  areaSqm                            Decimal?                        @db.Decimal(14, 2)
-  landAreaSqm                        Decimal?                        @db.Decimal(14, 2)
-  buildingAreaSqm                    Decimal?                        @db.Decimal(14, 2)
-  rentableAreaSqm                    Decimal?                        @db.Decimal(14, 2)
+  areaSqm                            Decimal?                         @db.Decimal(14, 2)
+  landAreaSqm                        Decimal?                         @db.Decimal(14, 2)
+  buildingAreaSqm                    Decimal?                         @db.Decimal(14, 2)
+  rentableAreaSqm                    Decimal?                         @db.Decimal(14, 2)
   floorNumber                        Int?
   floorsTotal                        Int?
   roomsCount                         Int?
   bedroomsCount                      Int?
   bathroomsCount                     Int?
   cadastralNumber                    String?
-  priceMode                          PriceMode                       @default(on_request)
-  priceAmount                        Decimal?                        @db.Decimal(18, 2)
+  priceMode                          PriceMode                        @default(on_request)
+  priceAmount                        Decimal?                         @db.Decimal(18, 2)
   priceCurrency                      CurrencyCode?
-  priceMinAmount                     Decimal?                        @db.Decimal(18, 2)
-  priceMaxAmount                     Decimal?                        @db.Decimal(18, 2)
-  representationSide                 RepresentationSide              @default(seller)
-  exclusivity                        Exclusivity                     @default(unknown)
-  canBeShownByOtherOffices           Boolean                         @default(false)
-  requiresOwnerOfficeApprovalForLead Boolean                         @default(true)
+  priceMinAmount                     Decimal?                         @db.Decimal(18, 2)
+  priceMaxAmount                     Decimal?                         @db.Decimal(18, 2)
+  representationSide                 RepresentationSide               @default(seller)
+  exclusivity                        Exclusivity                      @default(unknown)
+  canBeShownByOtherOffices           Boolean                          @default(false)
+  requiresOwnerOfficeApprovalForLead Boolean                          @default(true)
   driveIntakeFolderUrl               String?
   driveIntakeProcessedAt             DateTime?
   driveIntakeConfidence              Float?
-  driveIntakePending                 Boolean                         @default(false)
-  createdAt                          DateTime                        @default(now())
-  updatedAt                          DateTime                        @updatedAt
+  driveIntakePending                 Boolean                          @default(false)
+  createdAt                          DateTime                         @default(now())
+  updatedAt                          DateTime                         @updatedAt
   publishedAt                        DateTime?
-  ownerOrganization                  Organization                    @relation("PropertyOwnerOrganization", fields: [ownerOrganizationId], references: [id])
-  ownerOffice                        Office                          @relation("PropertyOwnerOffice", fields: [ownerOfficeId], references: [id])
-  informationOwnerOrganization       Organization                    @relation("PropertyInformationOwnerOrganization", fields: [informationOwnerOrganizationId], references: [id])
-  informationOwnerOffice             Office                          @relation("PropertyInformationOwnerOffice", fields: [informationOwnerOfficeId], references: [id])
-  createdByUser                      AppUser                         @relation(fields: [createdByUserId], references: [id])
-  market                             Market                          @relation(fields: [marketId], references: [id])
+  ownerOrganization                  Organization                     @relation("PropertyOwnerOrganization", fields: [ownerOrganizationId], references: [id])
+  ownerOffice                        Office                           @relation("PropertyOwnerOffice", fields: [ownerOfficeId], references: [id])
+  informationOwnerOrganization       Organization                     @relation("PropertyInformationOwnerOrganization", fields: [informationOwnerOrganizationId], references: [id])
+  informationOwnerOffice             Office                           @relation("PropertyInformationOwnerOffice", fields: [informationOwnerOfficeId], references: [id])
+  createdByUser                      AppUser                          @relation(fields: [createdByUserId], references: [id])
+  market                             Market                           @relation(fields: [marketId], references: [id])
   localizations                      PropertyObjectLocalization[]
   components                         PropertyObjectComponent[]
   attributes                         PropertyObjectAttribute[]
@@ -665,12 +1068,530 @@ model PropertyObject {
   partnerInteractions                PartnerInteraction[]
   aiExternalChecks                   PropertyAIExternalCheck[]
   siteVisibilityOverrides            SiteObjectVisibilityOverride[]
+  identityProfile                    PropertyIdentityProfile?
+  linkedRegistrationSubmissions      PropertyRegistrationSubmission[]
+  migrationRegistrationSubmission    PropertyRegistrationSubmission?  @relation("PropertyIdentityMigrationSource")
+  representationRights               PropertyRepresentationRight[]
+  partnerOffers                      PartnerOffer[]
+  publicationGrants                  PropertyPublicationGrant[]
 
   @@index([ownerOrganizationId])
   @@index([ownerOfficeId])
   @@index([marketId, status, visibility, publishedAt])
   @@index([assetClass, status, visibility, publishedAt])
   @@index([ownerOfficeId, status, visibility, publishedAt])
+}
+
+model PropertyRegistrationSubmission {
+  id                              String                               @id @default(cuid())
+  organizationId                  String
+  officeId                        String
+  marketId                        String
+  createdByUserId                 String
+  intakeSubmissionId              String?
+  aiDraftId                       String?
+  canonicalPropertyObjectId       String?
+  migrationSourcePropertyObjectId String?                              @unique
+  subjectScope                    PropertyIdentitySubjectScope
+  jurisdiction                    String
+  assetClass                      AssetClass
+  status                          PropertyRegistrationStatus           @default(DRAFT)
+  identityInput                   Json
+  lastIdentityInputHash           String?
+  rowVersion                      Int                                  @default(1)
+  submittedAt                     DateTime?
+  closedAt                        DateTime?
+  cancelledAt                     DateTime?
+  createdAt                       DateTime                             @default(now())
+  updatedAt                       DateTime                             @updatedAt
+  organization                    Organization                         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office                          Office                               @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  market                          Market                               @relation(fields: [marketId], references: [id], onDelete: Restrict)
+  createdByUser                   AppUser                              @relation("PropertyRegistrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  intakeSubmission                PropertyIntakeSubmission?            @relation(fields: [intakeSubmissionId], references: [id], onDelete: SetNull)
+  aiDraft                         PropertyAIDraft?                     @relation(fields: [aiDraftId], references: [id], onDelete: SetNull)
+  canonicalPropertyObject         PropertyObject?                      @relation(fields: [canonicalPropertyObjectId], references: [id], onDelete: Restrict)
+  migrationSourcePropertyObject   PropertyObject?                      @relation("PropertyIdentityMigrationSource", fields: [migrationSourcePropertyObjectId], references: [id], onDelete: Restrict)
+  observations                    PropertyIdentifierObservation[]
+  checkRuns                       PropertyIdentityCheckRun[]
+  confirmations                   PropertyIdentityAuthorConfirmation[]
+  identityProfileCreated          PropertyIdentityProfile?             @relation("PropertyIdentityCreatedFromSubmission")
+  events                          PropertyIdentityEvent[]
+  jobs                            PropertyIdentityJob[]
+
+  @@index([organizationId, status, updatedAt])
+  @@index([officeId, status, updatedAt])
+  @@index([marketId, status, updatedAt])
+  @@index([createdByUserId, status, updatedAt])
+  @@index([canonicalPropertyObjectId])
+}
+
+model PropertyIdentifierObservation {
+  id                        String                                @id @default(cuid())
+  submissionId              String
+  createdByUserId           String
+  scheme                    String
+  subjectScope              PropertyIdentitySubjectScope
+  jurisdiction              String
+  authorityNamespace        String
+  rawValueCiphertext        Bytes
+  rawValueNonce             Bytes
+  rawValueAuthTag           Bytes
+  normalizedValueCiphertext Bytes
+  normalizedValueNonce      Bytes
+  normalizedValueAuthTag    Bytes
+  encryptionKeyVersion      String
+  normalizerId              String
+  normalizerVersion         Int
+  authorityPolicyVersion    Int                                   @default(0)
+  structuredComponents      Json?
+  sourceType                String
+  sourceDocumentId          String?
+  sourceUrl                 String?
+  status                    PropertyIdentifierObservationStatus   @default(DRAFT)
+  correctionReason          String?                               @db.Text
+  createdAt                 DateTime                              @default(now())
+  updatedAt                 DateTime                              @updatedAt
+  submission                PropertyRegistrationSubmission        @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  createdByUser             AppUser                               @relation("PropertyIdentifierObservationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  originClaims              PropertyIdentifierClaim[]             @relation("PropertyIdentifierClaimOrigin")
+  digests                   PropertyIdentifierObservationDigest[]
+  encryptionKey             PropertyIdentityCryptoKeyVersion      @relation("PropertyIdentifierObservationEncryptionKey", fields: [encryptionKeyVersion], references: [version], onDelete: Restrict)
+
+  @@index([submissionId, status])
+  @@index([scheme, jurisdiction, authorityNamespace, subjectScope])
+}
+
+model PropertyIdentifierObservationDigest {
+  id               String                           @id @default(cuid())
+  observationId    String
+  digestKeyVersion String
+  digest           String
+  createdAt        DateTime                         @default(now())
+  observation      PropertyIdentifierObservation    @relation(fields: [observationId], references: [id], onDelete: Restrict)
+  cryptoKeyVersion PropertyIdentityCryptoKeyVersion @relation(fields: [digestKeyVersion], references: [version], onDelete: Restrict)
+
+  @@unique([observationId, digestKeyVersion])
+  @@index([digestKeyVersion, digest])
+}
+
+model PropertyIdentityCheckRun {
+  id                     String                               @id @default(cuid())
+  submissionId           String
+  status                 PropertyIdentityCheckRunStatus       @default(PENDING)
+  outcome                PropertyIdentityCheckOutcome?
+  identityInputHash      String
+  authorityPolicyVersion Int
+  redactedResult         Json?
+  startedAt              DateTime?
+  completedAt            DateTime?
+  failureCode            String?
+  attemptCount           Int                                  @default(0)
+  createdAt              DateTime                             @default(now())
+  updatedAt              DateTime                             @updatedAt
+  submission             PropertyRegistrationSubmission       @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  candidateEvidence      PropertyIdentityCandidateEvidence[]
+  confirmations          PropertyIdentityAuthorConfirmation[]
+
+  @@index([submissionId, createdAt])
+  @@index([status, createdAt])
+}
+
+model PropertyIdentityCandidateEvidence {
+  id                 String                   @id @default(cuid())
+  checkRunId         String
+  candidateProfileId String?
+  evidenceType       String
+  signalCode         String
+  confidence         Float?
+  redactedDetails    Json?
+  createdAt          DateTime                 @default(now())
+  checkRun           PropertyIdentityCheckRun @relation(fields: [checkRunId], references: [id], onDelete: Cascade)
+  candidateProfile   PropertyIdentityProfile? @relation(fields: [candidateProfileId], references: [id], onDelete: Restrict)
+
+  @@index([checkRunId, evidenceType])
+  @@index([candidateProfileId])
+}
+
+model PropertyIdentityProfile {
+  id                      String                               @id @default(cuid())
+  stableId                String                               @unique
+  propertyObjectId        String                               @unique
+  createdFromSubmissionId String?                              @unique
+  subjectScope            PropertyIdentitySubjectScope
+  jurisdiction            String
+  status                  PropertyIdentityStatus               @default(PROVISIONAL)
+  currentVersionNumber    Int                                  @default(1)
+  createdAt               DateTime                             @default(now())
+  updatedAt               DateTime                             @updatedAt
+  propertyObject          PropertyObject                       @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  createdFromSubmission   PropertyRegistrationSubmission?      @relation("PropertyIdentityCreatedFromSubmission", fields: [createdFromSubmissionId], references: [id], onDelete: Restrict)
+  claims                  PropertyIdentifierClaim[]
+  canonicalVersions       PropertyCanonicalVersion[]
+  confirmations           PropertyIdentityAuthorConfirmation[]
+  candidateEvidence       PropertyIdentityCandidateEvidence[]
+  events                  PropertyIdentityEvent[]
+  originatorRecords       PropertyOriginatorRecord[]
+  representationRights    PropertyRepresentationRight[]
+  publicationGrants       PropertyPublicationGrant[]
+  token                   PropertyIdentityToken?
+  tokenOperations         PropertyTokenOperation[]
+  onChainRepresentations  PropertyTokenRepresentation[]
+
+  @@index([status, jurisdiction, subjectScope])
+}
+
+model PropertyIdentifierClaim {
+  id                        String                           @id @default(cuid())
+  identityProfileId         String
+  originObservationId       String?
+  scheme                    String
+  subjectScope              PropertyIdentitySubjectScope
+  jurisdiction              String
+  authorityNamespace        String
+  normalizedValueCiphertext Bytes
+  normalizedValueNonce      Bytes
+  normalizedValueAuthTag    Bytes
+  encryptionKeyVersion      String
+  normalizerId              String
+  normalizerVersion         Int
+  status                    PropertyIdentifierClaimStatus    @default(ACTIVE)
+  activatedAt               DateTime                         @default(now())
+  revokedAt                 DateTime?
+  revocationReason          String?                          @db.Text
+  createdAt                 DateTime                         @default(now())
+  updatedAt                 DateTime                         @updatedAt
+  identityProfile           PropertyIdentityProfile          @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  originObservation         PropertyIdentifierObservation?   @relation("PropertyIdentifierClaimOrigin", fields: [originObservationId], references: [id], onDelete: Restrict)
+  digests                   PropertyIdentifierClaimDigest[]
+  encryptionKey             PropertyIdentityCryptoKeyVersion @relation("PropertyIdentifierClaimEncryptionKey", fields: [encryptionKeyVersion], references: [version], onDelete: Restrict)
+
+  @@index([identityProfileId, status])
+  @@index([scheme, jurisdiction, authorityNamespace, subjectScope, status])
+}
+
+model PropertyIdentifierClaimDigest {
+  id               String                           @id @default(cuid())
+  claimId          String
+  digestKeyVersion String
+  digest           String
+  active           Boolean                          @default(true)
+  createdAt        DateTime                         @default(now())
+  claim            PropertyIdentifierClaim          @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  cryptoKeyVersion PropertyIdentityCryptoKeyVersion @relation(fields: [digestKeyVersion], references: [version], onDelete: Restrict)
+
+  @@unique([claimId, digestKeyVersion])
+  @@index([digestKeyVersion, digest])
+}
+
+model PropertyCanonicalVersion {
+  id                    String                             @id @default(cuid())
+  identityProfileId     String
+  versionNumber         Int
+  snapshotSchemaVersion Int                                @default(1)
+  snapshotJson          Json
+  snapshotHash          String
+  isCurrent             Boolean                            @default(true)
+  authorConfirmationId  String
+  createdByUserId       String
+  createdAt             DateTime                           @default(now())
+  supersededAt          DateTime?
+  identityProfile       PropertyIdentityProfile            @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  authorConfirmation    PropertyIdentityAuthorConfirmation @relation(fields: [authorConfirmationId], references: [id], onDelete: Restrict)
+  createdByUser         AppUser                            @relation("PropertyCanonicalVersionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publicationGrants     PropertyPublicationGrant[]
+
+  @@unique([identityProfileId, versionNumber])
+  @@index([identityProfileId, isCurrent])
+  @@index([snapshotHash])
+}
+
+model PropertyOriginatorRecord {
+  id                String                   @id @default(cuid())
+  identityProfileId String
+  organizationId    String
+  officeId          String
+  status            PropertyOriginatorStatus @default(RECORDED)
+  recordedByUserId  String
+  verifiedAt        DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime                 @default(now())
+  identityProfile   PropertyIdentityProfile  @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+  organization      Organization             @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office            Office                   @relation(fields: [officeId], references: [id], onDelete: Restrict)
+
+  @@unique([identityProfileId, organizationId, officeId])
+  @@index([identityProfileId, status])
+  @@index([organizationId, status])
+}
+
+model PropertyRepresentationRight {
+  id                  String                           @id @default(cuid())
+  propertyObjectId    String
+  identityProfileId   String
+  organizationId      String
+  officeId            String
+  corporateWalletId   String?
+  rightType           String
+  status              PropertyRepresentationStatus     @default(DECLARED)
+  scope               Json
+  territory           String?
+  channel             String?
+  validFrom           DateTime?
+  validUntil          DateTime?
+  evidenceDocumentIds String[]
+  evidenceHash        String?
+  declaredByUserId    String
+  verifiedByUserId    String?
+  attestedAt          DateTime?
+  auditedByUserId     String?
+  auditedAt           DateTime?
+  auditReason         String?                          @db.Text
+  revokedAt           DateTime?
+  createdAt           DateTime                         @default(now())
+  updatedAt           DateTime                         @updatedAt
+  propertyObject      PropertyObject                   @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  identityProfile     PropertyIdentityProfile          @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  organization        Organization                     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office              Office                           @relation(fields: [officeId], references: [id], onDelete: Restrict)
+  corporateWallet     OrganizationCorporateWallet?     @relation(fields: [corporateWalletId], references: [id], onDelete: Restrict)
+  attestedByUser      AppUser                          @relation("RepresentationAttestedBy", fields: [declaredByUserId], references: [id], onDelete: Restrict)
+  auditedByUser       AppUser?                         @relation("RepresentationAuditedBy", fields: [auditedByUserId], references: [id], onDelete: Restrict)
+  offers              PartnerOffer[]
+  evidenceDocuments   RepresentationEvidenceDocument[]
+  interactions        PartnerInteraction[]
+  dealRooms           DealRoom[]
+  onChainRecords      PropertyTokenRepresentation[]
+
+  @@index([propertyObjectId, status])
+  @@index([identityProfileId, status])
+  @@index([organizationId, status])
+  @@index([corporateWalletId, status])
+}
+
+model RepresentationEvidenceDocument {
+  representationRightId String
+  propertyDocumentId    String
+  attachedByUserId      String
+  createdAt             DateTime                    @default(now())
+  representationRight   PropertyRepresentationRight @relation(fields: [representationRightId], references: [id], onDelete: Cascade)
+  propertyDocument      PropertyDocument            @relation(fields: [propertyDocumentId], references: [id], onDelete: Restrict)
+
+  @@id([representationRightId, propertyDocumentId])
+  @@index([propertyDocumentId])
+}
+
+model PartnerOffer {
+  id                    String                      @id @default(cuid())
+  propertyObjectId      String
+  representationRightId String
+  sellerOrganizationId  String
+  sellerOfficeId        String
+  status                PropertyOfferStatus         @default(DRAFT)
+  priceAmount           Decimal?                    @db.Decimal(18, 2)
+  priceCurrency         CurrencyCode?
+  paymentTerms          Json?
+  availability          String?
+  commercialTerms       Json?
+  validFrom             DateTime                    @default(now())
+  validUntil            DateTime?
+  sourceLabel           String?
+  createdByUserId       String?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  propertyObject        PropertyObject              @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  representationRight   PropertyRepresentationRight @relation(fields: [representationRightId], references: [id], onDelete: Restrict)
+  sellerOrganization    Organization                @relation(fields: [sellerOrganizationId], references: [id], onDelete: Restrict)
+  sellerOffice          Office                      @relation(fields: [sellerOfficeId], references: [id], onDelete: Restrict)
+  createdByUser         AppUser?                    @relation("PartnerOfferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  publicationGrants     PropertyPublicationGrant[]
+  interactions          PartnerInteraction[]
+  dealRooms             DealRoom[]
+
+  @@index([propertyObjectId, status])
+  @@index([sellerOrganizationId, status])
+  @@index([representationRightId, status])
+}
+
+model PropertyPublicationSurface {
+  id             String                     @id @default(cuid())
+  siteConfigId   String?                    @unique
+  tenantKey      String?                    @unique
+  canonicalHost  String?
+  surfaceType    String
+  organizationId String
+  officeId       String?
+  status         PublicationSurfaceStatus   @default(ACTIVE)
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  siteConfig     SiteConfig?                @relation(fields: [siteConfigId], references: [id], onDelete: SetNull)
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  office         Office?                    @relation(fields: [officeId], references: [id], onDelete: SetNull)
+  grants         PropertyPublicationGrant[]
+
+  @@index([organizationId, status])
+  @@index([officeId, status])
+}
+
+model PropertyPublicationGrant {
+  id                       String                         @id @default(cuid())
+  publicationSurfaceId     String
+  propertyObjectId         String
+  identityProfileId        String
+  partnerOfferId           String
+  canonicalVersionId       String
+  buyerSideOrganizationId  String
+  buyerSideOfficeId        String
+  sellerSideOrganizationId String
+  sellerSideOfficeId       String
+  status                   PropertyPublicationGrantStatus @default(DRAFT)
+  validFrom                DateTime                       @default(now())
+  validUntil               DateTime?
+  replacedByGrantId        String?
+  createdAt                DateTime                       @default(now())
+  updatedAt                DateTime                       @updatedAt
+  publicationSurface       PropertyPublicationSurface     @relation(fields: [publicationSurfaceId], references: [id], onDelete: Restrict)
+  propertyObject           PropertyObject                 @relation(fields: [propertyObjectId], references: [id], onDelete: Restrict)
+  identityProfile          PropertyIdentityProfile        @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  partnerOffer             PartnerOffer                   @relation(fields: [partnerOfferId], references: [id], onDelete: Restrict)
+  canonicalVersion         PropertyCanonicalVersion       @relation(fields: [canonicalVersionId], references: [id], onDelete: Restrict)
+  buyerSideOrganization    Organization                   @relation("PublicationGrantBuyerOrganization", fields: [buyerSideOrganizationId], references: [id], onDelete: Restrict)
+  buyerSideOffice          Office                         @relation("PublicationGrantBuyerOffice", fields: [buyerSideOfficeId], references: [id], onDelete: Restrict)
+  sellerSideOrganization   Organization                   @relation("PublicationGrantSellerOrganization", fields: [sellerSideOrganizationId], references: [id], onDelete: Restrict)
+  sellerSideOffice         Office                         @relation("PublicationGrantSellerOffice", fields: [sellerSideOfficeId], references: [id], onDelete: Restrict)
+  interactions             PartnerInteraction[]
+  dealRooms                DealRoom[]
+
+  @@index([publicationSurfaceId, propertyObjectId, status])
+  @@index([identityProfileId, status])
+  @@index([sellerSideOrganizationId, status])
+}
+
+model PropertyIdentityAuthorConfirmation {
+  id                String                           @id @default(cuid())
+  submissionId      String
+  checkRunId        String
+  identityProfileId String
+  confirmedByUserId String
+  resolution        PropertyIdentityAuthorResolution
+  identityInputHash String
+  reason            String?                          @db.Text
+  createdAt         DateTime                         @default(now())
+  submission        PropertyRegistrationSubmission   @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  checkRun          PropertyIdentityCheckRun         @relation(fields: [checkRunId], references: [id], onDelete: Restrict)
+  identityProfile   PropertyIdentityProfile          @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  confirmedByUser   AppUser                          @relation("PropertyIdentityConfirmedBy", fields: [confirmedByUserId], references: [id], onDelete: Restrict)
+  canonicalVersions PropertyCanonicalVersion[]
+
+  @@unique([submissionId])
+  @@index([identityProfileId, createdAt])
+  @@index([confirmedByUserId, createdAt])
+}
+
+model PropertyIdentityAuthorityPolicy {
+  id                         String                       @id @default(cuid())
+  organizationId             String?
+  marketId                   String?
+  jurisdiction               String
+  assetClass                 AssetClass?
+  subjectScope               PropertyIdentitySubjectScope
+  identifierScheme           String
+  authorityNamespacePattern  String
+  normalizerId               String
+  normalizerVersion          Int
+  automaticExactMatchAllowed Boolean                      @default(true)
+  requiredEvidenceType       String?
+  active                     Boolean                      @default(false)
+  effectiveFrom              DateTime
+  effectiveUntil             DateTime?
+  version                    Int                          @default(1)
+  configuredByUserId         String
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime                     @updatedAt
+  organization               Organization?                @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  market                     Market?                      @relation(fields: [marketId], references: [id], onDelete: Restrict)
+
+  @@index([jurisdiction, subjectScope, identifierScheme, active])
+  @@index([organizationId, active])
+  @@index([marketId, active])
+}
+
+model PropertyIdentityRolloutPolicy {
+  id                 String                      @id @default(cuid())
+  scope              PropertyIdentityPolicyScope
+  organizationId     String?
+  marketId           String?
+  mode               PropertyIdentityRolloutMode @default(DISABLED)
+  registryEnabled    Boolean                     @default(false)
+  publishGateEnabled Boolean                     @default(false)
+  activationAt       DateTime?
+  version            Int                         @default(1)
+  configuredByUserId String
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  organization       Organization?               @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  market             Market?                     @relation(fields: [marketId], references: [id], onDelete: Restrict)
+
+  @@index([scope, organizationId, marketId])
+}
+
+model PropertyIdentityEvent {
+  id                  String                          @id @default(cuid())
+  submissionId        String?
+  identityProfileId   String?
+  actorUserId         String?
+  actorOrganizationId String?
+  actorOfficeId       String?
+  eventType           String
+  previousStatus      String?
+  nextStatus          String?
+  reasonCode          String?
+  payload             Json?
+  createdAt           DateTime                        @default(now())
+  submission          PropertyRegistrationSubmission? @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  identityProfile     PropertyIdentityProfile?        @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  actorUser           AppUser?                        @relation("PropertyIdentityEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([submissionId, createdAt])
+  @@index([identityProfileId, createdAt])
+  @@index([actorOrganizationId, createdAt])
+}
+
+model PropertyIdentityJob {
+  id             String                         @id @default(cuid())
+  submissionId   String
+  jobType        String
+  status         PropertyIdentityJobStatus      @default(PENDING)
+  idempotencyKey String                         @unique
+  payload        Json
+  attemptCount   Int                            @default(0)
+  maxAttempts    Int                            @default(5)
+  runAfter       DateTime                       @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  lastErrorCode  String?
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @updatedAt
+  completedAt    DateTime?
+  submission     PropertyRegistrationSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@index([status, runAfter])
+  @@index([submissionId, createdAt])
+}
+
+model PropertyIdentityCryptoKeyVersion {
+  version               String                                @id
+  status                PropertyIdentityCryptoKeyStatus
+  activatedAt           DateTime
+  retiringAt            DateTime?
+  retiredAt             DateTime?
+  createdAt             DateTime                              @default(now())
+  digests               PropertyIdentifierClaimDigest[]
+  observationDigests    PropertyIdentifierObservationDigest[]
+  encryptedObservations PropertyIdentifierObservation[]       @relation("PropertyIdentifierObservationEncryptionKey")
+  encryptedClaims       PropertyIdentifierClaim[]             @relation("PropertyIdentifierClaimEncryptionKey")
+
+  @@index([status, activatedAt])
 }
 
 model PropertyObjectLocalization {
@@ -787,39 +1708,40 @@ model PropertyMedia {
 }
 
 model PropertyDocument {
-  id                  String                         @id @default(cuid())
-  propertyObjectId    String
-  ownerOrganizationId String
-  ownerOfficeId       String
-  title               String
-  storagePath         String
-  documentType        PropertyDocumentType           @default(other)
-  source              PropertyDocumentSource         @default(manual)
-  public              Boolean                        @default(false)
-  currentVersion      Int                            @default(1)
-  driveFileId         String?
-  driveModifiedTime   DateTime?
-  driveChecksum       String?
-  driveWebUrl         String?
-  originalFileName    String?
-  mimeType            String?
-  sizeBytes           BigInt?
-  checksum            String?
-  uploadedByUserId    String?
-  analysisStatus      PropertyDocumentAnalysisStatus @default(pending)
-  aiSummary           Json?
-  aiFacts             Json?
-  aiRisks             Json?
-  aiRecommendations   Json?
-  aiMissingItems      Json?
-  aiConflicts         Json?
-  aiChangeSummary     Json?
-  aiAnalyzedAt        DateTime?
-  createdAt           DateTime                       @default(now())
-  updatedAt           DateTime                       @updatedAt
-  propertyObject      PropertyObject                 @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
-  uploadedByUser      AppUser?                       @relation("PropertyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
-  versions            PropertyDocumentVersion[]
+  id                     String                           @id @default(cuid())
+  propertyObjectId       String
+  ownerOrganizationId    String
+  ownerOfficeId          String
+  title                  String
+  storagePath            String
+  documentType           PropertyDocumentType             @default(other)
+  source                 PropertyDocumentSource           @default(manual)
+  public                 Boolean                          @default(false)
+  currentVersion         Int                              @default(1)
+  driveFileId            String?
+  driveModifiedTime      DateTime?
+  driveChecksum          String?
+  driveWebUrl            String?
+  originalFileName       String?
+  mimeType               String?
+  sizeBytes              BigInt?
+  checksum               String?
+  uploadedByUserId       String?
+  analysisStatus         PropertyDocumentAnalysisStatus   @default(pending)
+  aiSummary              Json?
+  aiFacts                Json?
+  aiRisks                Json?
+  aiRecommendations      Json?
+  aiMissingItems         Json?
+  aiConflicts            Json?
+  aiChangeSummary        Json?
+  aiAnalyzedAt           DateTime?
+  createdAt              DateTime                         @default(now())
+  updatedAt              DateTime                         @updatedAt
+  propertyObject         PropertyObject                   @relation(fields: [propertyObjectId], references: [id], onDelete: Cascade)
+  uploadedByUser         AppUser?                         @relation("PropertyDocumentUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  versions               PropertyDocumentVersion[]
+  representationEvidence RepresentationEvidenceDocument[]
 
   @@unique([propertyObjectId, driveFileId])
   @@index([propertyObjectId])
@@ -960,53 +1882,55 @@ model LegalDocumentReview {
 }
 
 model PropertyIntakeSubmission {
-  id               String                      @id @default(cuid())
-  organizationId   String
-  officeId         String
-  createdByUserId  String
-  sourceType       IntakeSourceType
-  rawText          String?                     @db.Text
-  fileRefs         String[]
-  status           IntakeStatus                @default(received)
-  createdAt        DateTime                    @default(now())
-  updatedAt        DateTime                    @updatedAt
-  organization     Organization                @relation(fields: [organizationId], references: [id])
-  office           Office                      @relation(fields: [officeId], references: [id])
-  createdByUser    AppUser                     @relation(fields: [createdByUserId], references: [id])
-  drafts           PropertyAIDraft[]
-  externalChecks   PropertyAIExternalCheck[]
-  extractionEvents PropertyAIExtractionEvent[]
+  id                      String                           @id @default(cuid())
+  organizationId          String
+  officeId                String
+  createdByUserId         String
+  sourceType              IntakeSourceType
+  rawText                 String?                          @db.Text
+  fileRefs                String[]
+  status                  IntakeStatus                     @default(received)
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+  organization            Organization                     @relation(fields: [organizationId], references: [id])
+  office                  Office                           @relation(fields: [officeId], references: [id])
+  createdByUser           AppUser                          @relation(fields: [createdByUserId], references: [id])
+  drafts                  PropertyAIDraft[]
+  externalChecks          PropertyAIExternalCheck[]
+  extractionEvents        PropertyAIExtractionEvent[]
+  registrationSubmissions PropertyRegistrationSubmission[]
 
   @@index([organizationId, officeId])
   @@index([createdByUserId])
 }
 
 model PropertyAIDraft {
-  id                     String                      @id @default(cuid())
-  intakeSubmissionId     String
-  organizationId         String
-  officeId               String
-  createdByUserId        String
-  proposedAssetClass     AssetClass?
-  proposedPropertyObject Json?
-  proposedComponents     Json?
-  proposedAttributes     Json?
-  proposedEconomics      Json?
-  confidence             Confidence
-  fieldConfidence        Json?
-  missingFields          String[]
-  conflicts              String[]
-  clarificationQuestions String[]
-  verificationSummary    Json?
-  status                 AIDraftStatus               @default(draft)
-  createdAt              DateTime                    @default(now())
-  updatedAt              DateTime                    @updatedAt
-  intakeSubmission       PropertyIntakeSubmission    @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
-  organization           Organization                @relation(fields: [organizationId], references: [id])
-  office                 Office                      @relation(fields: [officeId], references: [id])
-  createdByUser          AppUser                     @relation(fields: [createdByUserId], references: [id])
-  externalChecks         PropertyAIExternalCheck[]
-  extractionEvents       PropertyAIExtractionEvent[]
+  id                      String                           @id @default(cuid())
+  intakeSubmissionId      String
+  organizationId          String
+  officeId                String
+  createdByUserId         String
+  proposedAssetClass      AssetClass?
+  proposedPropertyObject  Json?
+  proposedComponents      Json?
+  proposedAttributes      Json?
+  proposedEconomics       Json?
+  confidence              Confidence
+  fieldConfidence         Json?
+  missingFields           String[]
+  conflicts               String[]
+  clarificationQuestions  String[]
+  verificationSummary     Json?
+  status                  AIDraftStatus                    @default(draft)
+  createdAt               DateTime                         @default(now())
+  updatedAt               DateTime                         @updatedAt
+  intakeSubmission        PropertyIntakeSubmission         @relation(fields: [intakeSubmissionId], references: [id], onDelete: Cascade)
+  organization            Organization                     @relation(fields: [organizationId], references: [id])
+  office                  Office                           @relation(fields: [officeId], references: [id])
+  createdByUser           AppUser                          @relation(fields: [createdByUserId], references: [id])
+  externalChecks          PropertyAIExternalCheck[]
+  extractionEvents        PropertyAIExtractionEvent[]
+  registrationSubmissions PropertyRegistrationSubmission[]
 
   @@index([intakeSubmissionId])
   @@index([organizationId, officeId])
@@ -1075,6 +1999,7 @@ model ClientIntent {
   coBrokerRequests     CoBrokerRequest[]
   dealRooms            DealRoom[]
   legalDocuments       LegalDocument[]
+  partnerInteractions  PartnerInteraction[]
 
   @@index([sourceOrganizationId])
   @@index([sourceOfficeId, status])
@@ -1112,19 +2037,27 @@ model CoBrokerRequest {
 }
 
 model DealRoom {
-  id                   String           @id @default(cuid())
-  clientIntentId       String
-  sellerOrganizationId String
-  sellerOfficeId       String
-  buyerOrganizationId  String
-  buyerOfficeId        String
-  status               DealRoomStatus   @default(draft)
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  clientIntent         ClientIntent     @relation(fields: [clientIntentId], references: [id])
-  objects              DealRoomObject[]
-  events               DealRoomEvent[]
-  legalDocuments       LegalDocument[]
+  id                    String                       @id @default(cuid())
+  clientIntentId        String
+  sellerOrganizationId  String
+  sellerOfficeId        String
+  buyerOrganizationId   String
+  buyerOfficeId         String
+  partnerInteractionId  String?                      @unique
+  partnerOfferId        String?
+  representationRightId String?
+  publicationGrantId    String?
+  status                DealRoomStatus               @default(draft)
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+  clientIntent          ClientIntent                 @relation(fields: [clientIntentId], references: [id])
+  objects               DealRoomObject[]
+  events                DealRoomEvent[]
+  legalDocuments        LegalDocument[]
+  partnerInteraction    PartnerInteraction?          @relation(fields: [partnerInteractionId], references: [id], onDelete: Restrict)
+  partnerOffer          PartnerOffer?                @relation(fields: [partnerOfferId], references: [id], onDelete: Restrict)
+  representationRight   PropertyRepresentationRight? @relation(fields: [representationRightId], references: [id], onDelete: Restrict)
+  publicationGrant      PropertyPublicationGrant?    @relation(fields: [publicationGrantId], references: [id], onDelete: Restrict)
 
   @@index([sellerOfficeId, status])
   @@index([buyerOfficeId, status])
@@ -1156,45 +2089,56 @@ model DealRoomEvent {
 }
 
 model PartnerInteraction {
-  id                       String                     @id @default(cuid())
+  id                       String                       @id @default(cuid())
   initiatingOrganizationId String
   initiatingOfficeId       String
   targetOrganizationId     String
   targetOfficeId           String
   propertyObjectId         String
+  partnerOfferId           String?
+  representationRightId    String?
+  publicationGrantId       String?
+  clientIntentId           String?
   createdByUserId          String
-  type                     PartnerInteractionType     @default(info_request)
-  priority                 PartnerInteractionPriority @default(normal)
-  status                   PartnerInteractionStatus   @default(new_request)
-  conversationLanguage     LanguageCode               @default(ru)
+  type                     PartnerInteractionType       @default(info_request)
+  priority                 PartnerInteractionPriority   @default(normal)
+  status                   PartnerInteractionStatus     @default(new_request)
+  conversationLanguage     LanguageCode                 @default(ru)
   subject                  String?
-  initialMessage           String?                    @db.Text
+  initialMessage           String?                      @db.Text
   firstTargetResponseAt    DateTime?
   remindedAt               DateTime?
   escalatedAt              DateTime?
   completedAt              DateTime?
   archivedAt               DateTime?
   dealRoomId               String?
-  createdAt                DateTime                   @default(now())
-  updatedAt                DateTime                   @updatedAt
-  initiatingOrganization   Organization               @relation("PartnerInteractionInitiatingOrganization", fields: [initiatingOrganizationId], references: [id])
-  initiatingOffice         Office                     @relation("PartnerInteractionInitiatingOffice", fields: [initiatingOfficeId], references: [id])
-  targetOrganization       Organization               @relation("PartnerInteractionTargetOrganization", fields: [targetOrganizationId], references: [id])
-  targetOffice             Office                     @relation("PartnerInteractionTargetOffice", fields: [targetOfficeId], references: [id])
-  propertyObject           PropertyObject             @relation(fields: [propertyObjectId], references: [id])
-  createdByUser            AppUser                    @relation("PartnerInteractionCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+  initiatingOrganization   Organization                 @relation("PartnerInteractionInitiatingOrganization", fields: [initiatingOrganizationId], references: [id])
+  initiatingOffice         Office                       @relation("PartnerInteractionInitiatingOffice", fields: [initiatingOfficeId], references: [id])
+  targetOrganization       Organization                 @relation("PartnerInteractionTargetOrganization", fields: [targetOrganizationId], references: [id])
+  targetOffice             Office                       @relation("PartnerInteractionTargetOffice", fields: [targetOfficeId], references: [id])
+  propertyObject           PropertyObject               @relation(fields: [propertyObjectId], references: [id])
+  partnerOffer             PartnerOffer?                @relation(fields: [partnerOfferId], references: [id], onDelete: Restrict)
+  representationRight      PropertyRepresentationRight? @relation(fields: [representationRightId], references: [id], onDelete: Restrict)
+  publicationGrant         PropertyPublicationGrant?    @relation(fields: [publicationGrantId], references: [id], onDelete: Restrict)
+  clientIntent             ClientIntent?                @relation(fields: [clientIntentId], references: [id], onDelete: Restrict)
+  createdByUser            AppUser                      @relation("PartnerInteractionCreatedBy", fields: [createdByUserId], references: [id])
   messages                 InteractionMessage[]
   events                   InteractionEvent[]
   attachments              InteractionAttachment[]
   typingStates             InteractionTypingState[]
   notifications            InteractionNotification[]
   reviews                  PartnerReview[]
+  DealRoom                 DealRoom?
 
   @@index([initiatingOrganizationId, status, updatedAt])
   @@index([targetOrganizationId, status, updatedAt])
   @@index([initiatingOfficeId, status, updatedAt])
   @@index([targetOfficeId, status, updatedAt])
   @@index([propertyObjectId])
+  @@index([partnerOfferId, status, updatedAt])
+  @@index([clientIntentId])
   @@index([dealRoomId])
 }
 
@@ -1513,4 +2457,277 @@ model AuditLog {
   @@index([actorOrganizationId])
   @@index([actorOfficeId])
   @@index([createdAt])
+}
+
+model OrganizationCorporateWallet {
+  id                     String                        @id @default(cuid())
+  organizationId         String
+  walletAddress          String
+  chainId                Int
+  safeVersion            String?
+  status                 CorporateWalletStatus         @default(DRAFT)
+  threshold              Int?
+  ownerCount             Int?
+  ownersHash             String?
+  lastOnChainSyncAt      DateTime?
+  lastChallengeNonce     String?
+  lastChallengeExpiresAt DateTime?
+  challengeUserId        String?
+  walletType             String                        @default("EOA")
+  verifiedByUserId       String?
+  verifiedAt             DateTime?
+  revokedAt              DateTime?
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  organization           Organization                  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  verifiedByUser         AppUser?                      @relation("CorporateWalletVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: Restrict)
+  challengeUser          AppUser?                      @relation("CorporateWalletChallengedBy", fields: [challengeUserId], references: [id], onDelete: Restrict)
+  signers                CorporateWalletSigner[]
+  policies               CorporateWalletPolicy[]
+  operations             CorporateWalletOperation[]
+  tokens                 PropertyIdentityToken[]
+  representationRights   PropertyRepresentationRight[]
+  tokenRepresentations   PropertyTokenRepresentation[]
+
+  @@unique([organizationId, chainId, walletAddress])
+  @@index([organizationId, chainId, status])
+  @@index([walletAddress, chainId])
+}
+
+model CorporateWalletSigner {
+  id                String                      @id @default(cuid())
+  corporateWalletId String
+  signerAddress     String
+  userId            String?
+  role              String
+  active            Boolean                     @default(true)
+  firstSeenAt       DateTime                    @default(now())
+  lastSeenAt        DateTime                    @default(now())
+  removedAt         DateTime?
+  corporateWallet   OrganizationCorporateWallet @relation(fields: [corporateWalletId], references: [id], onDelete: Cascade)
+
+  @@unique([corporateWalletId, signerAddress])
+  @@index([userId, active])
+}
+
+model CorporateWalletPolicy {
+  id                     String                      @id @default(cuid())
+  corporateWalletId      String
+  minThreshold           Int
+  makerCheckerRequired   Boolean                     @default(true)
+  highRiskOperationTypes String[]
+  active                 Boolean                     @default(true)
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  corporateWallet        OrganizationCorporateWallet @relation(fields: [corporateWalletId], references: [id], onDelete: Cascade)
+
+  @@index([corporateWalletId, active])
+}
+
+model CorporateWalletOperation {
+  id                String                         @id @default(cuid())
+  corporateWalletId String
+  operationType     String
+  status            CorporateWalletOperationStatus @default(PENDING_SAFE_SIGNATURE)
+  payloadJson       Json
+  safeTxHash        String?
+  chainTxHash       String?
+  idempotencyKey    String                         @unique
+  requestedByUserId String
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  expiresAt         DateTime?
+  corporateWallet   OrganizationCorporateWallet    @relation(fields: [corporateWalletId], references: [id], onDelete: Restrict)
+  requestedByUser   AppUser                        @relation("CorporateWalletOperationRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  approvals         CorporateWalletApproval[]
+
+  @@index([status, operationType])
+  @@index([corporateWalletId, status])
+}
+
+model CorporateWalletApproval {
+  id             String                   @id @default(cuid())
+  operationId    String
+  approverUserId String
+  approvalRole   String
+  decision       String
+  signature      String?
+  decidedAt      DateTime                 @default(now())
+  operation      CorporateWalletOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@unique([operationId, approverUserId, approvalRole])
+}
+
+model BlockchainContractRegistry {
+  id                       String                  @id @default(cuid())
+  chainId                  Int
+  contractType             String
+  contractAddress          String
+  registryAdminSafeAddress String?
+  platformRegistryWalletId String?
+  version                  String
+  abiHash                  String
+  bytecodeHash             String?
+  deploymentTxHash         String
+  deploymentBlockNumber    BigInt?
+  explorerUrl              String?
+  status                   String
+  active                   Boolean                 @default(false)
+  verifiedAt               DateTime?
+  registeredByUserId       String?
+  createdAt                DateTime                @default(now())
+  platformRegistryWallet   PlatformRegistryWallet? @relation(fields: [platformRegistryWalletId], references: [id], onDelete: Restrict)
+
+  @@unique([chainId, contractType, version])
+  @@index([chainId, contractAddress, active])
+  @@index([chainId, registryAdminSafeAddress, active])
+}
+
+model PlatformRegistryWallet {
+  id                  String                       @id @default(cuid())
+  platformOwnerUserId String
+  chainId             Int
+  walletAddress       String
+  secretResourceName  String
+  status              String                       @default("ACTIVE")
+  boundByUserId       String
+  verifiedAt          DateTime?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  platformOwnerUser   AppUser                      @relation("PlatformRegistryWalletOwner", fields: [platformOwnerUserId], references: [id], onDelete: Restrict)
+  boundByUser         AppUser                      @relation("PlatformRegistryWalletBoundBy", fields: [boundByUserId], references: [id], onDelete: Restrict)
+  contracts           BlockchainContractRegistry[]
+  tokens              PropertyIdentityToken[]
+
+  @@unique([chainId, walletAddress])
+  @@unique([platformOwnerUserId, chainId])
+}
+
+model PropertyIdentityToken {
+  id                       String                          @id @default(cuid())
+  identityProfileId        String                          @unique
+  tokenId                  Decimal                         @db.Decimal(78, 0)
+  chainId                  Int
+  contractAddress          String
+  ownerWalletId            String?
+  platformRegistryWalletId String?
+  ownerAddress             String
+  status                   PropertyTokenStatus             @default(PENDING)
+  reconciliationStatus     ReconciliationStatus            @default(PENDING)
+  tokenUri                 String?
+  lastTxHash               String?
+  issuedAt                 DateTime?
+  suspendedAt              DateTime?
+  revokedAt                DateTime?
+  supersededAt             DateTime?
+  reassignedAt             DateTime?
+  lastReconciledAt         DateTime?
+  createdAt                DateTime                        @default(now())
+  updatedAt                DateTime                        @updatedAt
+  identityProfile          PropertyIdentityProfile         @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  ownerWallet              OrganizationCorporateWallet?    @relation(fields: [ownerWalletId], references: [id], onDelete: Restrict)
+  platformRegistryWallet   PlatformRegistryWallet?         @relation(fields: [platformRegistryWalletId], references: [id], onDelete: Restrict)
+  operations               PropertyTokenOperation[]
+  events                   PropertyTokenEvent[]
+  reconciliationIssues     BlockchainReconciliationIssue[]
+  representations          PropertyTokenRepresentation[]
+
+  @@unique([chainId, contractAddress, tokenId])
+  @@index([status, reconciliationStatus])
+  @@index([ownerWalletId, status])
+}
+
+model PropertyTokenRepresentation {
+  id                    String                      @id @default(cuid())
+  tokenRecordId         String
+  identityProfileId     String
+  representationRightId String
+  corporateWalletId     String
+  walletAddress         String
+  evidenceHash          String
+  status                String                      @default("PENDING")
+  validFrom             DateTime
+  validUntil            DateTime?
+  lastTxHash            String?
+  lastLogIndex          Int?
+  lastReconciledAt      DateTime?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  tokenRecord           PropertyIdentityToken       @relation(fields: [tokenRecordId], references: [id], onDelete: Restrict)
+  identityProfile       PropertyIdentityProfile     @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  representationRight   PropertyRepresentationRight @relation(fields: [representationRightId], references: [id], onDelete: Restrict)
+  corporateWallet       OrganizationCorporateWallet @relation(fields: [corporateWalletId], references: [id], onDelete: Restrict)
+
+  @@unique([tokenRecordId, representationRightId])
+  @@index([corporateWalletId, status])
+  @@index([walletAddress, status])
+}
+
+model PropertyTokenOperation {
+  id                 String                       @id @default(cuid())
+  tokenRecordId      String?
+  identityProfileId  String
+  operationType      String
+  status             PropertyTokenOperationStatus @default(PENDING_REGISTRY_SAFE)
+  payloadJson        Json
+  registrySafeTxHash String?
+  chainTxHash        String?
+  idempotencyKey     String                       @unique
+  requestedByUserId  String
+  createdAt          DateTime                     @default(now())
+  updatedAt          DateTime                     @updatedAt
+  expiresAt          DateTime?
+  tokenRecord        PropertyIdentityToken?       @relation(fields: [tokenRecordId], references: [id], onDelete: SetNull)
+  identityProfile    PropertyIdentityProfile      @relation(fields: [identityProfileId], references: [id], onDelete: Restrict)
+  requestedByUser    AppUser                      @relation("PropertyTokenOperationRequestedBy", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([status, operationType])
+  @@index([identityProfileId, status])
+}
+
+model PropertyTokenEvent {
+  id            String                @id @default(cuid())
+  tokenRecordId String
+  eventName     String
+  chainId       Int
+  txHash        String
+  logIndex      Int
+  blockNumber   BigInt
+  payloadJson   Json
+  createdAt     DateTime              @default(now())
+  tokenRecord   PropertyIdentityToken @relation(fields: [tokenRecordId], references: [id], onDelete: Cascade)
+
+  @@unique([chainId, txHash, logIndex])
+  @@index([tokenRecordId, blockNumber])
+}
+
+model BlockchainReconciliationCheckpoint {
+  id              String               @id @default(cuid())
+  chainId         Int
+  contractAddress String
+  lastBlockNumber BigInt
+  lastBlockHash   String?
+  status          ReconciliationStatus @default(PENDING)
+  lastRunAt       DateTime?
+  errorCode       String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([chainId, contractAddress])
+}
+
+model BlockchainReconciliationIssue {
+  id                String                 @id @default(cuid())
+  tokenRecordId     String?
+  issueType         String
+  status            String
+  publicStatus      String
+  detectedAt        DateTime               @default(now())
+  resolvedAt        DateTime?
+  remediationCaseId String?
+  detailsRedacted   Json
+  tokenRecord       PropertyIdentityToken? @relation(fields: [tokenRecordId], references: [id], onDelete: SetNull)
+
+  @@index([status, issueType])
+  @@index([tokenRecordId, status])
 }

@@ -330,8 +330,6 @@ type AssetClass =
 
 type PropertyObject = {
   id: string;
-  ownerOrganizationId: string;
-  ownerOfficeId: string;
   createdByUserId: string;
   marketId: string;
 
@@ -359,23 +357,73 @@ type PropertyObject = {
   documentRefs?: string[];
   localizations: PropertyObjectLocalization[];
 
-  representation: {
-    side: "owner" | "seller" | "landlord" | "originator";
-    exclusivity?: "exclusive" | "non_exclusive" | "unknown";
-  };
-
-  rights: {
-    informationOwnerOrganizationId: string;
-    informationOwnerOfficeId: string;
-    canBeShownByOtherOffices: boolean;
-    requiresOwnerOfficeApprovalForLead: boolean;
-  };
-
   createdAt: string;
   updatedAt: string;
   publishedAt?: string;
 };
 ```
+
+`PropertyObject` is the canonical physical object and has no exclusive agency owner. Agency-specific authority, commercial terms and publication are separate records:
+
+```ts
+type CorporateWalletBinding = {
+  id: string;
+  organizationId: string;
+  chainId: 56;
+  address: string;
+  status: "pending" | "active" | "revoked";
+  verifiedByUserId: string;
+  verifiedAt?: string;
+};
+
+type RepresentationRight = {
+  id: string;
+  propertyObjectId: string;
+  organizationId: string;
+  officeId?: string;
+  corporateWalletBindingId: string;
+  side: "owner" | "seller" | "landlord" | "originator";
+  exclusivity: "exclusive" | "non_exclusive" | "unknown";
+  status: "attested" | "disputed" | "suspended" | "revoked" | "expired";
+  validFrom: string;
+  validUntil?: string;
+  evidenceHash: string;
+  attestedByUserId: string;
+};
+
+type RepresentationEvidenceDocument = {
+  representationRightId: string;
+  documentId: string;
+};
+
+type PartnerOffer = {
+  id: string;
+  propertyObjectId: string;
+  representationRightId: string;
+  organizationId: string;
+  officeId?: string;
+  status: "draft" | "active" | "suspended" | "withdrawn" | "expired";
+};
+
+type PublicationGrant = {
+  id: string;
+  partnerOfferId: string;
+  organizationId: string;
+  marketId: string;
+  status: "active" | "suspended" | "revoked" | "expired";
+};
+```
+
+An ordinary publication is the agency's audited declaration of documentary authority. It becomes eligible after document, uniqueness, wallet and integrity checks; it has no platform manual-approval state. Audit may later dispute, suspend or revoke it.
+
+Database invariants:
+
+- one normalized active corporate-wallet address per organization and chain;
+- one active representation per organization, object, side and effective period;
+- one active offer per representation and market context;
+- one active publication grant per offer and market;
+- one canonical registry identity and BEP-721 token per `PropertyObject`;
+- every partner interaction references the exact active `PartnerOffer`; recipient organization and office are derived from that offer.
 
 Public text fields for property cards live in localization records:
 
@@ -916,3 +964,13 @@ Any significant schema change must update:
 - `docs/CURRENT_STATE.md`
 
 For high-impact changes, add an ADR before implementation.
+# External identity SSOT — Increment 1A
+
+- `AppUserExternalIdentity` owns the lifetime-unique Firebase provider/subject mapping. A partial PostgreSQL unique index permits only one ACTIVE Firebase identity per `AppUser`; rows are never hard-deleted or transferred.
+- `ExternalIdentityBindingRequest` separates `BIND` and same-user `REACTIVATE` workflows. Pending requests expire after seven days and use `rowVersion` for optimistic concurrency.
+- `ExternalIdentityBindingEvent` stores append-only public-safe audit metadata and subject digests, never bearer tokens or full Firebase claims.
+- `ExternalIdentityBootstrapState(FIREBASE_PLATFORM_OWNER_BOOTSTRAP)` makes first-owner bootstrap one-time.
+- `MutationIdempotency` stores scoped mutation state and replay responses. Nonterminal rows do not expire; successful replay data is retained for 30 days by policy.
+- `AppUser.firebaseUid` remains required and unique only for legacy compatibility. New candidate users receive `legacy:external-pending:<uuid>`; this value has no authentication authority.
+
+Retention: terminal binding-request verified email is eligible for redaction after the configured 30–365 day period. Identity subjects remain to enforce lifetime uniqueness. Audit retention is explicitly configured to 365–2555 days.

@@ -7,17 +7,22 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "auth:bootstrap-platform-owner": "tsx src/bootstrap-platform-owner.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@kvartal/auth": "workspace:*",
     "@kvartal/db": "workspace:*",
     "@kvartal/domain": "workspace:*",
-    "@prisma/client": "^5.22.0"
+    "@kvartal/web3": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "viem": "^2.38.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.10",
     "tsx": "^4.19.2",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

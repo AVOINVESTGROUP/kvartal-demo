@@ -5,11 +5,14 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "incremental": false,
-    "noEmit": true,
+    "noEmit": false,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
     "paths": {
       "@kvartal/domain": ["../domain/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/**/*.test.ts"]
 }

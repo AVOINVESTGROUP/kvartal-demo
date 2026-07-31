@@ -1,7 +1,10 @@
 import { revalidatePath } from "next/cache";
-import { requireAdminSession } from "../lib/auth";
-import { deleteBackendJson, fetchBackendJson, writeBackendJson } from "../lib/server-api";
+import { redirect } from "next/navigation";
+import { requireAdminSession, setActiveOrganization } from "../lib/auth";
+import { deleteBackendJson, fetchBackendJson, fetchSecureActorBackendJson, writeBackendJson, writeSecureActorBackendJson } from "../lib/server-api";
 import { MediaUploadForm } from "./MediaUploadForm";
+import { DocumentUploadForm } from "./DocumentUploadForm";
+import { CorporateWalletPanel } from "./CorporateWalletPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +68,13 @@ type AdminObjectsResponse = {
     priceDisplay: string | null;
     priceCurrency: string | null;
     cadastralNumber: string | null;
+    identity: null | {
+      stableId: string;
+      status: string;
+      representationStatus: string | null;
+      offerStatus: string | null;
+      isOriginator: boolean;
+    };
     titleEn: string | null;
     descriptionEn: string | null;
     addressDisplayEn: string | null;
@@ -72,8 +82,8 @@ type AdminObjectsResponse = {
     tagsEn: string[];
     priceDisplayEn: string | null;
     market: { city: string; country: string; slug: string };
-    sellerSide: { officeName: string; organizationName: string };
-    informationRightsHolder: { officeName: string; organizationName: string };
+    sellerSide: { officeSlug: string; officeName: string; organizationSlug: string; organizationName: string };
+    informationRightsHolder: { officeSlug: string; officeName: string; organizationSlug: string; organizationName: string };
     media: Array<{
       id: string;
       url: string;
@@ -298,11 +308,20 @@ function formPayload(formData: FormData, organizationSlug: string) {
   };
 }
 
+async function switchOrganizationAction(formData: FormData) {
+  "use server";
+  const organizationSlug = formValue(formData, "organizationSlug");
+  if (!(await setActiveOrganization(organizationSlug))) redirect("/login?error=organization_access_required");
+  redirect("/");
+}
+
 async function createObjectAction(formData: FormData) {
   "use server";
 
   const session = await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData, session.organizationSlug));
+  await writeSecureActorBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/objects", "POST", formPayload(formData, session.organizationSlug), {
+    "Idempotency-Key": `object-form:${crypto.randomUUID()}`,
+  });
   revalidatePath("/");
 }
 
@@ -328,6 +347,7 @@ async function syncObjectDriveAction(formData: FormData) {
   if (!objectId || !driveFolderUrl) return;
   await writeBackendJson(process.env.PARTNER_API_BASE_URL, "/api/v1/admin/intake/process-drive-folder", "POST", {
     organizationSlug: session.organizationSlug,
+    officeSlug: formValue(formData, "officeSlug"),
     objectId,
     driveFolderUrl,
   });
@@ -375,10 +395,12 @@ async function updateObjectAction(formData: FormData) {
   const action = formValue(formData, "action") || "save";
 
   const session = await requireAdminSession();
-  await writeBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
+  await writeSecureActorBackendJson(process.env.PARTNER_API_BASE_URL, `/api/v1/admin/objects/${encodeURIComponent(objectId)}`, "PATCH", {
     ...formPayload(formData, session.organizationSlug),
     action,
     clearMedia: formData.get("clearMedia") === "on",
+  }, {
+    "Idempotency-Key": `object-update:${objectId}:${crypto.randomUUID()}`,
   });
   revalidatePath("/");
 }
@@ -457,7 +479,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/context?organizationSlug=${encodeURIComponent(organizationSlug)}`,
     ),
-    fetchBackendJson<AdminObjectsResponse>(
+    fetchSecureActorBackendJson<AdminObjectsResponse>(
       process.env.PARTNER_API_BASE_URL,
       `/api/v1/admin/objects?organizationSlug=${encodeURIComponent(organizationSlug)}&language=ru&limit=100`,
     ),
@@ -512,6 +534,17 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
           <div className="flex max-w-[360px] flex-col gap-2 rounded-md border border-kv-line bg-kv-bg p-3 text-[13px]">
             <div className="font-black text-kv-navy">{session.name ?? session.email}</div>
             <div className="text-kv-muted">{session.email}</div>
+            {session.organizations.length > 1 ? (
+              <form action={switchOrganizationAction} className="flex gap-2">
+                <label className="sr-only" htmlFor="active-organization">Организация</label>
+                <select id="active-organization" name="organizationSlug" defaultValue={organizationSlug} className="min-w-0 flex-1 rounded-md border border-kv-line bg-white px-2 py-2 text-[12px] font-bold text-kv-navy">
+                  {session.organizations.map((availableOrganization) => (
+                    <option key={availableOrganization.id} value={availableOrganization.slug}>{availableOrganization.legalName}</option>
+                  ))}
+                </select>
+                <button type="submit" className="rounded-full bg-kv-navy px-3 py-2 text-[12px] font-black text-white">Открыть</button>
+              </form>
+            ) : null}
             <div className="flex flex-wrap gap-2">
             <Badge tone="dark">{organization?.status ?? "loading"}</Badge>
             <Badge>{organization?.countryOfRegistration ?? "RU"}</Badge>
@@ -527,6 +560,8 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
           </div>
         </div>
       </header>
+
+      <CorporateWalletPanel />
 
       <section className="mx-auto grid max-w-[1440px] gap-4 px-6 py-5 md:grid-cols-2 xl:grid-cols-5">
         {[
@@ -683,26 +718,10 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
               URL изображения
               <input name="mediaUrl" placeholder="/images/object.jpg или https://..." className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" />
             </label>
-            <div className="flex items-end gap-4">
-              <label className="text-[13px] font-bold text-kv-muted">
-                Статус
-                <select name="status" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="draft">
-                  <option value="draft">Черновик</option>
-                  <option value="published">Опубликован</option>
-                </select>
-              </label>
-              <label className="text-[13px] font-bold text-kv-muted">
-                Видимость
-                <select name="visibility" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue="private">
-                  <option value="private">Приватно</option>
-                  <option value="office_network">Сеть офисов</option>
-                  <option value="public">Публично</option>
-                </select>
-              </label>
-              <label className="flex min-h-11 items-center gap-2 text-[13px] font-bold text-kv-muted">
-                <input name="canBeShownByOtherOffices" type="checkbox" />
-                Общая витрина
-              </label>
+            <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-[13px] text-blue-900 md:col-span-2 xl:col-span-4">
+              <input type="hidden" name="status" value="draft" />
+              <input type="hidden" name="visibility" value="private" />
+              Объект сначала сохраняется как черновик и автоматически проверяется на уникальность. Затем синхронизируйте документы из Google Drive, подключите корпоративный кошелёк и нажмите «Опубликовать в витрине» в карточке объекта.
             </div>
           </div>
           </form>
@@ -738,6 +757,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                       <Badge tone={object.documentCompleteness.missingCount ? "warn" : "good"}>docs {object.documentCompleteness.score}%</Badge>
                       <Badge tone={object.aiDossier ? "good" : "warn"}>{object.aiDossier ? "AI ok" : "AI нет"}</Badge>
                       <Badge>{object.documents.length} файлов</Badge>
+                      {object.identity ? <Badge tone="good">IREPN {object.identity.status}</Badge> : <Badge>legacy</Badge>}
                     </div>
                   </div>
                 </div>
@@ -766,6 +786,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                   </div>
                   <form action={syncObjectDriveAction} className="grid min-w-[320px] gap-2 rounded-md border border-kv-line bg-kv-bg p-3">
                     <input type="hidden" name="objectId" value={selectedObject.id} />
+                    <input type="hidden" name="officeSlug" value={selectedObject.sellerSide.officeSlug} />
                     <label className="text-[12px] font-black text-kv-muted">
                       Папка Google Drive для документов
                       <input
@@ -857,6 +878,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
 
                 {selectedTab === "documents" ? (
                   <div className="space-y-3">
+                    <DocumentUploadForm objectId={selectedObject.id} />
                     {selectedObject.documents.map((document) => (
                       <div key={document.id} className="grid gap-3 rounded-md border border-kv-line bg-kv-bg p-4 lg:grid-cols-[1fr_160px_180px_180px]">
                         <div>
@@ -968,7 +990,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
 
                 {selectedTab === "media" ? (
                   <div>
-                    <MediaUploadForm objectId={selectedObject.id} />
+                    {selectedObject.identity?.isOriginator ? <MediaUploadForm objectId={selectedObject.id} /> : <div className="rounded-md border border-kv-line bg-kv-bg p-4 text-sm text-kv-muted">Медиа единого физического объекта изменяет агентство-инициатор. Здесь вы видите общую карточку и управляете своим предложением.</div>}
                     <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                       {selectedObject.media.map((media) => (
                         <div key={media.id} className="rounded-md border border-kv-line bg-kv-bg p-3">
@@ -991,6 +1013,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                 {selectedTab === "publication" ? (
                   <form action={updateObjectAction} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                    <input type="hidden" name="officeSlug" value={selectedObject.sellerSide.officeSlug} />
                     <input type="hidden" name="objectId" value={selectedObject.id} />
                     <input type="hidden" name="title" value={selectedObject.title} />
                     <input type="hidden" name="description" value={selectedObject.description ?? ""} />
@@ -1228,6 +1251,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                     <summary className="cursor-pointer px-3 py-2 text-[12px] font-black text-kv-navy">Редактировать и опубликовать</summary>
                     <form action={updateObjectAction} className="space-y-2 border-t border-kv-line p-3">
                       <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                      <input type="hidden" name="officeSlug" value={object.sellerSide.officeSlug} />
                       <input type="hidden" name="objectId" value={object.id} />
                       <input name="title" defaultValue={object.title} className="h-9 w-full rounded border border-kv-line px-2 text-[12px] text-kv-ink" />
                       <select name="status" className="h-9 w-full rounded border border-kv-line bg-white px-2 text-[12px] text-kv-ink" defaultValue="published">
@@ -1272,6 +1296,8 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                     <Badge tone={object.canBeShownByOtherOffices ? "good" : "neutral"}>
                       {object.canBeShownByOtherOffices ? "общая витрина" : "только организация"}
                     </Badge>
+                    {object.identity ? <Badge tone="good">IREPN {object.identity.stableId}</Badge> : <Badge>legacy</Badge>}
+                    {object.identity?.representationStatus ? <Badge tone={object.identity.representationStatus === "VERIFIED" ? "good" : "warn"}>право: {object.identity.representationStatus}</Badge> : null}
                   </div>
                   <h3 className="mt-3 text-lg font-black leading-tight text-kv-navy">{object.title}</h3>
                   <p className="mt-2 max-w-3xl text-[14px] leading-5 text-kv-muted">{object.description ?? "Описание не заполнено."}</p>
@@ -1312,7 +1338,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                 <details className="rounded-md border border-kv-line bg-white lg:col-span-3">
                   <summary className="cursor-pointer px-4 py-3 text-sm font-black text-kv-navy">Редактировать карточку, публикацию и медиа</summary>
                   <div className="border-t border-kv-line p-4">
-                    <MediaUploadForm objectId={object.id} />
+                    {object.identity?.isOriginator ? <MediaUploadForm objectId={object.id} /> : null}
                     {object.media.length ? (
                       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                         {object.media.map((media, index) => (
@@ -1335,7 +1361,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                             {media.caption || media.title ? (
                               <div className="mt-2 text-[12px] font-bold text-kv-muted">{media.title ?? media.caption}</div>
                             ) : null}
-                            <div className="mt-3 flex flex-wrap gap-2">
+                            {object.identity?.isOriginator ? <div className="mt-3 flex flex-wrap gap-2">
                               <form action={setCoverMediaAction}>
                                 <input type="hidden" name="mediaId" value={media.id} />
                                 <button className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">
@@ -1348,14 +1374,32 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                                   Удалить
                                 </button>
                               </form>
-                            </div>
+                            </div> : null}
                           </div>
                         ))}
                       </div>
                     ) : null}
                   </div>
+                  {!object.identity?.isOriginator ? (
+                    <form action={updateObjectAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2 xl:grid-cols-4">
+                      <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                      <input type="hidden" name="officeSlug" value={object.sellerSide.officeSlug} />
+                      <input type="hidden" name="objectId" value={object.id} />
+                      <div className="rounded-md border border-kv-line bg-kv-bg p-4 text-sm text-kv-muted md:col-span-2 xl:col-span-4">Это единый физический объект. Вы не изменяете его адрес, характеристики и медиа; здесь настраиваются только предложение и публикация вашего агентства.</div>
+                      <label className="text-[13px] font-bold text-kv-muted">Цена текстом RU<input name="priceDisplay" defaultValue={object.priceDisplay ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" /></label>
+                      <label className="text-[13px] font-bold text-kv-muted">Цена текстом EN<input name="priceDisplayEn" defaultValue={object.priceDisplayEn ?? ""} className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" /></label>
+                      <label className="text-[13px] font-bold text-kv-muted">Сумма<input name="priceAmount" inputMode="decimal" className="mt-1 h-11 w-full rounded-md border border-kv-line px-3 text-kv-ink" /></label>
+                      <label className="text-[13px] font-bold text-kv-muted">Валюта<select name="priceCurrency" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink" defaultValue={object.priceCurrency ?? "RUB"}>{["RUB", "USD", "EUR", "GEL", "AMD", "AED"].map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></label>
+                      <div className="flex flex-wrap gap-2 md:col-span-2 xl:col-span-4">
+                        <button name="action" value="save" className="rounded-full bg-kv-navy px-5 py-3 text-sm font-black text-white">Сохранить предложение</button>
+                        <button name="action" value="publish" className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-black text-white">Опубликовать предложение</button>
+                        <button name="action" value="unpublish" className="rounded-full bg-amber-600 px-5 py-3 text-sm font-black text-white">Снять предложение</button>
+                      </div>
+                    </form>
+                  ) : (
                   <form action={updateObjectAction} className="grid gap-3 border-t border-kv-line p-4 md:grid-cols-2 xl:grid-cols-4">
                     <input type="hidden" name="organizationSlug" value={organizationSlug} />
+                    <input type="hidden" name="officeSlug" value={object.sellerSide.officeSlug} />
                     <input type="hidden" name="objectId" value={object.id} />
                     <label className="text-[13px] font-bold text-kv-muted">
                       Рынок
@@ -1476,6 +1520,7 @@ export default async function PartnerAdminHome({ searchParams }: { searchParams?
                       <button name="action" value="archive" className="rounded-full border border-kv-line px-5 py-3 text-sm font-black text-kv-navy">В архив</button>
                     </div>
                   </form>
+                  )}
                 </details>
               </article>
             ))}

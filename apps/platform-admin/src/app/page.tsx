@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { requirePlatformOwner } from "../lib/auth";
 import { fetchBackendJson, writeBackendJson } from "../lib/server-api";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -141,6 +142,8 @@ export default async function PlatformAdminHome() {
             <div className="mt-1 text-kv-muted">{session.email}</div>
             <div className="mt-2 text-kv-muted">{access.platformRoles.join(", ")}</div>
             <a href="/logout" className="mt-3 inline-flex rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Выйти</a>
+            <Link href="/external-identities" className="ml-2 mt-3 inline-flex rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">UID bindings</Link>
+            <Link href="/property-identity" className="ml-2 mt-3 inline-flex rounded-full bg-kv-red px-4 py-2 text-[12px] font-black text-white">Property Identity</Link>
           </div>
         </div>
       </section>
@@ -252,7 +255,6 @@ export default async function PlatformAdminHome() {
             <label className="text-[13px] font-bold text-kv-muted">
               Роль
               <select name="role" defaultValue="platform_admin" className="mt-1 h-11 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
-                <option value="platform_owner">Собственник проекта</option>
                 <option value="platform_admin">Администратор платформы</option>
                 <option value="platform_analyst">Аналитик</option>
                 <option value="platform_viewer">Просмотр</option>
@@ -288,13 +290,16 @@ export default async function PlatformAdminHome() {
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  <form action={updatePlatformAccessAction} className="grid gap-2 rounded-md bg-kv-bg p-3">
+                  {member.platformRoles.includes("platform_owner") ? (
+                    <div className="rounded-md bg-kv-bg p-3 text-[13px] font-bold text-kv-navy">
+                      Единственный владелец платформы назначается только аудированной административной процедурой и не изменяется через сайт.
+                    </div>
+                  ) : <form action={updatePlatformAccessAction} className="grid gap-2 rounded-md bg-kv-bg p-3">
                     <input type="hidden" name="email" value={member.email} />
                     <input type="hidden" name="displayName" value={member.displayName ?? ""} />
                     <label className="text-[12px] font-black uppercase tracking-[0.12em] text-kv-muted">
                       Роль Fixer.guru
                       <select name="role" defaultValue={member.platformRoles[0] ?? "platform_admin"} className="mt-1 h-10 w-full rounded-md border border-kv-line bg-white px-3 text-kv-ink">
-                        <option value="platform_owner">Собственник проекта</option>
                         <option value="platform_admin">Администратор платформы</option>
                         <option value="platform_analyst">Аналитик</option>
                         <option value="platform_viewer">Просмотр</option>
@@ -304,7 +309,7 @@ export default async function PlatformAdminHome() {
                       <button name="active" value="true" className="rounded-full bg-kv-navy px-4 py-2 text-[12px] font-black text-white">Сохранить роль</button>
                       <button name="active" value="false" className="rounded-full border border-kv-line bg-white px-4 py-2 text-[12px] font-black text-kv-navy">Снять доступ</button>
                     </div>
-                  </form>
+                  </form>}
 
                   <form action={updateOrganizationAccessAction} className="grid gap-2 rounded-md bg-kv-bg p-3">
                     <input type="hidden" name="email" value={member.email} />
